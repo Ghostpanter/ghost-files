@@ -1,0 +1,40 @@
+# Networking / crypto libraries use reflection & service lookup heavily: keep them whole.
+-keep class net.schmizz.** { *; }
+-keep class com.hierynomus.** { *; }
+-keep class org.bouncycastle.** { *; }
+-keep class org.conscrypt.** { *; }
+-keep class org.apache.commons.net.** { *; }
+-keep class org.apache.commons.compress.** { *; }
+-keep class org.tukaani.xz.** { *; }
+-keep class com.github.junrar.** { *; }
+-keep class net.engio.mbassy.** { *; }
+-keep class net.i2p.crypto.eddsa.** { *; }
+-keep class com.jcraft.jzlib.** { *; }
+-keep class rikka.shizuku.** { *; }
+-keep class moe.shizuku.** { *; }
+-keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
+
+-dontwarn javax.naming.**
+-dontwarn javax.security.auth.**
+-dontwarn javax.el.**
+-dontwarn javax.annotation.**
+-dontwarn org.ietf.jgss.**
+-dontwarn org.slf4j.**
+-dontwarn org.brotli.**
+-dontwarn com.github.luben.zstd.**
+-dontwarn org.objectweb.asm.**
+-dontwarn org.osgi.**
+-dontwarn sun.security.**
+-dontwarn java.lang.management.**
+-dontwarn javax.management.**
+-dontwarn javax.lang.model.**
+-dontwarn com.sun.jna.**
+-dontwarn org.newsclub.**
+-dontwarn org.apache.commons.io.**
+-dontwarn org.apache.commons.lang3.**
+-dontwarn org.apache.commons.codec.**
+-dontwarn okhttp3.internal.platform.**
+-dontwarn org.openjsse.**
+-dontwarn com.google.errorprone.**
+-dontwarn org.jetbrains.annotations.**
+-dontwarn edu.umd.cs.findbugs.**

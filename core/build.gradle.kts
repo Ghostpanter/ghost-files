@@ -41,7 +41,3 @@ tasks.test {
     }
 }
 
-tasks.register<Copy>("dumpDeps") {
-    from(configurations.testRuntimeClasspath)
-    into(layout.buildDirectory.dir("deps"))
-}

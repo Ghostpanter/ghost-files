@@ -1,0 +1,113 @@
+#!/bin/sh
+# Build the signed universal release APK (V1+V2, ColorOS-safe META-INF).
+#
+# Signing input (never committed), either:
+#   KEY_PROPS=/path/to/key.properties   (storeFile / storePassword / keyAlias / keyPassword)
+# or the four env vars KEYSTORE_PATH / KEYSTORE_PASS / KEY_ALIAS / KEY_PASS.
+#
+# Output: artifacts/ghost-files.apk (+ .sha256)
+set -eu
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OUT_DIR="$ROOT/app/build/outputs/apk/release"
+
+if [ -n "${KEY_PROPS:-}" ]; then
+    prop() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$KEY_PROPS" | head -1; }
+    KEYSTORE_PATH="${KEYSTORE_PATH:-$(prop storeFile)}"
+    KEYSTORE_PASS="${KEYSTORE_PASS:-$(prop storePassword)}"
+    KEY_ALIAS="${KEY_ALIAS:-$(prop keyAlias)}"
+    KEY_PASS="${KEY_PASS:-$(prop keyPassword)}"
+    case "$KEYSTORE_PATH" in /*) ;; *) KEYSTORE_PATH="$(dirname "$KEY_PROPS")/$KEYSTORE_PATH" ;; esac
+fi
+for v in KEYSTORE_PATH KEYSTORE_PASS KEY_ALIAS KEY_PASS; do
+    eval "val=\${$v:-}"
+    [ -n "$val" ] || { echo "build-apk: \$$v not set (see header)" >&2; exit 1; }
+done
+[ -f "$KEYSTORE_PATH" ] || { echo "build-apk: keystore not found: $KEYSTORE_PATH" >&2; exit 1; }
+export KEYSTORE_PATH KEYSTORE_PASS KEY_ALIAS KEY_PASS
+
+cd "$ROOT"
+./gradlew --no-daemon :core:test :app:assembleRelease
+
+APK="$OUT_DIR/app-release.apk"
+[ -f "$APK" ] || { echo "build-apk: no APK at $APK" >&2; ls -la "$OUT_DIR" >&2 || true; exit 1; }
+
+find_bt() {
+    SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+    if [ -n "$SDK_ROOT" ] && [ -d "$SDK_ROOT/build-tools" ]; then
+        latest=$(ls -1 "$SDK_ROOT/build-tools" | sort -V | tail -1)
+        [ -x "$SDK_ROOT/build-tools/$latest/$1" ] && { echo "$SDK_ROOT/build-tools/$latest/$1"; return; }
+    fi
+    command -v "$1" || true
+}
+APKSIGNER=$(find_bt apksigner); AAPT2=$(find_bt aapt2); ZIPALIGN=$(find_bt zipalign)
+[ -n "$APKSIGNER" ] && [ -n "$AAPT2" ] && [ -n "$ZIPALIGN" ] || { echo "build-apk: build-tools missing" >&2; exit 1; }
+
+# ColorOS: strip unprotected AGP META-INF blobs, then re-sign V1+V2 so OEM
+# JAR verifiers do not see unsigned META-INF entries beside CERT.*.
+echo "build-apk: ColorOS clean META-INF + re-sign V1+V2"
+clean_apk="$OUT_DIR/.coloros-clean.apk"
+python3 - "$APK" "$clean_apk" <<'PY'
+import sys, zipfile
+src, dst = sys.argv[1], sys.argv[2]
+drop_exact = {"META-INF/MANIFEST.MF", "META-INF/version-control-info.textproto"}
+with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(dst, "w") as zout:
+    for info in zin.infolist():
+        name = info.filename
+        if name in drop_exact:
+            continue
+        if name.startswith("META-INF/") and name.endswith((".SF", ".RSA", ".DSA", ".EC")):
+            continue
+        if name.startswith("META-INF/com/android/build/gradle/"):
+            continue
+        # R8 re-emits ServiceLoader descriptors after packaging excludes run. They are
+        # unused at runtime (R8 inlines the coroutines lookups; providers are registered
+        # in code) and would be unsigned META-INF entries under V1.
+        if name.startswith("META-INF/services/"):
+            continue
+        data = zin.read(name)
+        new = zipfile.ZipInfo(filename=name, date_time=info.date_time)
+        new.compress_type = info.compress_type
+        new.external_attr = info.external_attr
+        new.create_system = info.create_system
+        zout.writestr(new, data)
+PY
+aligned_apk="$OUT_DIR/.coloros-aligned.apk"
+"$ZIPALIGN" -f 4 "$clean_apk" "$aligned_apk"
+"$APKSIGNER" sign \
+    --ks "$KEYSTORE_PATH" --ks-key-alias "$KEY_ALIAS" \
+    --ks-pass env:KEYSTORE_PASS --key-pass env:KEY_PASS \
+    --v1-signing-enabled true --v2-signing-enabled true \
+    --v3-signing-enabled false --v4-signing-enabled false \
+    --min-sdk-version 28 \
+    --out "$APK" "$aligned_apk"
+rm -f "$clean_apk" "$aligned_apk" "${APK}.idsig"
+
+echo "build-apk: apksigner verify --min-sdk-version 23 (require V1+V2)"
+v_out=$("$APKSIGNER" verify --verbose --min-sdk-version 23 "$APK" 2>&1) || { printf '%s\n' "$v_out" >&2; exit 1; }
+printf '%s\n' "$v_out" | grep -q 'Verified using v1 scheme (JAR signing): true' || { echo "V1 missing" >&2; printf '%s\n' "$v_out" >&2; exit 1; }
+printf '%s\n' "$v_out" | grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' || { echo "V2 missing" >&2; exit 1; }
+if printf '%s\n' "$v_out" | grep -q 'not protected by signature'; then
+    echo "build-apk: unprotected META-INF entries remain" >&2; printf '%s\n' "$v_out" | grep 'not protected' >&2; exit 1
+fi
+printf '%s\n' "$v_out" | grep -E 'Verified using|Number of signers' | sed 's/^/  /'
+"$ZIPALIGN" -c 4 "$APK"
+
+badging=$("$AAPT2" dump badging "$APK")
+want_vn=$(sed -n 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"\(.*\)".*/\1/p' "$ROOT/app/build.gradle.kts" | head -1)
+echo "$badging" | grep -q "package: name='com.ghostpanter.files'" || { echo "bad package" >&2; exit 1; }
+echo "$badging" | grep -q "versionName='$want_vn'" || { echo "bad versionName (want $want_vn)" >&2; echo "$badging" | head -1 >&2; exit 1; }
+echo "$badging" | grep -q "minSdkVersion:'28'" || { echo "bad minSdk" >&2; exit 1; }
+echo "$badging" | grep -q "targetSdkVersion:'34'" || { echo "bad targetSdk (must be 34 for ColorOS)" >&2; exit 1; }
+echo "$badging" | grep -q "compileSdkVersion='34'" || { echo "bad compileSdk" >&2; exit 1; }
+native_line=$(printf '%s\n' "$badging" | sed -n '/native-code:/p')
+for abi in armeabi-v7a arm64-v8a x86 x86_64; do
+    printf '%s\n' "$native_line" | grep -q "'$abi'" || { echo "missing ABI $abi" >&2; exit 1; }
+done
+echo "build-apk: ABIs $native_line"
+
+mkdir -p "$ROOT/artifacts"
+cp -f "$APK" "$ROOT/artifacts/ghost-files.apk"
+( cd "$ROOT/artifacts" && sha256sum ghost-files.apk > ghost-files.apk.sha256 )
+echo "build-apk: $(cat "$ROOT/artifacts/ghost-files.apk.sha256")"
+echo "build-apk: size $(stat -c %s "$ROOT/artifacts/ghost-files.apk") bytes"
