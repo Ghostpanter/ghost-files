@@ -1,0 +1,290 @@
+package com.ghostpanter.files.core
+
+import com.hierynomus.msdtyp.AccessMask
+import com.hierynomus.msfscc.FileAttributes
+import com.hierynomus.msfscc.fileinformation.FileIdBothDirectoryInformation
+import com.hierynomus.mserref.NtStatus
+import com.hierynomus.mssmb2.SMB2CreateDisposition
+import com.hierynomus.mssmb2.SMB2CreateOptions
+import com.hierynomus.mssmb2.SMB2ShareAccess
+import com.hierynomus.mssmb2.SMBApiException
+import com.hierynomus.smbj.SMBClient
+import com.hierynomus.smbj.SmbConfig
+import com.hierynomus.smbj.auth.AuthenticationContext
+import com.hierynomus.smbj.session.Session
+import com.hierynomus.smbj.share.DiskShare
+import com.hierynomus.smbj.share.File
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.EnumSet
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+
+/**
+ * SMB2/3 via smbj. One TCP connection + session per server is shared by
+ * listing and transfers (SMB multiplexes requests); a broken connection is
+ * dropped and transparently re-established on the next call.
+ */
+class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeouts()) : VirtualFs {
+
+    override val id = config.fsId
+    override val displayName = config.name
+    override val capabilities = setOf(
+        Capability.RESUME_READ, Capability.RESUME_WRITE, Capability.SERVER_COPY,
+        Capability.RENAME_MOVE, Capability.REMOTE,
+    )
+
+    private val shares: List<String> = config.path.split(',', ';')
+        .map { it.trim().trim('/', '\\') }.filter { it.isNotEmpty() }
+
+    override val homePath: String = if (shares.size == 1) "/" + shares[0] else VPath.ROOT
+
+    private val client = SMBClient(
+        SmbConfig.builder()
+            .withTimeout(timeouts.readMs.toLong(), TimeUnit.MILLISECONDS)
+            .withSoTimeout(timeouts.readMs.toLong(), TimeUnit.MILLISECONDS)
+            .withMultiProtocolNegotiate(true)
+            .withDfsEnabled(false)
+            .build()
+    )
+
+    @Volatile private var session: Session? = null
+    private val diskShares = ConcurrentHashMap<String, DiskShare>()
+    private val lock = Any()
+
+    private fun session(): Session = synchronized(lock) {
+        val s = session
+        if (s != null && s.connection.isConnected) return s
+        diskShares.clear()
+        runCatching { s?.close() }
+        val conn = client.connect(config.host, config.effectivePort)
+        val auth = when {
+            config.anonymous || config.username.isEmpty() -> AuthenticationContext.anonymous()
+            else -> AuthenticationContext(config.username, config.password.toCharArray(), config.domain.ifEmpty { null })
+        }
+        val ns = conn.authenticate(auth)
+        session = ns
+        ns
+    }
+
+    private fun share(name: String): DiskShare = synchronized(lock) {
+        val existing = diskShares[name]
+        if (existing != null && existing.isConnected && session?.connection?.isConnected == true) return existing
+        val sh = session().connectShare(name) as? DiskShare ?: throw FsException("$name 不是磁盘共享")
+        diskShares[name] = sh
+        sh
+    }
+
+    private data class Loc(val share: String, val path: String)
+
+    private fun loc(path: String): Loc? {
+        val n = VPath.normalize(path)
+        if (n == VPath.ROOT) return null
+        val parts = n.trim('/').split('/', limit = 2)
+        return Loc(parts[0], if (parts.size > 1) parts[1].replace('/', '\\') else "")
+    }
+
+    private inline fun <T> io(what: String, block: () -> T): T {
+        try {
+            return block()
+        } catch (e: SMBApiException) {
+            throw FsException("$what: ${statusText(e.status)}", e)
+        } catch (e: FsException) {
+            throw e
+        } catch (e: Exception) {
+            reset()
+            throw FsException("$what: ${e.message ?: e.javaClass.simpleName}", e)
+        }
+    }
+
+    private fun statusText(s: NtStatus): String = when (s) {
+        NtStatus.STATUS_ACCESS_DENIED -> "拒绝访问"
+        NtStatus.STATUS_LOGON_FAILURE -> "用户名或密码错误"
+        NtStatus.STATUS_OBJECT_NAME_NOT_FOUND, NtStatus.STATUS_OBJECT_PATH_NOT_FOUND -> "不存在"
+        NtStatus.STATUS_OBJECT_NAME_COLLISION -> "已存在"
+        NtStatus.STATUS_BAD_NETWORK_NAME -> "共享名不存在"
+        NtStatus.STATUS_SHARING_VIOLATION -> "文件被占用"
+        NtStatus.STATUS_DIRECTORY_NOT_EMPTY -> "目录非空"
+        else -> s.name
+    }
+
+    private fun shareRoots() = shares.map { FileEntry("/$it", it, true, 0, 0) }
+
+    override fun list(path: String, onChunk: ((List<FileEntry>) -> Unit)?): List<FileEntry> = io("列出 $path") {
+        val l = loc(path)
+        if (l == null) {
+            if (shares.isEmpty()) throw FsException("请在服务器设置中填写共享名（多个用逗号分隔）")
+            return@io shareRoots()
+        }
+        val sh = share(l.share)
+        val dir = sh.openDirectory(
+            l.path, EnumSet.of(AccessMask.FILE_LIST_DIRECTORY, AccessMask.FILE_READ_ATTRIBUTES),
+            null, SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null,
+        )
+        val out = ArrayList<FileEntry>()
+        val chunk = ArrayList<FileEntry>()
+        dir.use {
+            val it = dir.iterator(FileIdBothDirectoryInformation::class.java)
+            while (it.hasNext()) {
+                val info = it.next()
+                val name = info.fileName
+                if (name == "." || name == "..") continue
+                val isDir = info.fileAttributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value != 0L
+                val e = FileEntry(
+                    path = VPath.join(path, name), name = name, isDirectory = isDir,
+                    size = if (isDir) 0 else info.endOfFile,
+                    lastModified = info.lastWriteTime.toEpochMillis(),
+                    isLink = info.fileAttributes and FileAttributes.FILE_ATTRIBUTE_REPARSE_POINT.value != 0L,
+                )
+                out.add(e)
+                if (onChunk != null) {
+                    chunk.add(e)
+                    if (chunk.size >= 300) { onChunk(ArrayList(chunk)); chunk.clear() }
+                }
+            }
+        }
+        if (onChunk != null && chunk.isNotEmpty()) onChunk(chunk)
+        out
+    }
+
+    override fun stat(path: String): FileEntry? {
+        val l = loc(path) ?: return FileEntry(VPath.ROOT, "", true, 0, 0)
+        if (l.path.isEmpty()) return FileEntry(VPath.normalize(path), l.share, true, 0, 0)
+        return try {
+            io("读取属性 $path") {
+                val info = share(l.share).getFileInformation(l.path)
+                val isDir = info.standardInformation.isDirectory
+                FileEntry(
+                    VPath.normalize(path), VPath.name(path), isDir,
+                    if (isDir) 0 else info.standardInformation.endOfFile,
+                    info.basicInformation.lastWriteTime.toEpochMillis(),
+                )
+            }
+        } catch (e: FsException) {
+            val st = (e.cause as? SMBApiException)?.status
+            if (st == NtStatus.STATUS_OBJECT_NAME_NOT_FOUND || st == NtStatus.STATUS_OBJECT_PATH_NOT_FOUND ||
+                st == NtStatus.STATUS_NO_SUCH_FILE) null else throw e
+        }
+    }
+
+    private fun requireFile(path: String): Loc {
+        val l = loc(path) ?: throw FsException("无效路径: $path")
+        if (l.path.isEmpty()) throw FsException("无效路径: $path")
+        return l
+    }
+
+    override fun openRead(path: String, offset: Long): InputStream = io("打开 $path") {
+        val l = requireFile(path)
+        val sh = share(l.share)
+        val f = sh.openFile(
+            l.path, EnumSet.of(AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OPEN, EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE),
+        )
+        val maxRead = sh.treeConnect.session.connection.negotiatedProtocol.maxReadSize
+        SmbInput(f, offset, maxRead.coerceIn(64 * 1024, 1024 * 1024))
+    }
+
+    override fun openWrite(path: String, offset: Long, sizeHint: Long): OutputStream = io("写入 $path") {
+        val l = requireFile(path)
+        val sh = share(l.share)
+        val f = sh.openFile(
+            l.path, EnumSet.of(AccessMask.GENERIC_WRITE, AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL,
+            if (offset > 0) SMB2CreateDisposition.FILE_OPEN_IF else SMB2CreateDisposition.FILE_OVERWRITE_IF,
+            EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE),
+        )
+        if (offset > 0) f.setLength(offset)
+        val maxWrite = sh.treeConnect.session.connection.negotiatedProtocol.maxWriteSize
+        SmbOutput(f, offset, maxWrite.coerceIn(64 * 1024, 1024 * 1024))
+    }
+
+    override fun mkdirs(path: String) = io("创建目录 $path") {
+        val l = requireFile(path)
+        val sh = share(l.share)
+        var cur = ""
+        for (part in l.path.split('\\')) {
+            cur = if (cur.isEmpty()) part else "$cur\\$part"
+            if (!sh.folderExists(cur)) sh.mkdir(cur)
+        }
+    }
+
+    override fun delete(path: String, recursive: Boolean) = io("删除 $path") {
+        val l = requireFile(path)
+        val sh = share(l.share)
+        if (sh.folderExists(l.path)) sh.rmdir(l.path, recursive) else if (sh.fileExists(l.path)) sh.rm(l.path)
+    }
+
+    override fun rename(from: String, to: String) = io("移动 $from") {
+        val a = requireFile(from)
+        val b = requireFile(to)
+        if (a.share != b.share) throw FsException("不能跨共享移动")
+        val sh = share(a.share)
+        val entry = sh.open(
+            a.path, EnumSet.of(AccessMask.DELETE, AccessMask.FILE_READ_ATTRIBUTES), null, SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OPEN, null,
+        )
+        entry.use { it.rename(b.path, false) }
+    }
+
+    override fun serverCopy(from: String, to: String): Boolean {
+        val a = loc(from) ?: return false
+        val b = loc(to) ?: return false
+        if (a.share != b.share || a.path.isEmpty() || b.path.isEmpty()) return false
+        return try {
+            val sh = share(a.share)
+            if (sh.folderExists(a.path)) return false
+            sh.openFile(a.path, EnumSet.of(AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL,
+                SMB2CreateDisposition.FILE_OPEN, null).use { src ->
+                sh.openFile(b.path, EnumSet.of(AccessMask.GENERIC_READ, AccessMask.GENERIC_WRITE), null,
+                    SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OVERWRITE_IF, null).use { dst ->
+                    src.remoteCopyTo(dst)
+                }
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    override fun reset() {
+        synchronized(lock) {
+            diskShares.clear()
+            runCatching { session?.connection?.close(true) }
+            session = null
+        }
+    }
+
+    override fun close() {
+        reset()
+        runCatching { client.close() }
+    }
+
+    private class SmbInput(private val f: File, private var pos: Long, private val chunk: Int) : InputStream() {
+        override fun read(): Int {
+            val b = ByteArray(1)
+            return if (read(b, 0, 1) <= 0) -1 else b[0].toInt() and 0xff
+        }
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (len == 0) return 0
+            val n = f.read(b, pos, off, minOf(len, chunk))
+            if (n <= 0) return -1
+            pos += n
+            return n
+        }
+        override fun close() { runCatching { f.close() } }
+    }
+
+    private class SmbOutput(private val f: File, private var pos: Long, private val chunk: Int) : OutputStream() {
+        override fun write(b: Int) = write(byteArrayOf(b.toByte()), 0, 1)
+        override fun write(b: ByteArray, off: Int, len: Int) {
+            var o = off
+            var left = len
+            while (left > 0) {
+                val n = f.write(b, pos, o, minOf(left, chunk)).toInt()
+                if (n <= 0) throw FsException("SMB 写入返回 0")
+                pos += n; o += n; left -= n
+            }
+        }
+        override fun flush() { runCatching { f.flush() } }
+        override fun close() { f.close() }
+    }
+}
