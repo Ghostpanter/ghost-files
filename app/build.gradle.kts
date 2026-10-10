@@ -2,6 +2,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    // Screenshot tests of the dual-pane UI (JVM, no emulator): ./gradlew :app:recordPaparazziDebug
+    id("app.cash.paparazzi")
 }
 
 android {
@@ -14,8 +16,8 @@ android {
         applicationId = "com.ghostpanter.files"
         minSdk = 28
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         // Universal APK: every ABI shipped by conscrypt-android.
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }

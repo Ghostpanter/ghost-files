@@ -39,14 +39,7 @@ class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeout
 
     override val homePath: String = if (shares.size == 1) "/" + shares[0] else VPath.ROOT
 
-    private val client = SMBClient(
-        SmbConfig.builder()
-            .withTimeout(timeouts.readMs.toLong(), TimeUnit.MILLISECONDS)
-            .withSoTimeout(timeouts.readMs.toLong(), TimeUnit.MILLISECONDS)
-            .withMultiProtocolNegotiate(true)
-            .withDfsEnabled(false)
-            .build()
-    )
+    private val connector = SmbConnector(timeouts)
 
     @Volatile private var session: Session? = null
     private val diskShares = ConcurrentHashMap<String, DiskShare>()
@@ -57,12 +50,11 @@ class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeout
         if (s != null && s.connection.isConnected) return s
         diskShares.clear()
         runCatching { s?.close() }
-        val conn = client.connect(config.host, config.effectivePort)
-        val auth = when {
-            config.anonymous || config.username.isEmpty() -> AuthenticationContext.anonymous()
-            else -> AuthenticationContext(config.username, config.password.toCharArray(), config.domain.ifEmpty { null })
+        val ns = if (config.anonymous) {
+            connector.open(config.host, config.effectivePort, "", "", "")
+        } else {
+            connector.open(config.host, config.effectivePort, config.username, config.password, config.domain)
         }
-        val ns = conn.authenticate(auth)
         session = ns
         ns
     }
@@ -103,7 +95,9 @@ class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeout
         NtStatus.STATUS_OBJECT_NAME_NOT_FOUND, NtStatus.STATUS_OBJECT_PATH_NOT_FOUND -> "不存在"
         NtStatus.STATUS_OBJECT_NAME_COLLISION -> "已存在"
         NtStatus.STATUS_BAD_NETWORK_NAME -> "共享名不存在"
-        NtStatus.STATUS_SHARING_VIOLATION -> "文件被占用"
+        NtStatus.STATUS_SHARING_VIOLATION -> "文件正被其他程序占用"
+        NtStatus.STATUS_CANNOT_DELETE -> "文件为只读或正在使用，无法删除"
+        NtStatus.STATUS_DISK_FULL -> "空间不足"
         NtStatus.STATUS_DIRECTORY_NOT_EMPTY -> "目录非空"
         else -> s.name
     }
@@ -113,7 +107,14 @@ class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeout
     override fun list(path: String, onChunk: ((List<FileEntry>) -> Unit)?): List<FileEntry> = io("列出 $path") {
         val l = loc(path)
         if (l == null) {
-            if (shares.isEmpty()) throw FsException("请在服务器设置中填写共享名（多个用逗号分隔）")
+            if (shares.isEmpty()) {
+                // No shares configured: enumerate them (SRVSVC NetShareEnum) like Explorer does.
+                val found = com.ghostpanter.files.core.lan.SmbShares.userVisible(
+                    com.ghostpanter.files.core.lan.SmbShares.enumerate(session())
+                )
+                if (found.isEmpty()) throw FsException("服务器没有可浏览的共享，请在服务器设置中填写共享名")
+                return@io found.map { FileEntry("/${it.name}", it.name, true, 0, 0) }
+            }
             return@io shareRoots()
         }
         val sh = share(l.share)
@@ -210,7 +211,38 @@ class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeout
     override fun delete(path: String, recursive: Boolean) = io("删除 $path") {
         val l = requireFile(path)
         val sh = share(l.share)
-        if (sh.folderExists(l.path)) sh.rmdir(l.path, recursive) else if (sh.fileExists(l.path)) sh.rm(l.path)
+        val info = try {
+            sh.getFileInformation(l.path)
+        } catch (e: SMBApiException) {
+            if (e.status == NtStatus.STATUS_OBJECT_NAME_NOT_FOUND || e.status == NtStatus.STATUS_OBJECT_PATH_NOT_FOUND ||
+                e.status == NtStatus.STATUS_DELETE_PENDING) return@io
+            throw e
+        }
+        if (info.standardInformation.isDirectory) {
+            sh.rmdir(l.path, recursive)
+            return@io
+        }
+        try {
+            sh.rm(l.path)
+        } catch (e: SMBApiException) {
+            // Read-only attribute (common on files copied from CDs/phones to Windows): clear it and retry once.
+            if (e.status != NtStatus.STATUS_CANNOT_DELETE && e.status != NtStatus.STATUS_ACCESS_DENIED) throw e
+            val attrs = info.basicInformation.fileAttributes
+            if (attrs and FileAttributes.FILE_ATTRIBUTE_READONLY.value == 0L) throw e
+            sh.openFile(
+                l.path, EnumSet.of(AccessMask.FILE_WRITE_ATTRIBUTES, AccessMask.FILE_READ_ATTRIBUTES), null, SMB2ShareAccess.ALL,
+                SMB2CreateDisposition.FILE_OPEN, EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE),
+            ).use { f ->
+                val b = info.basicInformation
+                f.setFileInformation(
+                    com.hierynomus.msfscc.fileinformation.FileBasicInformation(
+                        b.creationTime, b.lastAccessTime, b.lastWriteTime, b.changeTime,
+                        (attrs and FileAttributes.FILE_ATTRIBUTE_READONLY.value.inv()).let { if (it == 0L) FileAttributes.FILE_ATTRIBUTE_NORMAL.value else it },
+                    )
+                )
+            }
+            sh.rm(l.path)
+        }
     }
 
     override fun rename(from: String, to: String) = io("移动 $from") {
@@ -255,7 +287,7 @@ class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeout
 
     override fun close() {
         reset()
-        runCatching { client.close() }
+        runCatching { connector.close() }
     }
 
     private class SmbInput(private val f: File, private var pos: Long, private val chunk: Int) : InputStream() {

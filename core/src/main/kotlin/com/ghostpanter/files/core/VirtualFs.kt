@@ -37,7 +37,7 @@ enum class Capability {
     REMOTE,
 }
 
-class FsException(message: String, cause: Throwable? = null) : IOException(message, cause)
+open class FsException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
 /**
  * Blocking file-system abstraction. Every call may block on I/O and must be

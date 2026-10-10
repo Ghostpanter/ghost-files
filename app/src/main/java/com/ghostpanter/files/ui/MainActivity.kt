@@ -149,15 +149,3 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_SHOW_TRANSFERS = "show_transfers"
     }
 }
-
-@Composable
-fun GhostTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    val ctx = LocalContext.current
-    val scheme = when {
-        Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
-        dark -> darkColorScheme(primary = Color(0xFF7FB2FF), secondary = Color(0xFFFFC94D))
-        else -> lightColorScheme(primary = Color(0xFF2F5FB3), secondary = Color(0xFFB07A00))
-    }
-    MaterialTheme(colorScheme = scheme, content = content)
-}

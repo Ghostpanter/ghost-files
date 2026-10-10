@@ -111,15 +111,22 @@ private fun JobCard(vm: MainViewModel, j: JobSnapshot) {
                     (if (j.bytesPerSec > 0) " · ${formatSize(j.bytesPerSec)}/s" else "") +
                     (if (j.retries > 0) t(" · 重试 ${j.retries}", " · retries ${j.retries}") else "") +
                     (if (j.serverSideFiles > 0) t(" · 服务器端 ${j.serverSideFiles}", " · server-side ${j.serverSideFiles}") else "") +
-                    (if (j.skippedFiles > 0) t(" · 跳过 ${j.skippedFiles}", " · skipped ${j.skippedFiles}") else ""),
+                    (if (j.skippedFiles > 0) t(" · 跳过 ${j.skippedFiles}", " · skipped ${j.skippedFiles}") else "") +
+                    (if (j.keptSources > 0) t(" · 源未删除 ${j.keptSources}", " · sources kept ${j.keptSources}") else ""),
                 fontSize = 12.sp,
             )
             j.currentName?.let {
                 Text("$it  ${formatSize(j.currentDone)} / ${formatSize(j.currentSize)}", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.outline)
             }
+            // While running, show why the last retry happened so a "stuck at 100 %" job explains itself.
+            if (!j.state.finished && j.lastError != null) {
+                Text(t("最近错误：", "Last error: ") + j.lastError, fontSize = 11.sp, color = MaterialTheme.colorScheme.error, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
             j.error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
-            if (expanded && j.failures.isNotEmpty()) {
-                j.failures.take(50).forEach { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.error) }
+            if (j.failures.isNotEmpty()) {
+                val shown = if (expanded) j.failures.take(50) else j.failures.take(2)
+                shown.forEach { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.error, maxLines = if (expanded) 4 else 2, overflow = TextOverflow.Ellipsis) }
+                if (!expanded && j.failures.size > 2) Text(t("点按查看全部 ${j.failures.size} 条", "Tap to show all ${j.failures.size}"), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
             }
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 when {

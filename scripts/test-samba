@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Starts a throw-away Samba on 127.0.0.1:4445 and runs the SMB integration tests against it
+# (share enumeration, SmbFs contract, > 2 GiB SMB -> local move). Needs smbd + smbpasswd and sudo.
+set -euo pipefail
+D=${SMB_TEST_DIR:-/tmp/gf-smbtest}
+PASS=secret123
+mkdir -p "$D"/{run,lock,state,cache,private,ncalrpc,public,media,secret}
+cat > "$D/smb.conf" <<CONF
+[global]
+  smb ports = 4445
+  bind interfaces only = yes
+  interfaces = lo
+  pid directory = $D/run
+  lock directory = $D/lock
+  state directory = $D/state
+  cache directory = $D/cache
+  private dir = $D/private
+  ncalrpc dir = $D/ncalrpc
+  log file = $D/log.%m
+  map to guest = Bad User
+  guest account = $(id -un)
+  server role = standalone server
+  disable netbios = yes
+  server min protocol = SMB2_02
+[public]
+  path = $D/public
+  guest ok = yes
+  read only = no
+  force user = $(id -un)
+  comment = Public files
+[media]
+  path = $D/media
+  guest ok = yes
+  comment = 媒体
+[secret]
+  path = $D/secret
+  valid users = $(id -un)
+  read only = no
+[hidden\$]
+  path = $D/public
+CONF
+printf '%s\n%s\n' "$PASS" "$PASS" | sudo smbpasswd -c "$D/smb.conf" -s -a "$(id -un)" >/dev/null
+sudo smbd -F --no-process-group -s "$D/smb.conf" & PID=$!
+trap 'sudo kill $PID 2>/dev/null || true' EXIT
+sleep 2
+GF_SMB_PORT=4445 GF_SMB_PUBLIC_DIR="$D/public" GF_SMB_PASSWORD="$PASS" GF_SMB_BIG=${GF_SMB_BIG:-1} \
+  ./gradlew :core:test --tests '*SmbFsTest*' --no-build-cache

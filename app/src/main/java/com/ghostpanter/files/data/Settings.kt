@@ -7,23 +7,31 @@ import androidx.compose.runtime.setValue
 
 enum class SortBy { NAME, SIZE, TIME, TYPE }
 
-class Settings(context: Context) {
+/** The view options the file panes need (implemented by [Settings], faked in screenshot tests). */
+interface ViewPrefs {
+    val showHidden: Boolean
+    val foldersFirst: Boolean
+    val ascending: Boolean
+    val sortBy: SortBy
+}
+
+class Settings(context: Context) : ViewPrefs {
     private val p = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     private fun bool(key: String, def: Boolean) = mutableStateOf(p.getBoolean(key, def))
 
     private val _showHidden = bool("show_hidden", false)
-    var showHidden: Boolean
+    override var showHidden: Boolean
         get() = _showHidden.value
         set(v) { _showHidden.value = v; p.edit().putBoolean("show_hidden", v).apply() }
 
     private val _foldersFirst = bool("folders_first", true)
-    var foldersFirst: Boolean
+    override var foldersFirst: Boolean
         get() = _foldersFirst.value
         set(v) { _foldersFirst.value = v; p.edit().putBoolean("folders_first", v).apply() }
 
     private val _ascending = bool("ascending", true)
-    var ascending: Boolean
+    override var ascending: Boolean
         get() = _ascending.value
         set(v) { _ascending.value = v; p.edit().putBoolean("ascending", v).apply() }
 
@@ -33,9 +41,14 @@ class Settings(context: Context) {
         set(v) { _recycleBin.value = v; p.edit().putBoolean("recycle_bin", v).apply() }
 
     private val _sortBy = mutableStateOf(runCatching { SortBy.valueOf(p.getString("sort_by", "NAME")!!) }.getOrDefault(SortBy.NAME))
-    var sortBy: SortBy
+    override var sortBy: SortBy
         get() = _sortBy.value
         set(v) { _sortBy.value = v; p.edit().putString("sort_by", v.name).apply() }
+
+    private val _paneRatio = mutableStateOf(p.getFloat("pane_ratio", 0.5f))
+    var paneRatio: Float
+        get() = _paneRatio.value
+        set(v) { _paneRatio.value = v; p.edit().putFloat("pane_ratio", v).apply() }
 
     var concurrentJobs: Int
         get() = p.getInt("concurrent_jobs", 2)

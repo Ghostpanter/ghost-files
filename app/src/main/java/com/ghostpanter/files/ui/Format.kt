@@ -17,6 +17,8 @@ fun formatSize(b: Long): String {
 
 private val dateFmt = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
 fun formatTime(ms: Long): String = if (ms <= 0) "" else dateFmt.get()!!.format(Date(ms))
+private val shortFmt = ThreadLocal.withInitial { SimpleDateFormat("yy-MM-dd HH:mm", Locale.getDefault()) }
+fun formatTimeShort(ms: Long): String = if (ms <= 0) "" else shortFmt.get()!!.format(Date(ms))
 
 val TEXT_EXT = setOf(
     "txt", "log", "md", "json", "xml", "yml", "yaml", "ini", "conf", "cfg", "prop", "properties", "sh", "py",

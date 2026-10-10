@@ -38,3 +38,13 @@
 -dontwarn com.google.errorprone.**
 -dontwarn org.jetbrains.annotations.**
 -dontwarn edu.umd.cs.findbugs.**
+
+# SRVSVC share enumeration (rapid7 dcerpc) and its helpers
+-keep class com.rapid7.client.dcerpc.** { *; }
+-dontwarn com.rapid7.**
+-dontwarn com.google.common.**
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn com.google.j2objc.annotations.**
+-dontwarn org.checkerframework.**
+-dontwarn javax.annotation.**
+-dontwarn org.apache.commons.lang3.**

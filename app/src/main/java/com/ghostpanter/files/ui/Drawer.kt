@@ -65,10 +65,10 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
     fun go(fsId: String, path: String? = null) { vm.openFs(fsId, path); close() }
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
-        Text(t("Ghost 文件", "Ghost Files"), fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(16.dp, 8.dp))
+        Text(t("Ghost 文件", "Ghost Files"), fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(16.dp, 6.dp))
         Text("v${BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(horizontal = 16.dp))
 
-        Section(t("存储", "Storage"))
+        Section(t("本地存储", "Local storage"))
         volumes.forEach { v ->
             Column(Modifier.fillMaxWidth().clickable { go(LocalFs.ID, v.path) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -118,7 +118,16 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
             }
         }
 
-        Section(t("局域网 / 远程", "Network"))
+        Section(t("书签", "Bookmarks"))
+        if (vm.g.bookmarks.items.isEmpty()) Text(t("长按文件夹或在“更多”中添加书签", "Long-press a folder → Bookmark"), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(horizontal = 16.dp))
+        vm.g.bookmarks.items.toList().forEach { b ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { Item(Icons.Filled.Bookmark, b.label) { go(b.fsId, b.path) } }
+                IconButton(onClick = { vm.g.bookmarks.remove(b) }) { Icon(Icons.Filled.Close, null) }
+            }
+        }
+
+        Section(t("网络（局域网 / 远程）", "Network"))
         vm.g.servers.servers.forEach { s ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
@@ -127,20 +136,12 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
                 IconButton(onClick = { editServer(s); close() }) { Icon(Icons.Filled.Edit, t("编辑", "Edit")) }
             }
         }
-        Item(Icons.Filled.Add, t("添加服务器（SMB/FTP/SFTP/WebDAV）", "Add server")) { editServer(null); close() }
-
-        Section(t("书签", "Bookmarks"))
-        if (vm.g.bookmarks.items.isEmpty()) Text(t("在菜单中“添加书签”", "Use menu → Bookmark"), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(horizontal = 16.dp))
-        vm.g.bookmarks.items.toList().forEach { b ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { Item(Icons.Filled.Bookmark, b.label) { go(b.fsId, b.path) } }
-                IconButton(onClick = { vm.g.bookmarks.remove(b) }) { Icon(Icons.Filled.Close, null) }
-            }
-        }
+        Item(Icons.Filled.Radar, t("扫描局域网（自动发现共享）", "Scan LAN for shares")) { vm.screen = Screen.LanScan; close() }
+        Item(Icons.Filled.Add, t("手动添加服务器（SMB/FTP/SFTP/WebDAV）", "Add server")) { editServer(null); close() }
 
         Section(t("工具", "Tools"))
-        Item(Icons.Filled.SwapVert, t("传输队列", "Transfers")) { vm.screen = Screen.Transfers; close() }
         Item(Icons.Filled.DeleteSweep, t("回收站", "Recycle bin")) { vm.screen = Screen.Trash; close() }
+        Item(Icons.Filled.SwapVert, t("传输队列", "Transfers")) { vm.screen = Screen.Transfers; close() }
 
         Section(t("设置", "Settings"))
         Toggle(t("显示隐藏文件", "Show hidden files"), settings.showHidden) { settings.showHidden = it }
@@ -173,11 +174,11 @@ private fun Section(title: String) {
 @Composable
 private fun Item(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 11.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null); Spacer(Modifier.width(12.dp))
-        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(14.dp))
+        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
     }
 }
 

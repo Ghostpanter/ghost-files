@@ -231,8 +231,13 @@ class TransferEngine(
                 for ((fs, dir) in dirsToRemove.sortedByDescending { it.second.length }) {
                     runCatching { if (fs.list(dir).isEmpty()) fs.delete(dir, false) }
                 }
-                if (failures.isEmpty()) finish(JobState.COMPLETED, null)
-                else finish(JobState.FAILED, "${failures.size} 个文件失败")
+                val kept = snap.keptSources
+                when {
+                    failures.isEmpty() -> finish(JobState.COMPLETED, null)
+                    failures.size == kept -> finish(JobState.FAILED, "$kept 个文件已复制到目标，但源文件删除失败（未丢失数据）")
+                    kept > 0 -> finish(JobState.FAILED, "${failures.size - kept} 个文件失败；另有 $kept 个已复制但源文件未删除")
+                    else -> finish(JobState.FAILED, "${failures.size} 个文件失败")
+                }
             } catch (e: CancellationException) {
                 finish(JobState.CANCELLED, null)
             } catch (e: Exception) {
@@ -320,7 +325,7 @@ class TransferEngine(
                 .any { m.contains(it) }
         }
 
-        private suspend fun <T> withRetry(what: String, block: () -> T): T {
+        private suspend fun <T> withRetry(what: String, maxRetries: Int = config.maxRetries, block: () -> T): T {
             var attempt = 0
             var backoff = config.initialBackoffMs
             while (true) {
@@ -332,8 +337,8 @@ class TransferEngine(
                 } catch (e: Exception) {
                     if (cancelled) throw CancellationException("cancelled")
                     attempt++
-                    if (attempt > config.maxRetries || isFatal(e)) throw e
-                    update { it.copy(retries = it.retries + 1) }
+                    if (attempt > maxRetries || isFatal(e)) throw e
+                    update { it.copy(retries = it.retries + 1, lastError = "$what: ${e.message ?: e.javaClass.simpleName}") }
                     delay(backoff)
                     backoff = (backoff * 2).coerceAtMost(config.maxBackoffMs)
                 }
@@ -357,7 +362,7 @@ class TransferEngine(
                     ConflictPolicy.OVERWRITE -> Unit
                     ConflictPolicy.RESUME -> when {
                         existing.size == src.size -> {
-                            if (snap.op == TransferOp.MOVE) withRetry("删除源 ${src.path}") { srcFs.delete(src.path, false) }
+                            deleteSourceAfterCopy(srcFs, src)
                             markDone(src, skipped = true); return
                         }
                         existing.size < src.size -> resume = true
@@ -394,9 +399,12 @@ class TransferEngine(
                 awaitNotPaused()
                 try {
                     var offset = 0L
-                    if ((attempt > 0 || resume) && canResume) {
+                    if (attempt > 0 || resume) {
                         val cur = withContext(Dispatchers.IO) { runCatching { dstFs.stat(target)?.size }.getOrNull() } ?: 0L
-                        if (cur in 1..src.size) offset = cur
+                        // A previous attempt already wrote every byte (it failed while closing /
+                        // verifying / later): don't copy again and never "resume" past the end.
+                        if (attempt > 0 && cur == src.size && src.size > 0) break
+                        if (canResume && cur in 1 until src.size) offset = cur
                     }
                     copyOnce(srcFs, src, dstFs, target, offset)
                     break
@@ -407,7 +415,7 @@ class TransferEngine(
                     if (paused) continue // resume later from the written offset, not counted as a failure
                     attempt++
                     if (attempt > config.maxRetries || isFatal(e)) throw e
-                    update { it.copy(retries = it.retries + 1, currentDone = 0) }
+                    update { it.copy(retries = it.retries + 1, lastError = e.message ?: e.javaClass.simpleName) }
                     if (srcFs.has(Capability.REMOTE)) runCatching { srcFs.reset() }
                     if (dstFs.has(Capability.REMOTE)) runCatching { dstFs.reset() }
                     delay(backoff)
@@ -417,8 +425,24 @@ class TransferEngine(
             if (config.preserveTimestamps && src.lastModified > 0) {
                 withContext(Dispatchers.IO) { runCatching { dstFs.setLastModified(target, src.lastModified) } }
             }
-            if (snap.op == TransferOp.MOVE) withRetry("删除源 ${src.path}") { srcFs.delete(src.path, false) }
+            // The data is safely at the destination from here on: a failing source delete must
+            // never send the file through the copy loop again.
+            deleteSourceAfterCopy(srcFs, src)
             markDone(src)
+        }
+
+        /** MOVE only: removes the source of a verified copy; failures are reported, not retried as transfers. */
+        private suspend fun deleteSourceAfterCopy(srcFs: VirtualFs, src: FileEntry) {
+            if (snap.op != TransferOp.MOVE) return
+            try {
+                withRetry("删除源文件 ${src.name}", maxRetries = 2) { srcFs.delete(src.path, false) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val why = e.message ?: e.javaClass.simpleName
+                failures.add("${src.path}: 已复制，但删除源文件失败：$why")
+                update { it.copy(keptSources = it.keptSources + 1, failures = failures.toList(), lastError = "已复制，但删除源文件失败：$why") }
+            }
         }
 
         private fun markDone(src: FileEntry, skipped: Boolean = false) {
@@ -436,14 +460,19 @@ class TransferEngine(
             val g = StreamGuard()
             guard = g
             val lastProgress = AtomicLong(clock())
+            // After the last byte, closing can legitimately take long (server flush, Android's
+            // MediaProvider scanning a multi-GB video on close): allow much more time there.
+            val finishing = java.util.concurrent.atomic.AtomicBoolean(false)
             val watchdog = scope.launch {
                 while (isActive) {
                     delay(1000)
-                    if (clock() - lastProgress.get() > config.stallTimeoutMs) { g.abort(); break }
+                    val limit = if (finishing.get()) config.stallTimeoutMs * 8 else config.stallTimeoutMs
+                    if (clock() - lastProgress.get() > limit) { g.abort(); break }
                 }
             }
             try {
                 withContext(Dispatchers.IO) {
+                    require(offset in 0..src.size.coerceAtLeast(0)) { "bad resume offset $offset for size ${src.size}" }
                     val input = g.add(srcFs.openRead(src.path, offset))
                     lastProgress.set(clock())
                     val output = g.add(dstFs.openWrite(target, offset, src.size))
@@ -463,13 +492,19 @@ class TransferEngine(
                         update(force = false) { it.copy(currentDone = done, doneBytes = completedBytes + done) }
                     }
                     // Commit: close output first (flush / server confirmation), errors propagate.
+                    finishing.set(true)
+                    lastProgress.set(clock())
                     g.forget(output)
                     output.close()
                     g.forget(input)
                     runCatching { input.close() }
                     if (src.size >= 0) {
                         val actual = runCatching { dstFs.stat(target)?.size }.getOrNull()
-                        if (actual != null && actual != src.size) throw FsException("大小校验失败: 期望 ${src.size}，实际 $actual")
+                        if (actual != null && actual != src.size) {
+                            // The source may have changed while copying: accept it if the source now matches.
+                            val now = runCatching { srcFs.stat(src.path)?.size }.getOrNull()
+                            if (now != actual) throw FsException("大小校验失败: 期望 ${src.size}，实际 $actual")
+                        }
                     }
                 }
             } finally {

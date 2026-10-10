@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -24,6 +23,7 @@ import com.ghostpanter.files.core.transfer.JobState
 import com.ghostpanter.files.core.transfer.Loc
 import com.ghostpanter.files.core.transfer.TransferOp
 import com.ghostpanter.files.data.Bookmark
+import com.ghostpanter.files.data.ViewPrefs
 import com.ghostpanter.files.fs.FsManager
 import com.ghostpanter.files.t
 import com.ghostpanter.files.transfer.TransferService
@@ -37,34 +37,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class TabState(fsId: String, path: String) {
-    var fsId by mutableStateOf(fsId)
-    var path by mutableStateOf(path)
-    var entries by mutableStateOf<List<FileEntry>>(emptyList())
-    var loading by mutableStateOf(false)
-    var error by mutableStateOf<String?>(null)
-    var selected by mutableStateOf<Set<String>>(emptySet())
-    var filter by mutableStateOf("")
-    var highlight by mutableStateOf<String?>(null)
-    val history = ArrayDeque<Pair<String, String>>()
-    val scroll = HashMap<String, Pair<Int, Int>>()
-    var listState by mutableStateOf(LazyListState())
-    var loadJob: Job? = null
-
-    val title: String get() = VPath.name(path).ifEmpty { "/" }
-    val selecting: Boolean get() = selected.isNotEmpty()
-    fun selectedEntries() = entries.filter { it.path in selected }
-}
-
-class PaneState(val index: Int) {
-    val tabs = mutableStateListOf<TabState>()
-    var activeTab by mutableIntStateOf(0)
-    val tab: TabState get() = tabs[activeTab.coerceIn(0, tabs.size - 1)]
-}
-
 data class Clip(val op: TransferOp, val fsId: String, val entries: List<FileEntry>)
 
-data class PendingTransfer(val op: TransferOp, val sources: List<Loc>, val dest: Loc, val conflicts: List<String>)
+data class PendingTransfer(
+    val op: TransferOp,
+    val sources: List<Loc>,
+    val dest: Loc,
+    val destLabel: String,
+    val names: List<String>,
+    val conflicts: List<String>,
+    val checking: Boolean = true,
+)
 
 sealed interface Screen {
     data object Main : Screen
@@ -74,6 +57,7 @@ sealed interface Screen {
     data class Image(val fsId: String, val path: String, val siblings: List<String>) : Screen
     data class Apk(val file: File, val label: String) : Screen
     data class Search(val fsId: String, val root: String) : Screen
+    data object LanScan : Screen
 }
 
 sealed interface UiEvent {
@@ -83,11 +67,15 @@ sealed interface UiEvent {
     data object RequestAllFiles : UiEvent
 }
 
-class MainViewModel(app: Application) : AndroidViewModel(app) {
+class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     val g = GhostApp.graph
     val fsm: FsManager get() = g.fs
-    val panes = listOf(PaneState(0), PaneState(1))
-    var activePane by mutableIntStateOf(0)
+    override val panes = listOf(PaneState(0), PaneState(1))
+    override var activePane by mutableIntStateOf(0)
+    override val prefs: ViewPrefs get() = g.settings
+    var dialog by mutableStateOf<DialogState?>(null)
+    var menu by mutableStateOf<ActionMenu?>(null)
+    var pathJump by mutableStateOf<PaneState?>(null)
     var clip by mutableStateOf<Clip?>(null)
     var screen by mutableStateOf<Screen>(Screen.Main)
     var pendingTransfer by mutableStateOf<PendingTransfer?>(null)
@@ -96,6 +84,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 16)
     val events: SharedFlow<UiEvent> = _events
+
+    val lan by lazy { com.ghostpanter.files.lan.LanScanner(getApplication(), viewModelScope) }
 
     val trash: RecycleBin by lazy { RecycleBin(fsm.local, fsm.storageRoot + "/.GhostTrash") }
 
@@ -139,7 +129,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (push && (tab.fsId != fsId || tab.path != path)) {
             tab.history.addLast(tab.fsId to tab.path)
             if (tab.history.size > 100) tab.history.removeFirst()
+            tab.forward.clear()
         }
+        tab.multiSelect = false
         tab.scroll[tab.fsId + tab.path] = tab.listState.firstVisibleItemIndex to tab.listState.firstVisibleItemScrollOffset
         val oldPath = tab.path
         tab.fsId = fsId
@@ -199,9 +191,68 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun back(tab: TabState): Boolean {
         val prev = tab.history.removeLastOrNull() ?: return up(tab)
+        tab.forward.addLast(tab.fsId to tab.path)
         navigate(tab, prev.first, prev.second, push = false)
         return true
     }
+
+    fun forward(tab: TabState): Boolean {
+        val next = tab.forward.removeLastOrNull() ?: return false
+        tab.history.addLast(tab.fsId to tab.path)
+        navigate(tab, next.first, next.second, push = false)
+        return true
+    }
+
+    /** MT "同步": the other pane jumps to the directory shown in [p]. */
+    fun syncOther(p: PaneState) {
+        val src = p.tab
+        navigate(other(p).tab, src.fsId, src.path)
+        toast(t("另一窗口已同步到此目录", "Other pane synced"))
+    }
+
+    /** MT "交换窗口": swaps the tab stacks of the two panes. */
+    fun swapPanes() {
+        val a = panes[0]; val b = panes[1]
+        val ta = a.tabs.toList(); val tb = b.tabs.toList()
+        val ia = a.activeTab; val ib = b.activeTab
+        a.tabs.clear(); a.tabs.addAll(tb); a.activeTab = ib
+        b.tabs.clear(); b.tabs.addAll(ta); b.activeTab = ia
+        saveTabs()
+    }
+
+    // ---------------------------------------------------------------- PaneHost
+
+    override fun fsLabel(fsId: String) = fsm.label(fsId)
+
+    override fun onEntryClick(pane: PaneState, e: FileEntry) {
+        activePane = pane.index
+        val tab = pane.tab
+        if (tab.selecting) toggle(tab, e) else openEntry(tab, e)
+    }
+
+    override fun onEntryLongPress(pane: PaneState, e: FileEntry) {
+        activePane = pane.index
+        val tab = pane.tab
+        val targets = if (e.path in tab.selected) tab.selectedEntries() else listOf(e)
+        menu = buildEntryMenu(pane, targets)
+    }
+
+    override fun onEntrySwipe(pane: PaneState, e: FileEntry) {
+        activePane = pane.index
+        pane.tab.multiSelect = true
+        toggle(pane.tab, e)
+    }
+
+    override fun navigateTo(pane: PaneState, path: String) {
+        activePane = pane.index
+        navigate(pane.tab, pane.tab.fsId, path)
+    }
+
+    override fun onPathLongPress(pane: PaneState) { activePane = pane.index; pathJump = pane }
+
+    override fun selectTab(pane: PaneState, i: Int) { pane.activeTab = i; activePane = pane.index; saveTabs() }
+
+    override fun reload(tab: TabState) = refresh(tab)
 
     fun newTab(p: PaneState) {
         val cur = p.tab
@@ -210,7 +261,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         saveTabs()
     }
 
-    fun closeTab(p: PaneState, i: Int) {
+    override fun closeTab(pane: PaneState, i: Int) {
+        val p = pane
         if (p.tabs.size <= 1) return
         p.tabs.removeAt(i)
         p.activeTab = p.activeTab.coerceIn(0, p.tabs.size - 1)
@@ -234,25 +286,39 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun invertSelection(tab: TabState, visible: List<FileEntry>) {
         tab.selected = visible.map { it.path }.filterNot { it in tab.selected }.toSet()
     }
-    fun clearSelection(tab: TabState) { tab.selected = emptySet() }
+    fun clearSelection(tab: TabState) { tab.selected = emptySet(); tab.multiSelect = false }
+
+    /** MT "类选": adds every visible entry whose type (extension / folder) matches something already selected. */
+    fun selectSameType(tab: TabState, visible: List<FileEntry>) {
+        val sel = tab.selectedEntries()
+        if (sel.isEmpty()) { toast(t("先选择一个文件作为类型样本", "Select a sample file first")); return }
+        val dirs = sel.any { it.isDirectory }
+        val exts = sel.filter { !it.isDirectory }.map { it.extension }.toSet()
+        tab.selected = tab.selected + visible.filter { if (it.isDirectory) dirs else it.extension in exts }.map { it.path }
+    }
 
     // ---------------------------------------------------------------- transfers
 
     /** MT style: copy/move selection of [p] into the directory shown in the other pane. */
-    fun transferToOther(p: PaneState, op: TransferOp) {
+    fun transferToOther(p: PaneState, op: TransferOp, items: List<FileEntry> = p.tab.selectedEntries()) {
         val src = p.tab
         val dst = other(p).tab
-        val items = src.selectedEntries()
-        if (items.isEmpty()) return
+        if (items.isEmpty()) { toast(t("未选择文件", "Nothing selected")); return }
+        if (src.fsId == dst.fsId && VPath.normalize(src.path) == VPath.normalize(dst.path)) {
+            toast(t("两个窗口是同一目录，请先在另一窗口打开目标目录", "Both panes show the same folder")); return
+        }
+        if (src.fsId == dst.fsId && items.any { it.isDirectory && VPath.isSameOrDescendant(it.path, dst.path) }) {
+            toast(t("不能复制/移动到自身的子目录", "Cannot copy into itself")); return
+        }
         startTransfer(op, src.fsId, items, dst.fsId, dst.path)
-        src.selected = emptySet()
+        clearSelection(src)
     }
 
     fun setClip(tab: TabState, op: TransferOp) {
         val items = tab.selectedEntries()
         if (items.isEmpty()) return
         clip = Clip(op, tab.fsId, items)
-        tab.selected = emptySet()
+        clearSelection(tab)
         toast(t("已${if (op == TransferOp.COPY) "复制" else "剪切"} ${items.size} 项，到目标目录点粘贴", "${items.size} item(s) on clipboard"))
     }
 
@@ -265,13 +331,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun startTransfer(op: TransferOp, srcFs: String, items: List<FileEntry>, dstFs: String, dstPath: String) {
         val sources = items.map { Loc(srcFs, it.path) }
         val dest = Loc(dstFs, dstPath)
+        val sameDir = srcFs == dstFs && items.all { VPath.parent(it.path) == VPath.normalize(dstPath) }
+        if (sameDir) { enqueue(op, sources, dest, ConflictPolicy.RENAME); return }
+        val label = fsm.label(dstFs) + "  " + dstPath
+        val names = items.map { it.name }
+        // Show the confirm dialog at once (MT style, with the target path); conflicts fill in when known.
+        pendingTransfer = PendingTransfer(op, sources, dest, label, names, emptyList())
         viewModelScope.launch {
-            val existing = runCatching { withContext(Dispatchers.IO) { fsm.get(dstFs).list(dstPath).map { it.name }.toSet() } }.getOrDefault(emptySet())
-            val conflicts = items.map { it.name }.filter { it in existing }
-            val sameDir = srcFs == dstFs && items.all { VPath.parent(it.path) == VPath.normalize(dstPath) }
-            if (conflicts.isNotEmpty() && !sameDir) {
-                pendingTransfer = PendingTransfer(op, sources, dest, conflicts)
-            } else enqueue(op, sources, dest, ConflictPolicy.RENAME)
+            val existing = runCatching {
+                withContext(Dispatchers.IO) {
+                    // Only stat the names involved: listing a huge remote dir just for this is wasteful.
+                    val fs = fsm.get(dstFs)
+                    if (names.size <= 64) names.filter { fs.stat(VPath.join(dstPath, it)) != null }.toSet()
+                    else fs.list(dstPath).map { it.name }.toSet()
+                }
+            }.getOrDefault(emptySet())
+            val conflicts = names.filter { it in existing }
+            val cur = pendingTransfer
+            if (cur != null && cur.sources == sources && cur.dest == dest) pendingTransfer = cur.copy(conflicts = conflicts, checking = false)
         }
     }
 

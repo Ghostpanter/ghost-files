@@ -15,6 +15,11 @@ dependencies {
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     // LAN protocols
     api("com.hierynomus:smbj:0.13.0")
+    // SRVSVC NetShareEnum (share auto-detection) on top of smbj
+    api("com.rapid7.client:dcerpc:0.12.13") {
+        exclude(group = "com.hierynomus", module = "smbj")
+        exclude(group = "org.bouncycastle")
+    }
     api("commons-net:commons-net:3.11.1")
     api("com.hierynomus:sshj:0.39.0")
     api("com.squareup.okhttp3:okhttp:4.12.0")
@@ -35,6 +40,9 @@ dependencies {
 tasks.test {
     useJUnit()
     maxHeapSize = "768m"
+    // SMB integration tests (scripts/test-samba) are configured through these variables.
+    listOf("GF_SMB_PORT", "GF_SMB_PUBLIC_DIR", "GF_SMB_PASSWORD", "GF_SMB_BIG").forEach { k -> System.getenv(k)?.let { environment(k, it) } }
+    inputs.property("smbTestPort", System.getenv("GF_SMB_PORT") ?: "")
     testLogging {
         events("passed", "failed", "skipped")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL

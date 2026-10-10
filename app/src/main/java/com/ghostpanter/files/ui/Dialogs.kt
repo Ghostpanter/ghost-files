@@ -2,6 +2,7 @@ package com.ghostpanter.files.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -66,8 +67,9 @@ fun EntryDialogs(vm: MainViewModel, d: DialogState, dismiss: () -> Unit) {
 }
 
 @Composable
-fun NameDialog(title: String, initial: String, dismiss: () -> Unit, onOk: (String) -> Unit) {
-    var text by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(initial, androidx.compose.ui.text.TextRange(0, initial.substringBeforeLast('.').ifEmpty { initial }.length))) }
+fun NameDialog(title: String, initial: String, dismiss: () -> Unit, selectAll: Boolean = false, onOk: (String) -> Unit) {
+    val selEnd = if (selectAll) initial.length else initial.substringBeforeLast('.').ifEmpty { initial }.length
+    var text by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(initial, androidx.compose.ui.text.TextRange(0, selEnd))) }
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     AlertDialog(
@@ -185,30 +187,6 @@ private fun ChmodDialog(vm: MainViewModel, tab: TabState, e: FileEntry, dismiss:
 }
 
 @Composable
-fun ConflictDialog(p: PendingTransfer, onChoose: (ConflictPolicy?) -> Unit) {
-    AlertDialog(
-        onDismissRequest = { onChoose(null) },
-        title = { Text(t("目标已存在 ${p.conflicts.size} 项", "${p.conflicts.size} item(s) already exist")) },
-        text = {
-            Column {
-                Text(p.conflicts.take(5).joinToString("\n") + if (p.conflicts.size > 5) "\n…" else "", fontSize = 13.sp)
-                Spacer(Modifier.height(8.dp))
-                for ((pol, label) in listOf(
-                    ConflictPolicy.RESUME to t("续传 / 跳过相同（推荐）", "Resume / skip identical (recommended)"),
-                    ConflictPolicy.OVERWRITE to t("全部覆盖", "Overwrite all"),
-                    ConflictPolicy.SKIP to t("全部跳过", "Skip all"),
-                    ConflictPolicy.RENAME to t("保留两者（自动重命名）", "Keep both (rename)"),
-                )) {
-                    OutlinedButton(onClick = { onChoose(pol) }, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) { Text(label) }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = { onChoose(null) }) { Text(t("取消", "Cancel")) } },
-    )
-}
-
-@Composable
 fun ExtractDialog(e: FileEntry, onDismiss: () -> Unit, onExtract: (Boolean, String?) -> Unit) {
     var pw by remember { mutableStateOf("") }
     AlertDialog(
@@ -266,7 +244,9 @@ fun ServerEditor(vm: MainViewModel, existing: ServerConfig?, dismiss: () -> Unit
     var key by remember { mutableStateOf(existing?.privateKey ?: "") }
     var testing by remember { mutableStateOf<String?>(null) }
     var protoMenu by remember { mutableStateOf(false) }
+    var detected by remember { mutableStateOf<List<String>?>(null) }
     val scope = rememberCoroutineScope()
+    val isNew = existing == null || vm.g.servers.get(existing.id) == null
 
     fun build() = ServerConfig(
         id = existing?.id ?: UUID.randomUUID().toString(),
@@ -277,7 +257,7 @@ fun ServerEditor(vm: MainViewModel, existing: ServerConfig?, dismiss: () -> Unit
 
     AlertDialog(
         onDismissRequest = dismiss,
-        title = { Text(if (existing == null) t("添加服务器", "Add server") else t("编辑服务器", "Edit server")) },
+        title = { Text(if (isNew) t("添加服务器", "Add server") else t("编辑服务器", "Edit server")) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 ExposedDropdownMenuBox(expanded = protoMenu, onExpandedChange = { protoMenu = it }) {
@@ -315,6 +295,35 @@ fun ServerEditor(vm: MainViewModel, existing: ServerConfig?, dismiss: () -> Unit
                         })
                     },
                 )
+                if (protocol == Protocol.SMB) {
+                    TextButton(enabled = host.isNotBlank(), onClick = {
+                        testing = t("正在读取共享列表…", "Listing shares…")
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    com.ghostpanter.files.core.lan.SmbShares.list(
+                                        host.trim(), port.toIntOrNull()?.takeIf { it > 0 } ?: 445,
+                                        if (anonymous) "" else user.trim(), if (anonymous) "" else pass, domain.trim(),
+                                    ).visible.map { it.name }
+                                }
+                            }
+                            r.onSuccess { detected = it; testing = t("发现 ${it.size} 个共享，点按添加", "${it.size} shares found") }
+                                .onFailure { testing = t("失败: ", "Failed: ") + (it.message ?: it.javaClass.simpleName) }
+                        }
+                    }) { Text(t("自动识别共享名", "Detect shares")) }
+                    detected?.let { list ->
+                        Row(Modifier.horizontalScroll(rememberScrollState())) {
+                            list.forEach { name ->
+                                val cur = path.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                                FilterChip(
+                                    selected = name in cur,
+                                    onClick = { path = (if (name in cur) cur - name else cur + name).joinToString(",") },
+                                    label = { Text(name) }, modifier = Modifier.padding(end = 4.dp),
+                                )
+                            }
+                        }
+                    }
+                }
                 when (protocol) {
                     Protocol.SMB -> OutlinedTextField(domain, { domain = it }, label = { Text(t("域（可选）", "Domain (optional)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Protocol.FTP, Protocol.FTPS -> {
@@ -359,7 +368,7 @@ fun ServerEditor(vm: MainViewModel, existing: ServerConfig?, dismiss: () -> Unit
         },
         dismissButton = {
             Row {
-                if (existing != null) TextButton(onClick = {
+                if (existing != null && !isNew) TextButton(onClick = {
                     vm.g.servers.remove(existing.id); vm.fsm.invalidate(existing.fsId); dismiss()
                 }) { Text(t("删除", "Delete"), color = MaterialTheme.colorScheme.error) }
                 TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) }

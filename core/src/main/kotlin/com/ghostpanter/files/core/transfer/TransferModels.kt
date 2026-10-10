@@ -43,6 +43,10 @@ data class JobSnapshot(
     val serverSideFiles: Int = 0,
     val error: String? = null,
     val failures: List<String> = emptyList(),
+    /** Why the last retry happened (shown on the queue card while retrying). */
+    val lastError: String? = null,
+    /** Files whose data was copied but whose source could not be deleted (MOVE only). */
+    val keptSources: Int = 0,
 ) {
     val progress: Float get() = when {
         totalBytes > 0 -> (doneBytes.toDouble() / totalBytes).toFloat().coerceIn(0f, 1f)
