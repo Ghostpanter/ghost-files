@@ -106,3 +106,12 @@ interface VirtualFs : Closeable {
 interface Abortable {
     fun abort()
 }
+
+/**
+ * A stream that heals itself (reconnect + resume at the same offset). [onRecovery] gets the cause
+ * when a reconnect starts and null once it succeeded; the engine counts these separately from
+ * job retries and treats them as activity for its watchdog.
+ */
+interface RecoveringStream {
+    var onRecovery: ((cause: Throwable?, attempt: Int) -> Unit)?
+}

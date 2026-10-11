@@ -33,6 +33,10 @@ class SmbConnector(timeouts: NetTimeouts = NetTimeouts()) : Closeable {
         .withSocketFactory(KeepAliveSocketFactory(t.connectMs))
         .withMultiProtocolNegotiate(true)
         .withDfsEnabled(false)
+        // Sign / encrypt only when the server demands it (both cost a lot of CPU on routers/phones).
+        .withSigningRequired(false)
+        .withEncryptData(false)
+        .withBufferSize(1024 * 1024)
 
     private val modern = SMBClient(builder(timeouts).build())
     private val legacy by lazy { SMBClient(builder(timeouts).withDialects(SMB2Dialect.SMB_2_1, SMB2Dialect.SMB_2_0_2).build()) }
@@ -42,7 +46,19 @@ class SmbConnector(timeouts: NetTimeouts = NetTimeouts()) : Closeable {
 
     fun open(host: String, port: Int, username: String, password: String, domain: String): Session {
         if (username.isNotEmpty()) {
-            val s = modern.connect(host, port).authenticate(AuthenticationContext(username, password.toCharArray(), domain.ifEmpty { null }))
+            val ctx = { AuthenticationContext(username, password.toCharArray(), domain.ifEmpty { null }) }
+            val s = try {
+                modern.connect(host, port).authenticate(ctx())
+            } catch (e: SMBApiException) {
+                throw e // wrong password etc.: a lower dialect won't help
+            } catch (e: java.net.ConnectException) {
+                throw e
+            } catch (e: java.net.UnknownHostException) {
+                throw e
+            } catch (e: Exception) {
+                // Negotiation / SMB3 key derivation problems on old or embedded servers: retry SMB 2.1/2.0.2.
+                try { legacy.connect(host, port).authenticate(ctx()) } catch (e2: Exception) { e2.addSuppressed(e); throw e2 }
+            }
             lastLogin = SmbLogin.USER
             return s
         }

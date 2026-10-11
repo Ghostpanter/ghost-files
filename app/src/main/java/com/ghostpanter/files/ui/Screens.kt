@@ -110,6 +110,7 @@ private fun JobCard(vm: MainViewModel, j: JobSnapshot) {
                 "${formatSize(j.doneBytes)} / ${formatSize(j.totalBytes)} · ${j.doneFiles}/${j.totalFiles} " + t("个文件", "files") +
                     (if (j.bytesPerSec > 0) " · ${formatSize(j.bytesPerSec)}/s" else "") +
                     (if (j.retries > 0) t(" · 重试 ${j.retries}", " · retries ${j.retries}") else "") +
+                    (if (j.reconnects > 0) t(" · 自动重连 ${j.reconnects}", " · reconnects ${j.reconnects}") else "") +
                     (if (j.serverSideFiles > 0) t(" · 服务器端 ${j.serverSideFiles}", " · server-side ${j.serverSideFiles}") else "") +
                     (if (j.skippedFiles > 0) t(" · 跳过 ${j.skippedFiles}", " · skipped ${j.skippedFiles}") else "") +
                     (if (j.keptSources > 0) t(" · 源未删除 ${j.keptSources}", " · sources kept ${j.keptSources}") else ""),
@@ -170,7 +171,7 @@ private fun JobCard(vm: MainViewModel, j: JobSnapshot) {
 private fun copyJobError(ctx: android.content.Context, j: JobSnapshot) {
     val text = buildString {
         appendLine("Ghost 文件 ${com.ghostpanter.files.BuildConfig.VERSION_NAME} · ${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}")
-        appendLine("${j.title} · ${j.state} · ${j.doneBytes}/${j.totalBytes} B · ${j.doneFiles}/${j.totalFiles} · 重试 ${j.retries}")
+        appendLine("${j.title} · ${j.state} · ${j.doneBytes}/${j.totalBytes} B · ${j.doneFiles}/${j.totalFiles} · 重试 ${j.retries} · 自动重连 ${j.reconnects}")
         j.error?.let { appendLine("错误：$it") }
         if (j.failures.isNotEmpty()) { appendLine("失败文件："); j.failures.forEach { appendLine("  $it") } }
         appendLine()

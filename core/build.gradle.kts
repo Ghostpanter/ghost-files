@@ -41,7 +41,7 @@ tasks.test {
     useJUnit()
     maxHeapSize = "768m"
     // SMB integration tests (scripts/test-samba) are configured through these variables.
-    listOf("GF_SMB_PORT", "GF_SMB_PUBLIC_DIR", "GF_SMB_PASSWORD", "GF_SMB_BIG").forEach { k -> System.getenv(k)?.let { environment(k, it) } }
+    listOf("GF_SMB_PORT", "GF_SMB_PUBLIC_DIR", "GF_SMB_PASSWORD", "GF_SMB_BIG", "GF_SMB_DEBUG").forEach { k -> System.getenv(k)?.let { environment(k, it) } }
     inputs.property("smbTestPort", System.getenv("GF_SMB_PORT") ?: "")
     testLogging {
         events("passed", "failed", "skipped")

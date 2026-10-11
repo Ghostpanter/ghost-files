@@ -23,7 +23,7 @@ class TransferLog(private val dir: File, private val maxBytes: Long = 1_000_000)
                 f.renameTo(old)
             }
             f.appendText(
-                "[${fmt.format(Date())}] job#${job.id} ${job.title} | $what | 已传 ${job.doneBytes}/${job.totalBytes} | 重试 ${job.retries}\n" +
+                "[${fmt.format(Date())}] job#${job.id} ${job.title} | $what | 已传 ${job.doneBytes}/${job.totalBytes} | 重试 ${job.retries} | 自动重连 ${job.reconnects}\n" +
                     ErrorText.stackTrace(e) + "\n",
             )
         }

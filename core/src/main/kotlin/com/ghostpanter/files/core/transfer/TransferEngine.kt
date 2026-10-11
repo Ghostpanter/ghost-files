@@ -6,6 +6,7 @@ import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.Abortable
 import com.ghostpanter.files.core.ErrorText
+import com.ghostpanter.files.core.RecoveringStream
 import com.ghostpanter.files.core.SmbFs
 import com.ghostpanter.files.core.VirtualFs
 import kotlinx.coroutines.CancellationException
@@ -442,6 +443,7 @@ class TransferEngine(
             }
 
             var attempt = 0
+            var lastFailAt = 0L
             var backoff = config.initialBackoffMs
             val canResume = srcFs.has(Capability.RESUME_READ) && dstFs.has(Capability.RESUME_WRITE)
             while (true) {
@@ -463,6 +465,11 @@ class TransferEngine(
                 } catch (e: Exception) {
                     if (cancelled) throw CancellationException("cancelled")
                     if (paused) continue // resume later from the written offset, not counted as a failure
+                    // An attempt that moved the file forward (>= 8 MB) starts the retry budget over:
+                    // only repeated failures without progress may exhaust it.
+                    val reached = snap.currentDone
+                    if (reached - lastFailAt >= 8L * 1024 * 1024) attempt = 0
+                    lastFailAt = reached
                     attempt++
                     if (attempt > config.maxRetries || isFatal(e)) throw e
                     update { it.copy(retries = it.retries + 1) }
@@ -534,6 +541,15 @@ class TransferEngine(
                     lastProgress.set(clock())
                     val output = g.add(dstFs.openWrite(target, offset, src.size))
                     lastProgress.set(clock())
+                    // Self-healing streams: a reconnect is activity (watchdog) and is counted as
+                    // "自动重连", not as a job retry.
+                    for (st in listOf<Any>(input, output)) (st as? RecoveringStream)?.onRecovery = { cause, n ->
+                        lastProgress.set(clock())
+                        if (cause != null) {
+                            update { it.copy(reconnects = it.reconnects + 1) }
+                            recordError("自动重连（第 $n 次）${src.path}", cause, "自动重连：${msg(cause)}")
+                        }
+                    }
                     val buf = ByteArray(config.bufferSize)
                     var done = offset
                     update { it.copy(currentDone = done, doneBytes = completedBytes + done) }

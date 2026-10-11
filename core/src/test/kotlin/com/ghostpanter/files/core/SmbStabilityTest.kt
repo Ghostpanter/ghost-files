@@ -242,4 +242,110 @@ class SmbStabilityTest {
             assertTrue(!File(publicDir, "stab-la/f0.bin").exists())
         }
     }
+
+    // ---- v0.2.2: field log (router SMB on USB disk): reads time out mid-file and at EOF -----------
+
+    private fun copyThrough(proxyPort: Int, path: String, t: NetTimeouts, cfg: TransferConfig = TransferConfig(initialBackoffMs = 50, maxBackoffMs = 100)): Pair<com.ghostpanter.files.core.transfer.JobSnapshot, File> = runBlocking {
+        val src = smb(t, proxyPort)
+        val local = LocalFs()
+        val out = tempDir("chaos")
+        val e = TransferEngine(
+            resolve = { if (it == src.id) src else local }, config = cfg,
+            openDedicated = { if (it == src.id) smb(t, proxyPort, dedicated = true) else null },
+        )
+        val id = e.enqueue(TransferOp.COPY, listOf(Loc(src.id, path)), Loc(local.id, out.path))
+        val s = withTimeout(240_000) { e.await(id) }
+        src.close()
+        s to out
+    }
+
+    /** Responses silently stop on the transfer's connection (no RST): must reconnect fast and resume. */
+    @Test fun blackHoleMidFileRecoversByFastReconnect() {
+        assumeTrue(port != null && publicDir != null)
+        val data = seed("stab-bh", 1, 24_000_000)[0]
+        SmbChaosProxy(port!!, blackHoleAfter = 8_000_000).use { proxy ->
+            val t0 = System.currentTimeMillis()
+            val (s, out) = copyThrough(proxy.port, "/public/stab-bh/f0.bin", NetTimeouts(connectMs = 3_000, readMs = 2_000))
+            val took = System.currentTimeMillis() - t0
+            assertEquals(s.toString(), JobState.COMPLETED, s.state)
+            assertEquals(1, proxy.blackHoled.get())
+            assertEquals("retries: ${s.lastError}", 0, s.retries)
+            assertTrue("reconnects ${s.reconnects}", s.reconnects >= 1)
+            assertTrue("took $took ms", took < 20_000)
+            assertTrue(File(out, "f0.bin").readBytes().contentEquals(data))
+        }
+    }
+
+    /** The disk behind the server stalls READs on every connection for a while. */
+    @Test fun diskStallOnReadsRecoversWithoutJobRetry() {
+        assumeTrue(port != null && publicDir != null)
+        val data = seed("stab-st", 1, 24_000_000)[0]
+        // 25 s: longer than several read deadlines AND than the watchdog window (request 6 s + 15 s).
+        SmbChaosProxy(port!!, stallAfter = 6_000_000, stallReadsMs = 25_000).use { proxy ->
+            val (s, out) = copyThrough(
+                proxy.port, "/public/stab-st/f0.bin", NetTimeouts(connectMs = 3_000, readMs = 2_000),
+                TransferConfig(initialBackoffMs = 50, maxBackoffMs = 100, stallTimeoutMs = 1_000),
+            )
+            assertEquals(s.toString(), JobState.COMPLETED, s.state)
+            assertEquals("retries: ${s.lastError}", 0, s.retries)
+            assertTrue("reconnects ${s.reconnects}", s.reconnects >= 1)
+            assertTrue(File(out, "f0.bin").readBytes().contentEquals(data))
+        }
+    }
+
+    /** Server never answers a READ at/after EOF (field log, 3rd failure at 5205554600/5205554600). */
+    @Test fun noReadIsIssuedAtEndOfFile() {
+        assumeTrue(port != null && publicDir != null)
+        val size = 5 * 1024 * 1024 // exact multiple of the read size
+        val data = seed("stab-eof", 1, size)[0]
+        SmbChaosProxy(port!!, swallowReadAt = size.toLong()).use { proxy ->
+            val t0 = System.currentTimeMillis()
+            val (s, out) = copyThrough(proxy.port, "/public/stab-eof/f0.bin", NetTimeouts(connectMs = 3_000, readMs = 2_000))
+            assertEquals(s.toString(), JobState.COMPLETED, s.state)
+            assertEquals(0, proxy.eofReads.get())
+            assertEquals("retries: ${s.lastError}", 0, s.retries)
+            assertTrue(System.currentTimeMillis() - t0 < 5_000)
+            assertTrue(File(out, "f0.bin").readBytes().contentEquals(data))
+        }
+    }
+
+    /** The exact chain from the device log must be classified as reconnectable. */
+    @Test fun classifierMatchesFieldChain() {
+        val field = com.hierynomus.protocol.transport.TransportException(
+            java.util.concurrent.ExecutionException(
+                com.hierynomus.smbj.common.SMBRuntimeException(java.util.concurrent.TimeoutException("Timeout expired")),
+            ),
+        )
+        assertTrue(SmbFs.isConnectionError(field))
+        assertTrue(SmbFs.isConnectionError(FsException("读取: 连接超时", field)))
+        assertTrue(SmbFs.isConnectionError(com.hierynomus.smbj.common.SMBRuntimeException(java.net.SocketException("Connection reset"))))
+        assertTrue(SmbFs.isConnectionError(com.hierynomus.smbj.common.SMBRuntimeException("Not enough credits (16 available) to hold onto 16")))
+        val status = com.hierynomus.mssmb2.SMBApiException(
+            com.hierynomus.mserref.NtStatus.STATUS_ACCESS_DENIED.value, com.hierynomus.mssmb2.SMB2MessageCommandCode.SMB2_READ, "denied", null,
+        )
+        assertTrue(!SmbFs.isConnectionError(status))
+        assertTrue(ErrorText.describe(field).contains("超时"))
+    }
+
+    /**
+     * Idle connection silently dies (NAT / router / server idle drop, no RST). The SMB2 ECHO
+     * keepalive notices it while idle, so the next listing reconnects at once instead of first
+     * waiting out a request timeout.
+     */
+    @Test fun idleEchoDetectsSilentlyDeadConnection() {
+        assumeTrue(port != null && publicDir != null)
+        SmbChaosProxy(port!!).use { proxy ->
+            val t = NetTimeouts(connectMs = 3_000, readMs = 1_500) // echo every 5 s, request timeout 4.5 s
+            smb(t, proxy.port).use { fs ->
+                fs.list("/public")
+                proxy.blackHoleExisting()
+                Thread.sleep(5_000 * 2 + t.smbReadStallMs + 500)
+                val t0 = System.currentTimeMillis()
+                fs.list("/public")
+                val took = System.currentTimeMillis() - t0
+                assertTrue("list after idle drop took $took ms", took < 2_000)
+                assertTrue(proxy.connections.get() >= 2)
+            }
+        }
+    }
 }

@@ -53,6 +53,9 @@ data class NetTimeouts(
 ) {
     /** Per-request SMB timeout (read/write/transact futures). */
     val smbRequestMs: Long get() = readMs * 3L
+
+    /** A single SMB data read silent this long counts as stalled -> reconnect and resume. */
+    val smbReadStallMs: Long get() = readMs * 2L / 3 // 20 s by default
 }
 
 object RemoteFsFactory {

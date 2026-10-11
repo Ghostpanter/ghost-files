@@ -47,6 +47,8 @@ data class JobSnapshot(
     val lastError: String? = null,
     /** Full cause chain + stack trace of [lastError], for "复制错误". */
     val lastErrorDetail: String? = null,
+    /** Transparent in-stream reconnects (connection dropped / stalled, resumed at the same offset). */
+    val reconnects: Int = 0,
     /** Files whose data was copied but whose source could not be deleted (MOVE only). */
     val keptSources: Int = 0,
 ) {
