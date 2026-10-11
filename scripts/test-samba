@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Starts a throw-away Samba on 127.0.0.1:4445 and runs the SMB integration tests against it
-# (share enumeration, SmbFs contract, > 2 GiB SMB -> local move). Needs smbd + smbpasswd and sudo.
+# (share enumeration, SmbFs contract, > 2 GiB SMB -> local move,
+# connection stability: idle, drops mid-transfer, latency, parallel jobs + browsing). Needs smbd + smbpasswd and sudo.
 set -euo pipefail
 D=${SMB_TEST_DIR:-/tmp/gf-smbtest}
 PASS=secret123
@@ -44,4 +45,4 @@ sudo smbd -F --no-process-group -s "$D/smb.conf" & PID=$!
 trap 'sudo kill $PID 2>/dev/null || true' EXIT
 sleep 2
 GF_SMB_PORT=4445 GF_SMB_PUBLIC_DIR="$D/public" GF_SMB_PASSWORD="$PASS" GF_SMB_BIG=${GF_SMB_BIG:-1} \
-  ./gradlew :core:test --tests '*SmbFsTest*' --no-build-cache
+  ./gradlew :core:test --tests '*SmbFsTest*' --tests '*SmbStabilityTest*' --no-build-cache

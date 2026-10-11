@@ -15,8 +15,15 @@ class AppGraph(val context: Context) {
     val bookmarks = Bookmarks(context)
     val hostKeys = HostKeyPrefs(context)
     val fs = FsManager(context, servers, hostKeys)
+    val transferLog = TransferLog(java.io.File(context.filesDir, "logs"))
     val transfers = TransferEngine(
         resolve = { fs.get(it) },
-        config = TransferConfig(maxConcurrentJobs = settings.concurrentJobs.coerceIn(1, 4)),
+        config = TransferConfig(
+            maxConcurrentJobs = settings.concurrentJobs.coerceIn(1, 4),
+            maxJobsPerRemote = settings.jobsPerServer.coerceIn(1, 4),
+        ),
+        // Every job gets its own SMB/FTP/SFTP/WebDAV connection, never the browsing one.
+        openDedicated = { fs.openDedicated(it) },
+        onError = { job, what, e -> transferLog.log(job, what, e) },
     )
 }

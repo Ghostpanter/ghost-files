@@ -50,7 +50,10 @@ data class NetTimeouts(
     val connectMs: Int = 10_000,
     val readMs: Int = 30_000,
     val keepAliveSec: Int = 15,
-)
+) {
+    /** Per-request SMB timeout (read/write/transact futures). */
+    val smbRequestMs: Long get() = readMs * 3L
+}
 
 object RemoteFsFactory {
     fun create(
@@ -58,8 +61,10 @@ object RemoteFsFactory {
         hostKeys: HostKeyStore,
         timeouts: NetTimeouts = NetTimeouts(),
         sshConfig: (() -> net.schmizz.sshj.Config)? = null,
+        /** True for a connection owned by a single transfer job (closed when the job ends). */
+        dedicated: Boolean = false,
     ): VirtualFs = when (config.protocol) {
-        Protocol.SMB -> SmbFs(config, timeouts)
+        Protocol.SMB -> SmbFs(config, timeouts, dedicated)
         Protocol.FTP, Protocol.FTPS -> FtpFs(config, timeouts)
         Protocol.SFTP -> SftpFs(config, hostKeys, timeouts, sshConfig ?: { net.schmizz.sshj.DefaultConfig() })
         Protocol.WEBDAV, Protocol.WEBDAVS -> WebDavFs(config, timeouts)

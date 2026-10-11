@@ -25,7 +25,12 @@ import java.util.concurrent.TimeUnit
  * listing and transfers (SMB multiplexes requests); a broken connection is
  * dropped and transparently re-established on the next call.
  */
-class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeouts()) : VirtualFs {
+class SmbFs(
+    private val config: ServerConfig,
+    private val timeouts: NetTimeouts = NetTimeouts(),
+    /** Owned by one transfer job: aborting a stream may tear down the whole connection. */
+    private val dedicated: Boolean = false,
+) : VirtualFs {
 
     override val id = config.fsId
     override val displayName = config.name
@@ -40,6 +45,8 @@ class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeout
     override val homePath: String = if (shares.size == 1) "/" + shares[0] else VPath.ROOT
 
     private val connector = SmbConnector(timeouts)
+
+    override val stallHintMs: Long get() = timeouts.smbRequestMs + 15_000
 
     @Volatile private var session: Session? = null
     private val diskShares = ConcurrentHashMap<String, DiskShare>()
@@ -62,6 +69,7 @@ class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeout
     private fun share(name: String): DiskShare = synchronized(lock) {
         val existing = diskShares[name]
         if (existing != null && existing.isConnected && session?.connection?.isConnected == true) return existing
+        diskShares.remove(name)
         val sh = session().connectShare(name) as? DiskShare ?: throw FsException("$name 不是磁盘共享")
         diskShares[name] = sh
         sh
@@ -76,18 +84,32 @@ class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeout
         return Loc(parts[0], if (parts.size > 1) parts[1].replace('/', '\\') else "")
     }
 
-    private inline fun <T> io(what: String, block: () -> T): T {
-        try {
-            return block()
-        } catch (e: SMBApiException) {
-            throw FsException("$what: ${statusText(e.status)}", e)
-        } catch (e: FsException) {
-            throw e
-        } catch (e: Exception) {
-            reset()
-            throw FsException("$what: ${e.message ?: e.javaClass.simpleName}", e)
+    /**
+     * Runs [block]; when the connection turns out to be dead (server idle disconnect, Wi-Fi
+     * hiccup, reset) it reconnects and runs the (idempotent) block once more, so callers and the
+     * transfer engine don't see a failure for a merely stale connection.
+     */
+    private inline fun <T> io(what: String, retryOnDrop: Boolean = true, block: () -> T): T {
+        var first = true
+        while (true) {
+            try {
+                return block()
+            } catch (e: SMBApiException) {
+                if (first && retryOnDrop && isSessionGone(e.status)) { first = false; reset(); continue }
+                throw FsException("$what: ${statusText(e.status)}", e)
+            } catch (e: FsException) {
+                throw e
+            } catch (e: Exception) {
+                val drop = isConnectionError(e)
+                if (drop) reset()
+                if (first && retryOnDrop && drop) { first = false; continue }
+                throw FsException("$what: ${ErrorText.describe(e)}", e)
+            }
         }
     }
+
+    private fun isSessionGone(s: NtStatus) = s == NtStatus.STATUS_NETWORK_SESSION_EXPIRED ||
+        s == NtStatus.STATUS_USER_SESSION_DELETED || s == NtStatus.STATUS_NETWORK_NAME_DELETED
 
     private fun statusText(s: NtStatus): String = when (s) {
         NtStatus.STATUS_ACCESS_DENIED -> "拒绝访问"
@@ -182,7 +204,7 @@ class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeout
             SMB2CreateDisposition.FILE_OPEN, EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE),
         )
         val maxRead = sh.treeConnect.session.connection.negotiatedProtocol.maxReadSize
-        SmbInput(f, offset, maxRead.coerceIn(64 * 1024, 1024 * 1024))
+        SmbInput(f, offset, maxRead.coerceIn(64 * 1024, 1024 * 1024)) { _ -> reopenFile(path, write = false) }
     }
 
     override fun openWrite(path: String, offset: Long, sizeHint: Long): OutputStream = io("写入 $path") {
@@ -195,7 +217,7 @@ class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeout
         )
         if (offset > 0) f.setLength(offset)
         val maxWrite = sh.treeConnect.session.connection.negotiatedProtocol.maxWriteSize
-        SmbOutput(f, offset, maxWrite.coerceIn(64 * 1024, 1024 * 1024))
+        SmbOutput(f, offset, maxWrite.coerceIn(64 * 1024, 1024 * 1024)) { reopenFile(path, write = true) }
     }
 
     override fun mkdirs(path: String) = io("创建目录 $path") {
@@ -290,33 +312,103 @@ class SmbFs(private val config: ServerConfig, timeouts: NetTimeouts = NetTimeout
         runCatching { connector.close() }
     }
 
-    private class SmbInput(private val f: File, private var pos: Long, private val chunk: Int) : InputStream() {
+    /** Re-opens [path] on a fresh connection (after the old one died mid-stream). */
+    private fun reopenFile(path: String, write: Boolean): File {
+        reset()
+        val l = requireFile(path)
+        return share(l.share).openFile(
+            l.path,
+            if (write) EnumSet.of(AccessMask.GENERIC_WRITE, AccessMask.GENERIC_READ) else EnumSet.of(AccessMask.GENERIC_READ),
+            null, SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, EnumSet.of(SMB2CreateOptions.FILE_NON_DIRECTORY_FILE),
+        )
+    }
+
+    /** Tears the connection down so blocked requests fail at once (only for dedicated instances). */
+    private fun abortConnection() {
+        if (dedicated) reset()
+    }
+
+    /**
+     * Sequential reader at an explicit offset. If the connection drops mid-file it reconnects and
+     * continues at the same offset (up to [MAX_REOPEN] times without progress) instead of failing
+     * the whole transfer attempt.
+     */
+    private inner class SmbInput(
+        @Volatile private var f: File,
+        private var pos: Long,
+        private val chunk: Int,
+        private val reopen: (Long) -> File,
+    ) : InputStream(), Abortable {
+        @Volatile private var aborted = false
+        private var reopens = 0
         override fun read(): Int {
             val b = ByteArray(1)
             return if (read(b, 0, 1) <= 0) -1 else b[0].toInt() and 0xff
         }
         override fun read(b: ByteArray, off: Int, len: Int): Int {
             if (len == 0) return 0
-            val n = f.read(b, pos, off, minOf(len, chunk))
-            if (n <= 0) return -1
-            pos += n
-            return n
+            while (true) {
+                try {
+                    val n = f.read(b, pos, off, minOf(len, chunk))
+                    if (n <= 0) return -1
+                    pos += n
+                    reopens = 0
+                    return n
+                } catch (e: Exception) {
+                    if (aborted || e is SMBApiException || !isConnectionError(e) || reopens >= MAX_REOPEN) {
+                        throw FsException("读取: ${ErrorText.describe(e)}", e)
+                    }
+                    reopens++
+                    f = try { reopen(pos) } catch (r: Exception) { throw FsException("重新连接失败: ${ErrorText.describe(r)}", r) }
+                }
+            }
         }
         override fun close() { runCatching { f.close() } }
+        override fun abort() { aborted = true; runCatching { f.closeNoWait() }; abortConnection() }
     }
 
-    private class SmbOutput(private val f: File, private var pos: Long, private val chunk: Int) : OutputStream() {
+    private inner class SmbOutput(
+        @Volatile private var f: File,
+        private var pos: Long,
+        private val chunk: Int,
+        private val reopen: () -> File,
+    ) : OutputStream(), Abortable {
+        @Volatile private var aborted = false
         override fun write(b: Int) = write(byteArrayOf(b.toByte()), 0, 1)
         override fun write(b: ByteArray, off: Int, len: Int) {
             var o = off
             var left = len
+            var reopens = 0
             while (left > 0) {
-                val n = f.write(b, pos, o, minOf(left, chunk)).toInt()
+                val n = try {
+                    f.write(b, pos, o, minOf(left, chunk)).toInt()
+                } catch (e: Exception) {
+                    if (aborted || e is SMBApiException || !isConnectionError(e) || reopens >= MAX_REOPEN) {
+                        throw FsException("写入: ${ErrorText.describe(e)}", e)
+                    }
+                    reopens++
+                    f = reopen()
+                    continue
+                }
                 if (n <= 0) throw FsException("SMB 写入返回 0")
-                pos += n; o += n; left -= n
+                pos += n; o += n; left -= n; reopens = 0
             }
         }
         override fun flush() { runCatching { f.flush() } }
         override fun close() { f.close() }
+        override fun abort() { aborted = true; runCatching { f.closeNoWait() }; abortConnection() }
+    }
+
+    companion object {
+        private const val MAX_REOPEN = 3
+
+        /** True when [e] means the TCP connection / session is unusable (as opposed to an SMB status error). */
+        fun isConnectionError(e: Throwable): Boolean = ErrorText.chain(e).any {
+            it is com.hierynomus.protocol.transport.TransportException ||
+                it is java.net.SocketException || it is java.io.EOFException ||
+                it is java.net.SocketTimeoutException || it is java.util.concurrent.TimeoutException ||
+                (it.message ?: "").contains("already been closed", true) ||
+                (it.message ?: "").contains("not connected", true)
+        }
     }
 }

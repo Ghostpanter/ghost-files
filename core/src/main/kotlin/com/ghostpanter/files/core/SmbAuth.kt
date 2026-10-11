@@ -21,8 +21,16 @@ enum class SmbLogin { GUEST, ANONYMOUS, USER }
  */
 class SmbConnector(timeouts: NetTimeouts = NetTimeouts()) : Closeable {
     private fun builder(t: NetTimeouts) = SmbConfig.builder()
-        .withTimeout(t.readMs.toLong(), TimeUnit.MILLISECONDS)
-        .withSoTimeout(t.readMs.toLong(), TimeUnit.MILLISECONDS)
+        // Per-request timeout for read/write/transact futures.
+        .withTimeout(t.smbRequestMs, TimeUnit.MILLISECONDS)
+        // NO socket read timeout: smbj's single background reader thread treats a socket timeout
+        // as a fatal transport error and fails every outstanding request on the connection. With
+        // a 30 s SO_TIMEOUT, any 30 s without traffic (idle browsing, the app closing a multi-GB
+        // file, local storage stalls) killed the connection -> "TransportException:
+        // ExecutionException: SMBRuntimeException ...". Liveness is covered by the per-request
+        // timeout above, TCP keepalive and the transfer watchdog.
+        .withSoTimeout(0, TimeUnit.MILLISECONDS)
+        .withSocketFactory(KeepAliveSocketFactory(t.connectMs))
         .withMultiProtocolNegotiate(true)
         .withDfsEnabled(false)
 
@@ -72,3 +80,21 @@ class SmbConnector(timeouts: NetTimeouts = NetTimeouts()) : Closeable {
 /** Neither guest nor anonymous login was accepted. */
 class SmbNoGuestException(val causes: List<Throwable>) :
     FsException("服务器不允许匿名/来宾访问，请输入用户名和密码", causes.lastOrNull())
+
+/** Plain TCP sockets with keepalive, no Nagle and a bounded connect timeout. */
+class KeepAliveSocketFactory(private val connectMs: Int) : javax.net.SocketFactory() {
+    private fun prep(s: java.net.Socket) = s.apply {
+        keepAlive = true
+        tcpNoDelay = true
+        runCatching { receiveBufferSize = 1 shl 20 }
+    }
+    override fun createSocket(): java.net.Socket = prep(java.net.Socket())
+    override fun createSocket(host: String, port: Int): java.net.Socket =
+        prep(java.net.Socket()).also { it.connect(java.net.InetSocketAddress(host, port), connectMs) }
+    override fun createSocket(host: String, port: Int, localHost: java.net.InetAddress?, localPort: Int): java.net.Socket =
+        prep(java.net.Socket()).also { it.bind(java.net.InetSocketAddress(localHost, localPort)); it.connect(java.net.InetSocketAddress(host, port), connectMs) }
+    override fun createSocket(host: java.net.InetAddress, port: Int): java.net.Socket =
+        prep(java.net.Socket()).also { it.connect(java.net.InetSocketAddress(host, port), connectMs) }
+    override fun createSocket(address: java.net.InetAddress, port: Int, localAddress: java.net.InetAddress?, localPort: Int): java.net.Socket =
+        prep(java.net.Socket()).also { it.bind(java.net.InetSocketAddress(localAddress, localPort)); it.connect(java.net.InetSocketAddress(address, port), connectMs) }
+}

@@ -54,6 +54,11 @@ class Settings(context: Context) : ViewPrefs {
         get() = p.getInt("concurrent_jobs", 2)
         set(v) { p.edit().putInt("concurrent_jobs", v).apply() }
 
+    /** Jobs at once against the same server (each has its own connection). Default 1. */
+    var jobsPerServer: Int
+        get() = p.getInt("jobs_per_server", 1)
+        set(v) { p.edit().putInt("jobs_per_server", v).apply() }
+
     /** Persisted tab locations: "fsId\u0001path" per tab, per pane. */
     fun saveTabs(pane: Int, tabs: List<Pair<String, String>>, active: Int) {
         p.edit()

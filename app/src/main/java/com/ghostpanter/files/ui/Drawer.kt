@@ -154,6 +154,13 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
             Text("$jobs")
             IconButton(onClick = { jobs = (jobs + 1).coerceAtMost(4); settings.concurrentJobs = jobs }) { Icon(Icons.Filled.Add, null) }
         }
+        var perServer by remember { mutableIntStateOf(settings.jobsPerServer) }
+        Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(t("同一服务器同时任务数（重启生效）", "Jobs per server (restart)"), Modifier.weight(1f), fontSize = 14.sp)
+            IconButton(onClick = { perServer = (perServer - 1).coerceAtLeast(1); settings.jobsPerServer = perServer }) { Icon(Icons.Filled.Remove, null) }
+            Text("$perServer")
+            IconButton(onClick = { perServer = (perServer + 1).coerceAtMost(4); settings.jobsPerServer = perServer }) { Icon(Icons.Filled.Add, null) }
+        }
         Spacer(Modifier.height(24.dp))
     }
 }

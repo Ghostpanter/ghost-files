@@ -40,6 +40,16 @@ class FsManager(
         else -> throw FsException("unknown fs $id")
     }
 
+    /**
+     * A private connection for one transfer job (not shared with browsing or other jobs), or
+     * null for non-network backends. The caller closes it.
+     */
+    fun openDedicated(id: String): VirtualFs? {
+        if (!id.startsWith("net:")) return null
+        val cfg = servers.get(id.removePrefix("net:")) ?: return null
+        return RemoteFsFactory.create(cfg, hostKeys, dedicated = true)
+    }
+
     fun label(id: String): String = when {
         id == LocalFs.ID -> t("本机", "Local")
         id == ROOT -> "Root"

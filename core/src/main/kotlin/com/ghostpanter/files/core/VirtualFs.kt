@@ -92,5 +92,17 @@ interface VirtualFs : Closeable {
 
     fun exists(path: String): Boolean = stat(path) != null
 
+    /**
+     * How long a single blocking call may legitimately take before the transfer watchdog treats
+     * the stream as dead (0 = use the engine default). Lets backends with long per-request
+     * timeouts (SMB) avoid being cut off mid-request.
+     */
+    val stallHintMs: Long get() = 0
+
     fun has(c: Capability) = c in capabilities
+}
+
+/** A stream that can be torn down from another thread faster/more thoroughly than close(). */
+interface Abortable {
+    fun abort()
 }

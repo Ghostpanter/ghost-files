@@ -45,6 +45,8 @@ data class JobSnapshot(
     val failures: List<String> = emptyList(),
     /** Why the last retry happened (shown on the queue card while retrying). */
     val lastError: String? = null,
+    /** Full cause chain + stack trace of [lastError], for "复制错误". */
+    val lastErrorDetail: String? = null,
     /** Files whose data was copied but whose source could not be deleted (MOVE only). */
     val keptSources: Int = 0,
 ) {
@@ -65,6 +67,11 @@ data class TransferConfig(
     /** No bytes for this long => streams are torn down and the file is retried/resumed. */
     val stallTimeoutMs: Long = 45_000,
     val maxConcurrentJobs: Int = 2,
+    /**
+     * Max jobs running at once against the same remote server (0 = no extra limit). Parallel
+     * streams from one NAS mostly add seeks and contention, not speed.
+     */
+    val maxJobsPerRemote: Int = 0,
     val progressIntervalMs: Long = 250,
     val preserveTimestamps: Boolean = true,
 )

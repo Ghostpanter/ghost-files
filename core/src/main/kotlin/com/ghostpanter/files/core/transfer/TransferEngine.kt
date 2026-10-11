@@ -4,6 +4,9 @@ import com.ghostpanter.files.core.Capability
 import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.VPath
+import com.ghostpanter.files.core.Abortable
+import com.ghostpanter.files.core.ErrorText
+import com.ghostpanter.files.core.SmbFs
 import com.ghostpanter.files.core.VirtualFs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +54,13 @@ class TransferEngine(
     private val config: TransferConfig = TransferConfig(),
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val clock: () -> Long = System::currentTimeMillis,
+    /**
+     * Opens a private instance of a remote filesystem for one job (its own TCP connection /
+     * session, not shared with browsing or other jobs); null = use [resolve]. Closed at job end.
+     */
+    private val openDedicated: (String) -> VirtualFs? = { null },
+    /** Called for every error the engine records (retry, file failure, job failure); for logging. */
+    private val onError: (job: JobSnapshot, what: String, error: Throwable) -> Unit = { _, _, _ -> },
 ) {
     private val _jobs = MutableStateFlow<List<JobSnapshot>>(emptyList())
     val jobs: StateFlow<List<JobSnapshot>> = _jobs.asStateFlow()
@@ -77,10 +87,25 @@ class TransferEngine(
         val r = Runner(JobSnapshot(id, op, title, sources, dest, policy, JobState.QUEUED), ignoreMissingSources)
         runners[id] = r
         _jobs.update { it + r.snap }
+        val keys = if (config.maxJobsPerRemote > 0) remoteKeys(sources, dest) else emptyList()
         r.job = scope.launch {
-            permits.withPermit { r.run() }
+            withRemoteSlots(keys) { permits.withPermit { r.run() } }
         }
         return id
+    }
+
+    private val remoteSlots = java.util.concurrent.ConcurrentHashMap<String, Semaphore>()
+
+    private fun remoteKeys(sources: List<Loc>, dest: Loc): List<String> =
+        (sources.map { it.fsId } + dest.fsId).distinct().filter { id ->
+            runCatching { resolve(id).has(Capability.REMOTE) }.getOrDefault(false)
+        }.sorted()
+
+    /** Acquires per-server slots in a fixed order (no deadlock), before the global permit. */
+    private suspend fun withRemoteSlots(keys: List<String>, block: suspend () -> Unit) {
+        if (keys.isEmpty()) return block()
+        val sem = remoteSlots.getOrPut(keys[0]) { Semaphore(config.maxJobsPerRemote) }
+        sem.withPermit { withRemoteSlots(keys.drop(1), block) }
     }
 
     fun pause(id: Long) { runners[id]?.pause() }
@@ -125,7 +150,10 @@ class TransferEngine(
     private class StreamGuard {
         private val open = CopyOnWriteArrayList<Closeable>()
         fun <T : Closeable> add(c: T): T { open.add(c); return c }
-        fun abort() { for (c in open) runCatching { c.close() }; open.clear() }
+        fun abort() {
+            for (c in open) runCatching { if (c is Abortable) c.abort() else c.close() }
+            open.clear()
+        }
         fun forget(c: Closeable) { open.remove(c) }
     }
 
@@ -141,6 +169,21 @@ class TransferEngine(
         private var speedBytes = 0L
         private var completedBytes = 0L
         private val failures = ArrayList<String>()
+        private val owned = java.util.concurrent.ConcurrentHashMap<String, VirtualFs>()
+
+        /** Dedicated instance for remote filesystems (one connection per job), shared otherwise. */
+        private fun fs(id: String): VirtualFs {
+            owned[id]?.let { return it }
+            val d = runCatching { openDedicated(id) }.getOrNull() ?: return resolve(id)
+            return owned.putIfAbsent(id, d)?.also { runCatching { d.close() } } ?: d
+        }
+
+        private fun msg(e: Throwable) = (e as? FsException)?.message ?: ErrorText.describe(e)
+
+        private fun recordError(what: String, e: Throwable, text: String) {
+            update { it.copy(lastError = text, lastErrorDetail = "$text\n\n${ErrorText.stackTrace(e)}") }
+            runCatching { onError(snap, what, e) }
+        }
 
         private fun update(force: Boolean = true, f: (JobSnapshot) -> JobSnapshot) = synchronized(this) {
             snap = f(snap)
@@ -204,7 +247,7 @@ class TransferEngine(
             try {
                 awaitNotPaused()
                 update { it.copy(state = JobState.PREPARING) }
-                val dstFs = resolve(snap.dest.fsId)
+                val dstFs = fs(snap.dest.fsId)
                 val plan = prepare(dstFs)
                 update { it.copy(state = JobState.RUNNING, totalFiles = plan.count { i -> !i.src.isDirectory }, totalBytes = plan.sumOf { i -> i.src.size }) }
                 val dirsToRemove = ArrayList<Pair<VirtualFs, String>>()
@@ -220,7 +263,8 @@ class TransferEngine(
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            failures.add("${item.src.path}: ${e.message ?: e.javaClass.simpleName}")
+                            failures.add("${item.src.path}: ${msg(e)}")
+                            recordError("文件失败 ${item.src.path}", e, msg(e))
                             completedBytes += item.src.size
                             update { it.copy(doneBytes = completedBytes, failures = failures.toList()) }
                         }
@@ -242,9 +286,14 @@ class TransferEngine(
                 finish(JobState.CANCELLED, null)
             } catch (e: Exception) {
                 if (cancelled) finish(JobState.CANCELLED, null)
-                else finish(JobState.FAILED, e.message ?: e.javaClass.simpleName)
+                else {
+                    recordError("任务失败", e, msg(e))
+                    finish(JobState.FAILED, msg(e))
+                }
             } finally {
                 guard = null
+                for (d in owned.values) runCatching { d.close() }
+                owned.clear()
             }
         }
 
@@ -254,7 +303,7 @@ class TransferEngine(
             val sameRoot = HashSet<String>()
             for (src in snap.sources) {
                 coroutineContext.ensureActive()
-                val srcFs = resolve(src.fsId)
+                val srcFs = fs(src.fsId)
                 val entry = withRetry("读取 ${src.path}") { srcFs.stat(src.path) }
                 if (entry == null) {
                     if (!ignoreMissing) failures.add("${src.path}: 不存在")
@@ -338,7 +387,8 @@ class TransferEngine(
                     if (cancelled) throw CancellationException("cancelled")
                     attempt++
                     if (attempt > maxRetries || isFatal(e)) throw e
-                    update { it.copy(retries = it.retries + 1, lastError = "$what: ${e.message ?: e.javaClass.simpleName}") }
+                    update { it.copy(retries = it.retries + 1) }
+                    recordError(what, e, "$what: ${msg(e)}")
                     delay(backoff)
                     backoff = (backoff * 2).coerceAtMost(config.maxBackoffMs)
                 }
@@ -415,9 +465,13 @@ class TransferEngine(
                     if (paused) continue // resume later from the written offset, not counted as a failure
                     attempt++
                     if (attempt > config.maxRetries || isFatal(e)) throw e
-                    update { it.copy(retries = it.retries + 1, lastError = e.message ?: e.javaClass.simpleName) }
-                    if (srcFs.has(Capability.REMOTE)) runCatching { srcFs.reset() }
-                    if (dstFs.has(Capability.REMOTE)) runCatching { dstFs.reset() }
+                    update { it.copy(retries = it.retries + 1) }
+                    recordError("传输 ${src.path}", e, msg(e))
+                    // Drop a possibly broken connection - but never a shared SMB connection that
+                    // browsing / other jobs are using (SmbFs reconnects by itself when needed).
+                    for (f in listOf(srcFs, dstFs).distinct()) {
+                        if ((f.has(Capability.REMOTE) && f !is SmbFs) || owned.containsValue(f)) runCatching { f.reset() }
+                    }
                     delay(backoff)
                     backoff = (backoff * 2).coerceAtMost(config.maxBackoffMs)
                 }
@@ -439,9 +493,10 @@ class TransferEngine(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                val why = e.message ?: e.javaClass.simpleName
+                val why = msg(e)
+                recordError("删除源文件 ${src.path}", e, "已复制，但删除源文件失败：$why")
                 failures.add("${src.path}: 已复制，但删除源文件失败：$why")
-                update { it.copy(keptSources = it.keptSources + 1, failures = failures.toList(), lastError = "已复制，但删除源文件失败：$why") }
+                update { it.copy(keptSources = it.keptSources + 1, failures = failures.toList()) }
             }
         }
 
@@ -463,10 +518,12 @@ class TransferEngine(
             // After the last byte, closing can legitimately take long (server flush, Android's
             // MediaProvider scanning a multi-GB video on close): allow much more time there.
             val finishing = java.util.concurrent.atomic.AtomicBoolean(false)
+            // Never cut a request the backend itself is still allowed to wait for (SMB: 90 s).
+            val base = maxOf(config.stallTimeoutMs, srcFs.stallHintMs, dstFs.stallHintMs)
             val watchdog = scope.launch {
                 while (isActive) {
                     delay(1000)
-                    val limit = if (finishing.get()) config.stallTimeoutMs * 8 else config.stallTimeoutMs
+                    val limit = if (finishing.get()) base * 8 else base
                     if (clock() - lastProgress.get() > limit) { g.abort(); break }
                 }
             }

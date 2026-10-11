@@ -118,9 +118,22 @@ private fun JobCard(vm: MainViewModel, j: JobSnapshot) {
             j.currentName?.let {
                 Text("$it  ${formatSize(j.currentDone)} / ${formatSize(j.currentSize)}", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.outline)
             }
-            // While running, show why the last retry happened so a "stuck at 100 %" job explains itself.
-            if (!j.state.finished && j.lastError != null) {
-                Text(t("最近错误：", "Last error: ") + j.lastError, fontSize = 11.sp, color = MaterialTheme.colorScheme.error, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            // Why the last retry / failure happened (root cause unwrapped); tap the card for the full chain.
+            if (j.lastError != null && (!j.state.finished || j.state == JobState.FAILED || j.retries > 0)) {
+                Text(
+                    t("最近错误：", "Last error: ") + j.lastError, fontSize = 11.sp, color = MaterialTheme.colorScheme.error,
+                    maxLines = if (expanded) 6 else 3, overflow = TextOverflow.Ellipsis,
+                )
+                if (!expanded && j.lastErrorDetail != null) Text(t("点按展开完整错误", "Tap for full error"), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+            }
+            if (expanded && j.lastErrorDetail != null) {
+                Box(
+                    Modifier.fillMaxWidth().heightIn(max = 260.dp).padding(top = 4.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState()).padding(6.dp),
+                ) {
+                    Text(j.lastErrorDetail!!, fontSize = 10.sp, fontFamily = FontFamily.Monospace, lineHeight = 13.sp)
+                }
             }
             j.error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
             if (j.failures.isNotEmpty()) {
@@ -129,6 +142,16 @@ private fun JobCard(vm: MainViewModel, j: JobSnapshot) {
                 if (!expanded && j.failures.size > 2) Text(t("点按查看全部 ${j.failures.size} 条", "Tap to show all ${j.failures.size}"), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
             }
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                if (j.lastErrorDetail != null || j.error != null || j.failures.isNotEmpty()) {
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    TextButton(onClick = { copyJobError(ctx, j) }) { Text(t("复制错误", "Copy error")) }
+                    if (expanded) TextButton(onClick = {
+                        val log = vm.g.transferLog.read().takeLast(400_000)
+                        val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("transfer.log", log.ifEmpty { "(empty)" }))
+                        android.widget.Toast.makeText(ctx, t("已复制传输日志", "Log copied"), android.widget.Toast.LENGTH_SHORT).show()
+                    }) { Text(t("复制日志", "Copy log")) }
+                }
                 when {
                     j.state == JobState.PAUSED -> TextButton(onClick = { engine.resume(j.id) }) { Text(t("继续", "Resume")) }
                     !j.state.finished -> TextButton(onClick = { engine.pause(j.id) }) { Text(t("暂停", "Pause")) }
@@ -141,6 +164,21 @@ private fun JobCard(vm: MainViewModel, j: JobSnapshot) {
             }
         }
     }
+}
+
+/** Full error report of a job (state, cause chain + stack trace, failures) to the clipboard. */
+private fun copyJobError(ctx: android.content.Context, j: JobSnapshot) {
+    val text = buildString {
+        appendLine("Ghost 文件 ${com.ghostpanter.files.BuildConfig.VERSION_NAME} · ${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}")
+        appendLine("${j.title} · ${j.state} · ${j.doneBytes}/${j.totalBytes} B · ${j.doneFiles}/${j.totalFiles} · 重试 ${j.retries}")
+        j.error?.let { appendLine("错误：$it") }
+        if (j.failures.isNotEmpty()) { appendLine("失败文件："); j.failures.forEach { appendLine("  $it") } }
+        appendLine()
+        append(j.lastErrorDetail ?: j.lastError ?: "")
+    }
+    val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    cm.setPrimaryClip(android.content.ClipData.newPlainText("Ghost 文件 error", text))
+    android.widget.Toast.makeText(ctx, t("已复制错误详情（日志：files/logs/transfer.log）", "Error copied"), android.widget.Toast.LENGTH_SHORT).show()
 }
 
 private fun stateLabel(s: JobState) = when (s) {
