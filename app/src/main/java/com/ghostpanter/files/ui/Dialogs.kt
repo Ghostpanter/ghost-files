@@ -55,11 +55,9 @@ fun EntryDialogs(vm: MainViewModel, d: DialogState, dismiss: () -> Unit) {
         is DialogState.Create -> NameDialog(if (d.dir) t("新建文件夹", "New folder") else t("新建文件", "New file"), "", dismiss) {
             vm.create(vm.pane(d.pane).tab, it, d.dir)
         }
-        is DialogState.Compress -> NameDialog(
-            t("压缩为 ZIP", "Compress to zip"),
-            (if (d.entries.size == 1) d.entries[0].name.substringBeforeLast('.').ifEmpty { d.entries[0].name } else "archive") + ".zip",
-            dismiss,
-        ) { vm.compress(vm.pane(d.pane).tab, d.entries, it) }
+        is DialogState.Compress -> CompressDialog(vm, vm.pane(d.pane).tab, d.entries, dismiss)
+        is DialogState.Hash -> HashDialog(vm, vm.pane(d.pane).tab, d.entry, dismiss)
+        is DialogState.BatchRename -> BatchRenameDialog(vm, vm.pane(d.pane).tab, d.entries, dismiss)
         is DialogState.Properties -> PropertiesDialog(vm, vm.pane(d.pane).tab, d.entry, dismiss)
         is DialogState.Chmod -> ChmodDialog(vm, vm.pane(d.pane).tab, d.entry, dismiss)
         DialogState.Sort -> SortDialog(vm, dismiss)

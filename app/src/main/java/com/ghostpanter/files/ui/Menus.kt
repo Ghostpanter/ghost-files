@@ -37,12 +37,15 @@ fun MainViewModel.buildEntryMenu(pane: PaneState, targets: List<FileEntry>): Act
     add(t("复制到对面", "Copy to other pane"), Icons.Filled.FileCopy, dest) { transferToOther(pane, TransferOp.COPY, targets) }
     add(t("移动到对面", "Move to other pane"), Icons.AutoMirrored.Filled.DriveFileMove, dest) { transferToOther(pane, TransferOp.MOVE, targets) }
     if (single != null) add(t("重命名", "Rename"), Icons.Filled.DriveFileRenameOutline) { dialog = DialogState.Rename(pane.index, single) }
+    if (targets.size > 1) add(t("批量重命名", "Batch rename"), Icons.Filled.DriveFileRenameOutline) { dialog = DialogState.BatchRename(pane.index, targets) }
     add(t("删除", "Delete"), Icons.Filled.Delete) { dialog = DialogState.Delete(pane.index, targets) }
     if (single != null && !single.isDirectory) {
         add(t("打开方式…", "Open with…"), Icons.AutoMirrored.Filled.OpenInNew) { openEntry(tab, single, chooser = true) }
         add(t("文本编辑器打开", "Open as text"), Icons.Filled.EditNote) { openEntry(tab, single, asText = true) }
+        add(t("十六进制查看", "Hex viewer"), Icons.Filled.DataObject) { screen = Screen.Hex(tab.fsId, single.path) }
+        add(t("校验值（MD5/SHA）", "Checksums"), Icons.Filled.Fingerprint) { dialog = DialogState.Hash(pane.index, single) }
     }
-    add(t("压缩为 ZIP", "Compress (zip)"), Icons.Filled.FolderZip) { dialog = DialogState.Compress(pane.index, targets) }
+    add(t("压缩…（zip/7z/tar.gz）", "Compress…"), Icons.Filled.FolderZip) { dialog = DialogState.Compress(pane.index, targets) }
     if (single != null && Archives.isArchive(single.name)) add(t("解压…", "Extract…"), Icons.Filled.Unarchive) { pendingExtract = tab to single }
     if (targets.any { !it.isDirectory }) add(t("分享", "Share"), Icons.Filled.Share) { share(tab, targets) }
     add(t("复制（剪贴板）", "Copy (clipboard)"), Icons.Filled.ContentCopy) { tab.selected = targets.map { it.path }.toSet(); setClip(tab, TransferOp.COPY) }
@@ -81,6 +84,7 @@ fun MainViewModel.buildMoreMenu(pane: PaneState): ActionMenu {
     add(t("复制当前路径", "Copy current path"), Icons.Filled.Link) { copyText(tab.path) }
     add(t("扫描局域网", "Scan LAN"), Icons.Filled.Radar) { screen = Screen.LanScan }
     add(t("本机服务", "Hosted services"), Icons.Filled.CloudUpload) { screen = Screen.Servers }
+    add(t("应用管理（备份 APK）", "App manager"), Icons.Filled.Apps) { screen = Screen.Apps }
     add(t("传输队列", "Transfers"), Icons.Filled.SwapVert) { screen = Screen.Transfers }
     add(t("目录属性", "Folder properties"), Icons.Filled.Info) {
         dialog = DialogState.Properties(pane.index, FileEntry(tab.path, tab.title, true, 0, 0))

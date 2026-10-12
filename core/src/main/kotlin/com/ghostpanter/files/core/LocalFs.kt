@@ -111,6 +111,14 @@ class LocalFs(
         val src = f(from)
         val dst = f(to)
         if (!src.exists()) throw FsException("源不存在: $from")
+        // Case-only rename on case-insensitive storage (Android /sdcard): dst "exists" but is src.
+        val sameFile = dst.exists() && runCatching { Files.isSameFile(src.toPath(), dst.toPath()) }.getOrDefault(false)
+        if (sameFile && src.name != dst.name && src.parentFile == dst.parentFile) {
+            val tmp = File(src.parentFile, ".gf-rename-" + System.nanoTime())
+            if (src.renameTo(tmp) && tmp.renameTo(dst)) return
+            if (tmp.exists()) tmp.renameTo(src)
+            throw FsException("重命名失败: $from -> $to")
+        }
         if (dst.exists()) throw FsException("目标已存在: $to")
         if (src.renameTo(dst)) return
         try {

@@ -83,7 +83,9 @@ interface HostedServer : AutoCloseable {
 
 /** True when [ip] is a private / link-local IPv4 (or IPv6 ULA / link-local). */
 fun isLanAddress(ip: String): Boolean {
-    val s = ip.trim().removePrefix("/").substringBefore('%')
+    var s = ip.trim().removePrefix("/").substringBefore('%').removePrefix("[").removeSuffix("]")
+    // IPv4-mapped IPv6 (dual-stack sockets): ::ffff:192.168.1.5
+    if (s.lowercase().startsWith("::ffff:") && s.count { it == '.' } == 3) s = s.substring(7)
     if (s.contains(':')) {
         val lower = s.lowercase()
         return lower.startsWith("fe80:") || lower.startsWith("fc") || lower.startsWith("fd") || lower == "::1"

@@ -59,6 +59,8 @@ sealed interface Screen {
     data class Search(val fsId: String, val root: String) : Screen
     data object LanScan : Screen
     data object Servers : Screen
+    data class Hex(val fsId: String, val path: String) : Screen
+    data object Apps : Screen
 }
 
 sealed interface UiEvent {
@@ -400,18 +402,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     }
 
     fun rename(tab: TabState, e: FileEntry, newName: String) {
-        if (newName.isBlank() || newName.contains('/')) { toast(t("名称无效", "Invalid name")); return }
+        val name = newName.trim()
+        if (!validName(name)) { toast(t("名称无效", "Invalid name")); return }
+        if (name == e.name) return
         val fs = fs(tab)
         runBusy(t("重命名…", "Renaming…"), listOf(tab)) {
-            val target = VPath.join(VPath.parent(e.path), newName)
-            if (fs.stat(target) != null) throw FsException(t("已存在同名文件", "Name already exists"))
+            val target = VPath.join(VPath.parent(e.path), name)
+            // Case-only rename ("a.jpg" -> "A.jpg") must work on case-insensitive storage.
+            if (!name.equals(e.name, ignoreCase = true) && fs.stat(target) != null) throw FsException(t("已存在同名文件", "Name already exists"))
             fs.rename(e.path, target)
         }
         tab.selected = emptySet()
     }
 
     fun create(tab: TabState, name: String, dir: Boolean) {
-        if (name.isBlank() || name.contains('/')) { toast(t("名称无效", "Invalid name")); return }
+        if (!validName(name.trim())) { toast(t("名称无效", "Invalid name")); return }
         val fs = fs(tab)
         runBusy(t("创建中…", "Creating…"), listOf(tab)) {
             val p = VPath.join(tab.path, name)
@@ -420,19 +425,54 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
         }
     }
 
-    fun compress(tab: TabState, entries: List<FileEntry>, name: String) {
+    private fun validName(n: String) = n.isNotBlank() && n != "." && n != ".." && !n.contains('/') && !n.contains('\u0000')
+
+    fun compress(tab: TabState, entries: List<FileEntry>, name: String, kind: Archives.Kind = Archives.Kind.ZIP) {
         val fs = fs(tab)
-        val zipName = if (name.endsWith(".zip", true)) name else "$name.zip"
+        val ext = Archives.extensionOf(kind)
+        val fileName = name.trim().let { if (it.endsWith(ext, true)) it else it + ext }
+        if (!validName(fileName)) { toast(t("名称无效", "Invalid name")); return }
         tab.selected = emptySet()
         runBusy(t("正在压缩…", "Compressing…"), listOf(tab)) {
-            val target = VPath.join(tab.path, zipName)
-            Archives.compressZip(fs, entries, fs, target, isCancelled = { !isActive() }) { busy = t("压缩: ", "Zip: ") + it.name }
+            // Never overwrite an existing file silently; drop the partial archive on failure/cancel.
+            var target = VPath.join(tab.path, fileName)
+            var n = 1
+            while (fs.stat(target) != null) target = VPath.join(tab.path, VPath.numbered(fileName.removeSuffix(ext), n++) + ext)
+            try {
+                Archives.compress(kind, fs, entries, fs, target, getApplication<Application>().cacheDir, isCancelled = { !isActive() }) {
+                    busy = t("压缩: ", "Compress: ") + it.name
+                }
+            } catch (e: Throwable) {
+                runCatching { fs.delete(target, false) }
+                throw e
+            }
+        }
+    }
+
+    /** Writes "<sha256>  <name>" next to the file (sha256sum -c compatible). */
+    fun writeChecksumFile(tab: TabState, e: FileEntry, sha256: String) {
+        val fs = fs(tab)
+        runBusy(t("保存校验文件…", "Saving…"), listOf(tab)) {
+            val p = VPath.join(VPath.parent(e.path), e.name + ".sha256")
+            fs.openWrite(p).use { it.write(com.ghostpanter.files.core.ops.Checksums.sumLine(sha256, e.name).toByteArray()) }
+            toast(t("已保存 ", "Saved ") + VPath.name(p))
+        }
+    }
+
+    /** Batch rename (pattern); temp names first so swaps / case changes work. */
+    fun batchRename(tab: TabState, plans: List<com.ghostpanter.files.core.ops.BatchRename.Plan>) {
+        val fs = fs(tab)
+        tab.selected = emptySet(); tab.multiSelect = false
+        runBusy(t("批量重命名…", "Renaming…"), listOf(tab)) {
+            val errs = com.ghostpanter.files.core.ops.BatchRename.execute(plans) { a, b -> fs.rename(a, b) }
+            if (errs.isNotEmpty()) throw FsException(t("${errs.size} 项失败：", "${errs.size} failed: ") + errs.take(3).joinToString("；"))
+            toast(t("已重命名 ${plans.count { it.changed && it.error == null }} 项", "Renamed"))
         }
     }
 
     fun extract(tab: TabState, e: FileEntry, intoSubfolder: Boolean, password: String?) {
         val fs = fs(tab)
-        val dest = if (intoSubfolder) VPath.join(tab.path, e.name.substringBefore('.').ifEmpty { e.name + "_x" }) else tab.path
+        val dest = if (intoSubfolder) VPath.join(tab.path, Archives.baseName(e.name)) else tab.path
         runBusy(t("正在解压…", "Extracting…"), listOf(tab)) {
             Archives.extract(
                 fs, e.path, fs, dest, localFile = fsm.localFile(tab.fsId, e.path),

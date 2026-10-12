@@ -39,6 +39,8 @@ sealed interface DialogState {
     data class Properties(val pane: Int, val entry: FileEntry) : DialogState
     data class Chmod(val pane: Int, val entry: FileEntry) : DialogState
     data object Sort : DialogState
+    data class Hash(val pane: Int, val entry: FileEntry) : DialogState
+    data class BatchRename(val pane: Int, val entries: List<FileEntry>) : DialogState
 }
 
 @Composable
@@ -70,6 +72,8 @@ fun MainScreen(vm: MainViewModel, activity: MainActivity) {
             is Screen.Search -> SearchScreen(vm, s)
             Screen.LanScan -> LanScanScreen(vm, onEditServer = { editingServer = it; serverEditorOpen = true })
             Screen.Servers -> ServersScreen(vm)
+            is Screen.Hex -> HexScreen(vm, s)
+            Screen.Apps -> AppsScreen(vm)
         }
     }
 

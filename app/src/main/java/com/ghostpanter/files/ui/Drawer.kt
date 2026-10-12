@@ -142,6 +142,7 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
 
         Section(t("工具", "Tools"))
         Item(Icons.Filled.DeleteSweep, t("回收站", "Recycle bin")) { vm.screen = Screen.Trash; close() }
+        Item(Icons.Filled.Apps, t("应用管理", "App manager")) { vm.screen = Screen.Apps; close() }
         Item(Icons.Filled.SwapVert, t("传输队列", "Transfers")) { vm.screen = Screen.Transfers; close() }
 
         Section(t("设置", "Settings"))

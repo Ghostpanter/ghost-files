@@ -240,56 +240,136 @@ private fun decodeText(bytes: ByteArray): Pair<String, Charset> {
     return try { dec.decode(ByteBuffer.wrap(bytes)).toString() to Charsets.UTF_8 } catch (e: Exception) { String(bytes, GBK) to GBK }
 }
 
+private val EDITOR_CHARSETS = listOf("UTF-8", "GBK", "Big5", "UTF-16LE", "UTF-16BE", "ISO-8859-1")
+private const val EDITOR_MAX = 8L * 1024 * 1024
+
+/** Safe save: write a sibling temp file, then swap it in, so a failed write never truncates the original. */
+private fun saveAtomically(fs: com.ghostpanter.files.core.VirtualFs, path: String, data: ByteArray) {
+    if (!fs.has(com.ghostpanter.files.core.Capability.RENAME_MOVE)) { fs.openWrite(path).use { it.write(data) }; return }
+    val tmp = VPath.join(VPath.parent(path), "." + VPath.name(path) + ".gf-save")
+    fs.openWrite(tmp, 0, data.size.toLong()).use { it.write(data) }
+    if (fs.stat(tmp)?.size != data.size.toLong()) { runCatching { fs.delete(tmp, false) }; error(t("写入校验失败", "Write verification failed")) }
+    val bak = VPath.join(VPath.parent(path), "." + VPath.name(path) + ".gf-bak")
+    runCatching { fs.delete(bak, false) }
+    val hadOriginal = fs.stat(path) != null
+    if (hadOriginal) fs.rename(path, bak)
+    try { fs.rename(tmp, path) } catch (e: Exception) { if (hadOriginal) runCatching { fs.rename(bak, path) }; throw e }
+    if (hadOriginal) runCatching { fs.delete(bak, false) }
+}
+
 @Composable
 fun EditorScreen(vm: MainViewModel, s: Screen.Editor) {
     val scope = rememberCoroutineScope()
-    var text by remember { mutableStateOf<String?>(null) }
+    var raw by remember { mutableStateOf<ByteArray?>(null) }
+    var value by remember { mutableStateOf<androidx.compose.ui.text.input.TextFieldValue?>(null) }
     var original by remember { mutableStateOf("") }
     var charset by remember { mutableStateOf(Charsets.UTF_8) }
     var error by remember { mutableStateOf<String?>(null) }
+    var tooLarge by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var wrap by remember { mutableStateOf(true) }
     var confirmExit by remember { mutableStateOf(false) }
+    var findOpen by remember { mutableStateOf(false) }
+    var findText by remember { mutableStateOf("") }
+    var replaceText by remember { mutableStateOf("") }
+    var ignoreCase by remember { mutableStateOf(true) }
+    var csMenu by remember { mutableStateOf(false) }
     LaunchedEffect(s) {
         withContext(Dispatchers.IO) {
             runCatching {
                 val fs = vm.fsm.get(s.fsId)
                 val st = fs.stat(s.path)
-                if (st != null && st.size > 8L * 1024 * 1024) error(t("文件过大（>8MB），请用其他应用打开", "File too large (>8MB)"))
-                val (str, cs) = decodeText(fs.openRead(s.path).use { it.readBytes() })
-                text = str; original = str; charset = cs
-            }.onFailure { error = it.message }
+                if (st != null && st.size > EDITOR_MAX) { tooLarge = true; return@runCatching }
+                val bytes = fs.openRead(s.path).use { it.readBytes() }
+                val (str, cs) = decodeText(bytes)
+                raw = bytes; value = androidx.compose.ui.text.input.TextFieldValue(str); original = str; charset = cs
+            }.onFailure { error = it.message ?: it.javaClass.simpleName }
         }
     }
+    val text = value?.text
     val dirty = text != null && text != original
     fun exit() { if (dirty) confirmExit = true else vm.screen = Screen.Main }
+    fun findNext(fromStart: Boolean = false) {
+        val v = value ?: return
+        if (findText.isEmpty()) return
+        val from = if (fromStart) 0 else v.selection.max
+        var i = v.text.indexOf(findText, from, ignoreCase)
+        if (i < 0) i = v.text.indexOf(findText, 0, ignoreCase)
+        if (i < 0) { vm.toast(t("未找到", "Not found")); return }
+        value = v.copy(selection = androidx.compose.ui.text.TextRange(i, i + findText.length))
+    }
     androidx.activity.compose.BackHandler { exit() }
     SubScaffold(VPath.name(s.path) + if (dirty) " *" else "", { exit() }, actions = {
-        Text(charset.name(), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+        Box {
+            TextButton(onClick = { csMenu = true }, enabled = raw != null) { Text(charset.name(), fontSize = 11.sp) }
+            DropdownMenu(csMenu, { csMenu = false }) {
+                for (name in EDITOR_CHARSETS) DropdownMenuItem(text = { Text(name) }, onClick = {
+                    csMenu = false
+                    val cs = runCatching { Charset.forName(name) }.getOrNull() ?: return@DropdownMenuItem
+                    val r = raw ?: return@DropdownMenuItem
+                    if (dirty) { charset = cs; vm.toast(t("将以 $name 保存", "Will save as $name")) }
+                    else { val str = String(r, cs); charset = cs; value = androidx.compose.ui.text.input.TextFieldValue(str); original = str }
+                })
+            }
+        }
+        IconButton(onClick = { findOpen = !findOpen }, enabled = value != null) { Icon(Icons.Filled.Search, t("查找替换", "Find/replace")) }
         IconButton(onClick = { wrap = !wrap }) { Icon(Icons.AutoMirrored.Filled.WrapText, t("自动换行", "Wrap")) }
         IconButton(enabled = dirty && !saving, onClick = {
             saving = true
+            val data = text!!
             scope.launch {
                 val r = withContext(Dispatchers.IO) {
-                    runCatching { vm.fsm.get(s.fsId).openWrite(s.path).use { it.write(text!!.toByteArray(charset)) } }
+                    runCatching { val b = data.toByteArray(charset); saveAtomically(vm.fsm.get(s.fsId), s.path, b); b }
                 }
                 saving = false
-                r.onSuccess { original = text!!; vm.toast(t("已保存", "Saved")) }.onFailure { vm.toast(t("保存失败: ", "Save failed: ") + it.message) }
+                r.onSuccess { original = data; raw = it; vm.toast(t("已保存", "Saved")) }.onFailure { vm.toast(t("保存失败: ", "Save failed: ") + it.message) }
             }
         }) { Icon(Icons.Filled.Save, t("保存", "Save")) }
     }) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize().imePadding()) {
-            when {
-                error != null -> Text(error!!, Modifier.align(Alignment.Center).padding(24.dp), color = MaterialTheme.colorScheme.error)
-                text == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                else -> {
-                    val style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-                    val base = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp)
-                    BasicTextField(
-                        value = text!!, onValueChange = { text = it }, textStyle = style,
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        modifier = if (wrap) base else base.horizontalScroll(rememberScrollState()),
-                    )
+        Column(Modifier.padding(pad).fillMaxSize().imePadding()) {
+            if (findOpen && value != null) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(findText, { findText = it }, singleLine = true, placeholder = { Text(t("查找", "Find")) }, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { findNext() }) { Icon(Icons.Filled.ArrowDownward, t("下一个", "Next")) }
+                    TextButton(onClick = { ignoreCase = !ignoreCase }) { Text(if (ignoreCase) "a=A" else "a≠A", fontSize = 11.sp) }
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(replaceText, { replaceText = it }, singleLine = true, placeholder = { Text(t("替换为", "Replace")) }, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        val v = value ?: return@TextButton
+                        val sel = v.text.substring(v.selection.min, v.selection.max)
+                        if (findText.isNotEmpty() && sel.equals(findText, ignoreCase)) {
+                            val nt = v.text.replaceRange(v.selection.min, v.selection.max, replaceText)
+                            value = androidx.compose.ui.text.input.TextFieldValue(nt, androidx.compose.ui.text.TextRange(v.selection.min + replaceText.length))
+                        }
+                        findNext()
+                    }) { Text(t("替换", "Replace")) }
+                    TextButton(onClick = {
+                        val v = value ?: return@TextButton
+                        if (findText.isEmpty()) return@TextButton
+                        val count = Regex(Regex.escape(findText), if (ignoreCase) setOf(RegexOption.IGNORE_CASE) else emptySet()).findAll(v.text).count()
+                        value = androidx.compose.ui.text.input.TextFieldValue(v.text.replace(findText, replaceText, ignoreCase))
+                        vm.toast(t("已替换 $count 处", "Replaced $count"))
+                    }) { Text(t("全部", "All")) }
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    tooLarge -> Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(t("文件超过 8MB，文本编辑器不加载以免卡死/闪退。", "File larger than 8MB."))
+                        TextButton(onClick = { vm.screen = Screen.Hex(s.fsId, s.path) }) { Text(t("用十六进制查看器打开", "Open in hex viewer")) }
+                    }
+                    error != null -> Text(error!!, Modifier.align(Alignment.Center).padding(24.dp), color = MaterialTheme.colorScheme.error)
+                    value == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    else -> {
+                        val style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                        val base = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp)
+                        BasicTextField(
+                            value = value!!, onValueChange = { value = it }, textStyle = style,
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            modifier = if (wrap) base else base.horizontalScroll(rememberScrollState()),
+                        )
+                    }
                 }
             }
         }

@@ -40,6 +40,7 @@ class WebDavHostedServer(
     private var listenHint: String? = null
     private val running = AtomicBoolean(false)
     private val clients = ConcurrentHashMap.newKeySet<String>()
+    private val sockets = ConcurrentHashMap.newKeySet<Socket>()
     private val clientCount = AtomicInteger(0)
     private var lastError: String? = null
     private val pool = Executors.newCachedThreadPool { r ->
@@ -98,29 +99,40 @@ class WebDavHostedServer(
                 return
             }
             clients.add(id)
+            sockets.add(sock)
             clientCount.set(clients.size)
             sock.soTimeout = 60_000
             val input = BufferedInputStream(sock.getInputStream())
             val output = BufferedOutputStream(sock.getOutputStream())
             while (running.get() && !sock.isClosed) {
                 val req = readRequest(input) ?: break
+                val expectContinue = req.headers["expect"]?.equals("100-continue", true) == true
                 if (!authorized(req, config)) {
-                    writeResponse(output, 401, mapOf(
-                        "WWW-Authenticate" to "Basic realm=\"Ghost Files\"",
-                        "Content-Length" to "0",
-                    ), ByteArray(0))
+                    // An unread request body would desync the keep-alive stream: close instead.
+                    val hasBody = req.contentLength > 0 || req.chunked
+                    writeResponse(output, 401, buildMap {
+                        put("WWW-Authenticate", "Basic realm=\"Ghost Files\", charset=\"UTF-8\"")
+                        put("Content-Length", "0")
+                        if (hasBody) put("Connection", "close")
+                    }, ByteArray(0))
+                    if (hasBody) break
                     continue
                 }
-                if (req.headers["expect"]?.equals("100-continue", true) == true) {
+                if (expectContinue) {
                     output.write("HTTP/1.1 100 Continue\r\n\r\n".toByteArray(StandardCharsets.US_ASCII))
                     output.flush()
                 }
-                dispatch(req, root, output)
+                try {
+                    dispatch(req, root, output)
+                } catch (e: PathEscape) {
+                    writeResponse(output, 403, mapOf("Content-Length" to "0"), ByteArray(0))
+                }
                 if (req.headers["connection"]?.equals("close", true) == true) break
             }
         } catch (_: Exception) {
         } finally {
             clients.remove(id)
+            sockets.remove(sock)
             clientCount.set(clients.size)
             runCatching { sock.close() }
         }
@@ -169,15 +181,28 @@ class WebDavHostedServer(
                 writeResponse(out, 207, mapOf("Content-Type" to "application/xml; charset=utf-8"), body)
             }
             "GET", "HEAD" -> {
+                if (file.isDirectory) {
+                    // Plain browsers: simple HTML index so the share doubles as an HTTP download server.
+                    val body = directoryHtml(file, root).toByteArray(StandardCharsets.UTF_8)
+                    val h = mapOf("Content-Type" to "text/html; charset=utf-8", "Content-Length" to body.size.toString())
+                    writeResponse(out, 200, h, if (req.method == "HEAD") ByteArray(0) else body)
+                    return
+                }
                 if (!file.isFile) { writeResponse(out, 404, emptyMap(), ByteArray(0)); return }
                 val range = req.headers["range"]
-                if (range != null && range.startsWith("bytes=")) {
-                    val start = range.removePrefix("bytes=").substringBefore('-').toLongOrNull() ?: 0L
-                    val len = file.length() - start
+                val total = file.length()
+                val span = if (range != null) parseRange(range, total) else null
+                if (range != null && range.trim().startsWith("bytes=") && !range.contains(',') && span == null) {
+                    writeResponse(out, 416, mapOf("Content-Range" to "bytes */$total", "Content-Length" to "0"), ByteArray(0))
+                    return
+                }
+                if (span != null) {
+                    val (start, end) = span
+                    val len = end - start + 1
                     val headers = mutableMapOf(
                         "Content-Type" to "application/octet-stream",
                         "Accept-Ranges" to "bytes",
-                        "Content-Range" to "bytes $start-${file.length() - 1}/${file.length()}",
+                        "Content-Range" to "bytes $start-$end/$total",
                         "Content-Length" to len.toString(),
                     )
                     if (req.method == "HEAD") writeResponse(out, 206, headers, ByteArray(0))
@@ -193,6 +218,10 @@ class WebDavHostedServer(
                 }
             }
             "PUT" -> {
+                if (file.isDirectory) {
+                    copyBody(req, OutputStream.nullOutputStream())
+                    writeResponse(out, 405, emptyMap(), ByteArray(0)); return
+                }
                 file.parentFile?.mkdirs()
                 file.outputStream().use { dest ->
                     copyBody(req, dest)
@@ -218,6 +247,12 @@ class WebDavHostedServer(
                 if (dest.exists() && req.headers["overwrite"] == "F") {
                     writeResponse(out, 412, emptyMap(), ByteArray(0)); return
                 }
+                if (!file.exists()) { writeResponse(out, 404, emptyMap(), ByteArray(0)); return }
+                // Never delete the source (dest == source) or copy a folder into itself.
+                if (dest == file || (file.isDirectory && dest.path.startsWith(file.path + File.separator))) {
+                    writeResponse(out, 403, emptyMap(), ByteArray(0)); return
+                }
+                val existed = dest.exists()
                 dest.parentFile?.mkdirs()
                 dest.deleteRecursively()
                 val ok = if (req.method == "MOVE") file.renameTo(dest) || run {
@@ -225,7 +260,7 @@ class WebDavHostedServer(
                 } else {
                     file.copyRecursively(dest); true
                 }
-                writeResponse(out, if (ok) 201 else 500, mapOf("Content-Length" to "0"), ByteArray(0))
+                writeResponse(out, if (!ok) 500 else if (existed) 204 else 201, mapOf("Content-Length" to "0"), ByteArray(0))
             }
             else -> writeResponse(out, 405, emptyMap(), ByteArray(0))
         }
@@ -235,7 +270,7 @@ class WebDavHostedServer(
         val head = buildHeader(code, headers)
         out.write(head)
         file.inputStream().use { input ->
-            if (start > 0) input.skip(start)
+            if (start > 0) input.channel.position(start)
             var left = length
             val buf = ByteArray(64 * 1024)
             while (left > 0) {
@@ -261,7 +296,7 @@ class WebDavHostedServer(
             200 -> "OK"; 201 -> "Created"; 204 -> "No Content"; 206 -> "Partial Content"
             207 -> "Multi-Status"; 400 -> "Bad Request"; 401 -> "Unauthorized"
             404 -> "Not Found"; 405 -> "Method Not Allowed"; 409 -> "Conflict"
-            412 -> "Precondition Failed"; else -> "Error"
+            403 -> "Forbidden"; 412 -> "Precondition Failed"; 416 -> "Range Not Satisfiable"; else -> "Error"
         }
         return buildString {
             append("HTTP/1.1 $code $reason\r\n")
@@ -294,6 +329,27 @@ class WebDavHostedServer(
         }
     }
 
+    private fun hrefOf(f: File, root: File): String {
+        val rel = if (f == root) "/" else "/" + f.absolutePath.removePrefix(root.absolutePath).replace('\\', '/').trimStart('/') + if (f.isDirectory) "/" else ""
+        return rel.split('/').joinToString("/") { if (it.isEmpty()) "" else URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+    }
+
+    private fun directoryHtml(dir: File, root: File): String = buildString {
+        val title = xmlEsc(if (dir == root) "/" else "/" + dir.absolutePath.removePrefix(root.absolutePath).trimStart('/'))
+        append("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">")
+        append("<title>Ghost 文件 - ").append(title).append("</title><style>body{font-family:sans-serif;margin:16px}a{text-decoration:none}td{padding:4px 12px 4px 0}</style></head><body>")
+        append("<h3>").append(title).append("</h3><table>")
+        if (dir != root) append("<tr><td><a href=\"../\">⬆ 上级目录</a></td></tr>")
+        val kids = dir.listFiles()?.sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() })) ?: emptyList()
+        for (k in kids) {
+            append("<tr><td><a href=\"").append(hrefOf(k, root)).append("\">")
+            append(if (k.isDirectory) "📁 " else "📄 ").append(xmlEsc(k.name)).append(if (k.isDirectory) "/" else "").append("</a></td><td>")
+            if (k.isFile) append(k.length()).append(" B")
+            append("</td></tr>")
+        }
+        append("</table></body></html>")
+    }
+
     private fun xmlEsc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         .replace("\"", "&quot;")
 
@@ -304,7 +360,8 @@ class WebDavHostedServer(
     }
 
     private fun sanitize(raw: String): String {
-        val decoded = URLDecoder.decode(raw.substringBefore('?'), "UTF-8")
+        // URLDecoder is form decoding: keep a literal '+' in file names (it is not a space in paths).
+        val decoded = URLDecoder.decode(raw.substringBefore('?').replace("+", "%2B"), "UTF-8")
         val parts = decoded.split('/').filter { it.isNotEmpty() && it != "." && it != ".." }
         return "/" + parts.joinToString("/")
     }
@@ -312,9 +369,14 @@ class WebDavHostedServer(
     private fun fileOf(root: File, path: String): File {
         val f = File(root, path.trimStart('/')).canonicalFile
         val rootCanon = root.canonicalFile
-        if (!f.path.startsWith(rootCanon.path)) throw IOException("path escape")
+        if (f != rootCanon && !f.path.startsWith(rootCanon.path.trimEnd(File.separatorChar) + File.separator)) throw PathEscape()
         return f
     }
+
+    private class PathEscape : IOException("path escape")
+
+    /** Single "bytes=" range -> inclusive (start, end), or null when absent/unsatisfiable. */
+    internal fun parseRange(header: String, total: Long): Pair<Long, Long>? = parseByteRange(header, total)
 
     private data class HttpRequest(
         val method: String,
@@ -400,6 +462,8 @@ class WebDavHostedServer(
         serverSocket = null
         runCatching { acceptThread?.join(2000) }
         acceptThread = null
+        for (s in sockets) runCatching { s.close() }
+        sockets.clear()
         clients.clear()
         clientCount.set(0)
         startedAt = 0
@@ -418,5 +482,23 @@ class WebDavHostedServer(
             error = lastError,
             startedAtMs = startedAt,
         )
+    }
+}
+
+/** Parses a single HTTP "bytes=a-b" / "bytes=a-" / "bytes=-n" range; null when unsatisfiable or multi-range. */
+fun parseByteRange(header: String, total: Long): Pair<Long, Long>? {
+    val h = header.trim()
+    if (!h.startsWith("bytes=") || h.contains(',')) return null
+    val spec = h.removePrefix("bytes=").trim()
+    val a = spec.substringBefore('-').trim()
+    val b = spec.substringAfter('-', "").trim()
+    if (total <= 0) return null
+    return if (a.isEmpty()) {
+        val n = b.toLongOrNull() ?: return null
+        if (n <= 0) null else (total - minOf(n, total)) to (total - 1)
+    } else {
+        val start = a.toLongOrNull() ?: return null
+        val end = if (b.isEmpty()) total - 1 else (b.toLongOrNull() ?: return null).coerceAtMost(total - 1)
+        if (start >= total || end < start) null else start to end
     }
 }

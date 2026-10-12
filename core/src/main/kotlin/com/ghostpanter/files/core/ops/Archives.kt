@@ -106,6 +106,129 @@ object Archives {
         return count
     }
 
+    /** Formats the "压缩" dialog can create. */
+    val creatable = listOf(Kind.ZIP, Kind.SEVEN_Z, Kind.TAR_GZ, Kind.TAR_XZ, Kind.TAR)
+
+    fun extensionOf(kind: Kind) = when (kind) {
+        Kind.ZIP -> ".zip"; Kind.SEVEN_Z -> ".7z"; Kind.TAR -> ".tar"; Kind.TAR_GZ -> ".tar.gz"
+        Kind.TAR_XZ -> ".tar.xz"; Kind.TAR_BZ2 -> ".tar.bz2"; Kind.GZ -> ".gz"; Kind.XZ -> ".xz"
+        Kind.BZ2 -> ".bz2"; Kind.RAR -> ".rar"
+    }
+
+    /** Name without its archive extension ("a.b.tar.gz" -> "a.b"), used for "extract to folder". */
+    fun baseName(name: String): String {
+        val k = kindOf(name) ?: return name
+        val n = name.lowercase()
+        val cut = listOf(".tar.gz", ".tar.xz", ".tar.bz2", ".tgz", ".txz", ".tbz2", extensionOf(k), ".apk", ".jar", ".apks", ".xapk")
+            .firstOrNull { n.endsWith(it) } ?: return name
+        return name.dropLast(cut.length).ifEmpty { name + "_x" }
+    }
+
+    /** Creates an archive of [kind]; 7z is built in [tmpDir] (needs random access) then copied. */
+    fun compress(
+        kind: Kind,
+        srcFs: VirtualFs,
+        sources: List<FileEntry>,
+        dstFs: VirtualFs,
+        dstPath: String,
+        tmpDir: File,
+        isCancelled: () -> Boolean = { false },
+        onProgress: (Progress) -> Unit = {},
+    ): Int = when (kind) {
+        Kind.ZIP -> compressZip(srcFs, sources, dstFs, dstPath, isCancelled, onProgress)
+        Kind.TAR, Kind.TAR_GZ, Kind.TAR_XZ, Kind.TAR_BZ2 -> compressTar(kind, srcFs, sources, dstFs, dstPath, isCancelled, onProgress)
+        Kind.SEVEN_Z -> compress7z(srcFs, sources, dstFs, dstPath, tmpDir, isCancelled, onProgress)
+        else -> throw FsException("不支持创建该格式")
+    }
+
+    private fun walk(srcFs: VirtualFs, sources: List<FileEntry>, isCancelled: () -> Boolean, visit: (FileEntry, String) -> Unit) {
+        fun add(e: FileEntry, name: String) {
+            if (isCancelled()) throw FsException("已取消")
+            visit(e, name)
+            if (e.isDirectory) for (c in srcFs.list(e.path)) if (!(c.isLink && c.isDirectory)) add(c, "$name/${c.name}")
+        }
+        for (s in sources) add(s, s.name)
+    }
+
+    fun compressTar(
+        kind: Kind, srcFs: VirtualFs, sources: List<FileEntry>, dstFs: VirtualFs, dstPath: String,
+        isCancelled: () -> Boolean = { false }, onProgress: (Progress) -> Unit = {},
+    ): Int {
+        var count = 0
+        dstFs.openWrite(dstPath).use { raw ->
+            val comp: java.io.OutputStream = when (kind) {
+                Kind.TAR_GZ -> org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream(java.io.BufferedOutputStream(raw, 256 * 1024))
+                Kind.TAR_XZ -> org.apache.commons.compress.compressors.xz.XZCompressorOutputStream(java.io.BufferedOutputStream(raw, 256 * 1024))
+                Kind.TAR_BZ2 -> org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream(java.io.BufferedOutputStream(raw, 256 * 1024))
+                else -> java.io.BufferedOutputStream(raw, 256 * 1024)
+            }
+            org.apache.commons.compress.archivers.tar.TarArchiveOutputStream(comp, "UTF-8").use { tar ->
+                tar.setLongFileMode(org.apache.commons.compress.archivers.tar.TarArchiveOutputStream.LONGFILE_POSIX)
+                tar.setBigNumberMode(org.apache.commons.compress.archivers.tar.TarArchiveOutputStream.BIGNUMBER_POSIX)
+                val buf = ByteArray(128 * 1024)
+                walk(srcFs, sources, isCancelled) { e, name ->
+                    val te = org.apache.commons.compress.archivers.tar.TarArchiveEntry(if (e.isDirectory) "$name/" else name)
+                    if (e.lastModified > 0) te.setModTime(e.lastModified)
+                    if (!e.isDirectory) te.size = e.size
+                    tar.putArchiveEntry(te)
+                    if (!e.isDirectory) {
+                        var left = e.size
+                        srcFs.openRead(e.path).use { input ->
+                            while (left > 0) {
+                                if (isCancelled()) throw FsException("已取消")
+                                val n = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt()); if (n < 0) break
+                                tar.write(buf, 0, n); left -= n
+                            }
+                        }
+                        if (left != 0L) throw FsException("文件在压缩时被修改: ${e.path}")
+                        count++
+                        onProgress(Progress(name, count))
+                    }
+                    tar.closeArchiveEntry()
+                }
+                tar.finish()
+            }
+        }
+        return count
+    }
+
+    fun compress7z(
+        srcFs: VirtualFs, sources: List<FileEntry>, dstFs: VirtualFs, dstPath: String, tmpDir: File,
+        isCancelled: () -> Boolean = { false }, onProgress: (Progress) -> Unit = {},
+    ): Int {
+        var count = 0
+        tmpDir.mkdirs()
+        val tmp = File.createTempFile("gf-7z", ".7z", tmpDir)
+        try {
+            org.apache.commons.compress.archivers.sevenz.SevenZOutputFile(tmp).use { z ->
+                val buf = ByteArray(128 * 1024)
+                walk(srcFs, sources, isCancelled) { e, name ->
+                    val ze = org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry()
+                    ze.name = name
+                    ze.isDirectory = e.isDirectory
+                    if (e.lastModified > 0) { ze.hasLastModifiedDate = true; ze.lastModifiedDate = Date(e.lastModified) }
+                    z.putArchiveEntry(ze)
+                    if (!e.isDirectory) {
+                        srcFs.openRead(e.path).use { input ->
+                            while (true) {
+                                if (isCancelled()) throw FsException("已取消")
+                                val n = input.read(buf); if (n < 0) break
+                                z.write(buf, 0, n)
+                            }
+                        }
+                        count++
+                        onProgress(Progress(name, count))
+                    }
+                    z.closeArchiveEntry()
+                }
+            }
+            tmp.inputStream().use { input -> dstFs.openWrite(dstPath, 0, tmp.length()).use { input.copyTo(it, 256 * 1024) } }
+        } finally {
+            tmp.delete()
+        }
+        return count
+    }
+
     /**
      * Extracts [archivePath] into [destDir]. 7z needs random access: pass
      * [localFile] when the archive is a plain local file, otherwise it is
