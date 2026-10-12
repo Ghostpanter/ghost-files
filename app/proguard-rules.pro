@@ -48,3 +48,14 @@
 -dontwarn org.checkerframework.**
 -dontwarn javax.annotation.**
 -dontwarn org.apache.commons.lang3.**
+
+# Hosted LAN servers
+-keep class org.apache.ftpserver.** { *; }
+-keep class org.apache.sshd.** { *; }
+-keep class org.apache.mina.** { *; }
+-keep class org.apache.commons.logging.** { *; }
+-dontwarn org.apache.mina.**
+-dontwarn org.apache.ftpserver.**
+-dontwarn org.apache.sshd.**
+-dontwarn org.apache.commons.logging.**
+-dontwarn edu.umd.cs.findbugs.annotations.**

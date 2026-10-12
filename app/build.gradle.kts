@@ -16,8 +16,8 @@ android {
         applicationId = "com.ghostpanter.files"
         minSdk = 28
         targetSdk = 34
-        versionCode = 4
-        versionName = "0.2.2"
+        versionCode = 5
+        versionName = "0.3.0"
         // Universal APK: every ABI shipped by conscrypt-android.
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
@@ -72,7 +72,7 @@ android {
         jniLibs { useLegacyPackaging = true }
         resources {
             excludes += listOf(
-                "META-INF/{AL2.0,LGPL2.1}", "META-INF/services/**", "META-INF/*.version", "META-INF/*.properties", "META-INF/*.txt", "META-INF/*.prof", "META-INF/com/android/build/gradle/**", "META-INF/version-control-info.textproto", "META-INF/INDEX.LIST", "META-INF/DEPENDENCIES",
+                "META-INF/{AL2.0,LGPL2.1}", "META-INF/services/**", "META-INF/*.version", "META-INF/*.properties", "META-INF/*.txt", "META-INF/*.prof", "META-INF/com/android/build/gradle/**", "META-INF/version-control-info.textproto", "META-INF/INDEX.LIST", "META-INF/DEPENDENCIES", "META-INF/spring.*",
                 "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/*.kotlin_module",
                 "META-INF/versions/9/OSGI-INF/MANIFEST.MF", "META-INF/io.netty.versions.properties",
                 "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/*.EC",

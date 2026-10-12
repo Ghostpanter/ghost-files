@@ -137,6 +137,7 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
             }
         }
         Item(Icons.Filled.Radar, t("扫描局域网（自动发现共享）", "Scan LAN for shares")) { vm.screen = Screen.LanScan; close() }
+        Item(Icons.Filled.CloudUpload, t("本机服务（FTP / WebDAV / SFTP）", "Hosted services (FTP / WebDAV / SFTP)")) { vm.screen = Screen.Servers; close() }
         Item(Icons.Filled.Add, t("手动添加服务器（SMB/FTP/SFTP/WebDAV）", "Add server")) { editServer(null); close() }
 
         Section(t("工具", "Tools"))

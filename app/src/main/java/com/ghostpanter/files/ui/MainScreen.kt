@@ -69,6 +69,7 @@ fun MainScreen(vm: MainViewModel, activity: MainActivity) {
             is Screen.Apk -> ApkScreen(vm, activity, s)
             is Screen.Search -> SearchScreen(vm, s)
             Screen.LanScan -> LanScanScreen(vm, onEditServer = { editingServer = it; serverEditorOpen = true })
+            Screen.Servers -> ServersScreen(vm)
         }
     }
 

@@ -80,6 +80,7 @@ fun MainViewModel.buildMoreMenu(pane: PaneState): ActionMenu {
     add(t("添加书签", "Bookmark folder"), Icons.Filled.Bookmark) { addBookmark(tab) }
     add(t("复制当前路径", "Copy current path"), Icons.Filled.Link) { copyText(tab.path) }
     add(t("扫描局域网", "Scan LAN"), Icons.Filled.Radar) { screen = Screen.LanScan }
+    add(t("本机服务", "Hosted services"), Icons.Filled.CloudUpload) { screen = Screen.Servers }
     add(t("传输队列", "Transfers"), Icons.Filled.SwapVert) { screen = Screen.Transfers }
     add(t("目录属性", "Folder properties"), Icons.Filled.Info) {
         dialog = DialogState.Properties(pane.index, FileEntry(tab.path, tab.title, true, 0, 0))

@@ -52,7 +52,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        if (intent?.getBooleanExtra(EXTRA_SHOW_TRANSFERS, false) == true) vm.screen = Screen.Transfers
+        when {
+            intent?.getBooleanExtra(EXTRA_SHOW_SERVERS, false) == true -> vm.screen = Screen.Servers
+            intent?.getBooleanExtra(EXTRA_SHOW_TRANSFERS, false) == true -> vm.screen = Screen.Transfers
+        }
         setContent {
             GhostTheme { MainScreen(vm, this) }
         }
@@ -64,7 +67,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_SHOW_TRANSFERS, false)) vm.screen = Screen.Transfers
+        when {
+            intent.getBooleanExtra(EXTRA_SHOW_SERVERS, false) -> vm.screen = Screen.Servers
+            intent.getBooleanExtra(EXTRA_SHOW_TRANSFERS, false) -> vm.screen = Screen.Transfers
+        }
     }
 
     override fun onResume() {
@@ -146,6 +152,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        const val EXTRA_SHOW_SERVERS = "show_servers"
         const val EXTRA_SHOW_TRANSFERS = "show_transfers"
     }
 }

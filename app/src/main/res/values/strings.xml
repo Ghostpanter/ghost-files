@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">Ghost 文件</string>
     <string name="transfer_channel">文件传输</string>
+    <string name="hosted_channel">本机服务</string>
 </resources>

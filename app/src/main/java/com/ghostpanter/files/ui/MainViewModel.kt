@@ -58,6 +58,7 @@ sealed interface Screen {
     data class Apk(val file: File, val label: String) : Screen
     data class Search(val fsId: String, val root: String) : Screen
     data object LanScan : Screen
+    data object Servers : Screen
 }
 
 sealed interface UiEvent {

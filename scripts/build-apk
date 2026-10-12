@@ -50,7 +50,7 @@ clean_apk="$OUT_DIR/.coloros-clean.apk"
 python3 - "$APK" "$clean_apk" <<'PY'
 import sys, zipfile
 src, dst = sys.argv[1], sys.argv[2]
-drop_exact = {"META-INF/MANIFEST.MF", "META-INF/version-control-info.textproto"}
+drop_exact = {"META-INF/MANIFEST.MF", "META-INF/version-control-info.textproto", "META-INF/spring.handlers", "META-INF/spring.schemas", "META-INF/spring.tooling", "META-INF/spring.factories"}
 with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(dst, "w") as zout:
     for info in zin.infolist():
         name = info.filename
