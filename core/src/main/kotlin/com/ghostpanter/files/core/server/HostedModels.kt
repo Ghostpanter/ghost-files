@@ -3,17 +3,14 @@ package com.ghostpanter.files.core.server
 /**
  * Built-in LAN services this phone can host so other devices connect TO us.
  *
- * Hosted SMB (others connect TO this phone on port 445) is not implemented:
- * Windows expects privileged port 445, and there is no maintained pure-Java
- * SMB2 server that fits Android. Granting Magisk Root does NOT unlock it.
- * Connecting OUT to a NAS/PC is the SMB *client* (drawer → Add server) and
- * never needs Root.
+ * Hosted SMB uses an in-process SMB2 server (2.1 preferred) on a high TCP port (default 4455) — no Root.
+ * Connecting OUT to a NAS/PC is the SMB *client* (drawer → Add server, SMB2/3 via smbj).
  */
 enum class HostedKind(
     val label: String,
     val defaultPort: Int,
     val scheme: String,
-    /** UI-only: service is unavailable (not implemented). Not tied to live Root grant. */
+    /** Privileged / unimplemented services that stay disabled in the UI. */
     val needsRoot: Boolean = false,
 ) {
     FTP("FTP", 2121, "ftp"),
@@ -21,7 +18,7 @@ enum class HostedKind(
     WEBDAV("WebDAV", 8080, "http"),
     WEBDAVS("WebDAV (HTTPS)", 8443, "https"),
     SFTP("SFTP", 2222, "sftp"),
-    SMB("SMB", 445, "smb", needsRoot = true),
+    SMB("SMB", 4455, "smb"),
     HTTP("HTTP 远程管理", 8787, "http"),
 }
 
@@ -55,6 +52,7 @@ data class HostedServiceConfig(
             else -> username + if (password.isNotEmpty()) ":****@" else "@"
         }
         val path = when (kind) {
+            HostedKind.SMB -> "/" + SmbHostedServer.SHARE_NAME
             HostedKind.WEBDAV, HostedKind.WEBDAVS -> "/"
             else -> "/"
         }

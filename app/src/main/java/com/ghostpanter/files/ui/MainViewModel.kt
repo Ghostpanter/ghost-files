@@ -26,6 +26,7 @@ import com.ghostpanter.files.core.transfer.TransferOp
 import com.ghostpanter.files.data.Bookmark
 import com.ghostpanter.files.data.ViewPrefs
 import com.ghostpanter.files.fs.FsManager
+import com.ghostpanter.files.fs.RootRunner
 import com.ghostpanter.files.t
 import com.ghostpanter.files.transfer.TransferService
 import kotlinx.coroutines.CancellationException
@@ -137,7 +138,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     // ---------------------------------------------------------------- navigation
 
     fun navigate(tab: TabState, fsId: String, path: String, push: Boolean = true) {
-        if (push && (tab.fsId != fsId || tab.path != path)) {
+        val norm = VPath.normalize(path)
+        // Magisk grant alone leaves LocalFs on java.io — switch to Root ShellFs for / and other elevated paths.
+        val resolved = fsm.elevateFsId(fsId, norm)
+        if (push && (tab.fsId != resolved || tab.path != norm)) {
             tab.history.addLast(tab.fsId to tab.path)
             if (tab.history.size > 100) tab.history.removeFirst()
             tab.forward.clear()
@@ -145,12 +149,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
         tab.multiSelect = false
         tab.scroll[tab.fsId + tab.path] = tab.listState.firstVisibleItemIndex to tab.listState.firstVisibleItemScrollOffset
         val oldPath = tab.path
-        tab.fsId = fsId
-        tab.path = VPath.normalize(path)
+        tab.fsId = resolved
+        tab.path = norm
         tab.selected = emptySet()
         tab.filter = ""
         tab.highlight = if (VPath.parent(oldPath) == tab.path) oldPath else null
-        val saved = tab.scroll[fsId + tab.path]
+        val saved = tab.scroll[resolved + tab.path]
         tab.listState = LazyListState(saved?.first ?: 0, saved?.second ?: 0)
         refresh(tab)
         saveTabs()
@@ -158,6 +162,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
 
     fun refresh(tab: TabState, keepScroll: Boolean = false) {
         tab.loadJob?.cancel()
+        // Elevate LocalFs → Root before listing when Root was already granted this session.
+        val elevated = fsm.elevateFsId(tab.fsId, tab.path)
+        if (elevated != tab.fsId) {
+            tab.fsId = elevated
+            saveTabs()
+        }
         val fsId = tab.fsId
         val path = tab.path
         tab.loading = true
@@ -184,14 +194,57 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                val msg = e.message ?: e.javaClass.simpleName
+                // LocalFs hit a wall — try Magisk su once and re-list via Root ShellFs.
+                if (tab.path == path && fsId == LocalFs.ID &&
+                    (fsm.prefersRoot(path) || FsManager.looksLikePermissionDenied(msg))
+                ) {
+                    val ok = withContext(Dispatchers.IO) {
+                        RootRunner.granted() || RootRunner.check(timeoutSec = 12)
+                    }
+                    if (ok) {
+                        tab.fsId = FsManager.ROOT
+                        saveTabs()
+                        try {
+                            val list = withContext(Dispatchers.IO) { fsm.root.list(path) }
+                            if (tab.path == path) {
+                                tab.entries = list
+                                tab.error = null
+                                tab.selected = tab.selected.filter { s -> list.any { it.path == s } }.toSet()
+                            }
+                            return@launch
+                        } catch (e2: Exception) {
+                            if (tab.path == path) {
+                                tab.entries = emptyList()
+                                tab.error = e2.message ?: e2.javaClass.simpleName
+                            }
+                            return@launch
+                        }
+                    }
+                }
                 if (tab.path == path) {
                     tab.entries = emptyList()
-                    tab.error = e.message ?: e.javaClass.simpleName
+                    tab.error = msg
                 }
             } finally {
                 if (tab.path == path) tab.loading = false
             }
         }
+    }
+
+    /** After Magisk/KernelSU grants su: flip LocalFs tabs on elevated paths over to Root and re-list. */
+    fun onRootGranted() {
+        panes.forEach { p ->
+            p.tabs.forEach { tab ->
+                if (tab.fsId == LocalFs.ID && fsm.prefersRoot(tab.path)) {
+                    tab.fsId = FsManager.ROOT
+                    refresh(tab)
+                } else if (tab.fsId == FsManager.ROOT) {
+                    refresh(tab)
+                }
+            }
+        }
+        saveTabs()
     }
 
     fun up(tab: TabState): Boolean {

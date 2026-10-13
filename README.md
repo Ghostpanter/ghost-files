@@ -23,7 +23,7 @@
 | SAF：Android 11–12 授权 `Android/data`；U 盘 / SD 卡目录 | ✅（基础功能） |
 | 提权后修改权限 chmod（含递归）、chown | ✅（Root / Shizuku；SFTP / FTP 只支持 chmod） |
 | SMB2/3（smbj）、FTP / FTPS（Commons Net）、SFTP（sshj）、WebDAV / HTTPS | ✅ |
-| 本机服务：FTP / FTPS（默认 2121）、WebDAV / HTTPS（8080 / 8443）、SFTP（2222）；前台服务 + 通知；可选仅局域网、Wi-Fi 断开自动停；密码 Keystore 加密；首次开启生成随机密码；可复制连接地址。SMB 服务需 Root（需绑定 445，暂未内置纯 Java SMB2 服务端） | ✅（FTP/WebDAV/SFTP）；SMB ⏳ 需 Root，暂未内置 |
+| 本机服务：FTP / FTPS（默认 2121）、WebDAV / HTTPS（8080 / 8443）、SFTP（2222）、**SMB2（2.1，端口 4455，免 Root）**；前台服务 + 通知；可选仅局域网、Wi-Fi 断开自动停；密码 Keystore 加密；首次开启生成随机密码；可复制连接地址。Windows 资源管理器默认只认 445，Win11 24H2+ 可用 `New-SmbMapping -TcpPort 4455` | ✅ |
 | 后台传输队列：暂停 / 继续 / 取消 / 重试（续传）、通知栏进度、速度、失败明细 | ✅ |
 | 同一服务器内复制 / 移动在服务器端完成，不经过手机 | ✅ |
 | 递归搜索（子串或 `*` `?` 通配），本机 / Root / 局域网通用 | ✅ |

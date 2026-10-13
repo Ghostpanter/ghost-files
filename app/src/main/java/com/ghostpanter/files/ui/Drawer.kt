@@ -82,15 +82,39 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
                 }
             }
         }
-        Item(Icons.Filled.Folder, t("系统根目录 /", "System root /")) { go(LocalFs.ID, "/") }
+        var rootGranted by remember { mutableStateOf(RootRunner.granted()) }
+
+        // `/` is not readable via LocalFs; always request/use Root ShellFs.
+        Item(Icons.Filled.Folder, t("系统根目录 /", "System root /")) {
+            scope.launch {
+                if (RootRunner.granted()) {
+                    go(FsManager.ROOT, "/")
+                    return@launch
+                }
+                vm.busy = t("请求 Root 授权…", "Requesting root…")
+                val ok = withContext(Dispatchers.IO) { RootRunner.check() }
+                vm.busy = null
+                rootGranted = ok
+                if (ok) {
+                    vm.onRootGranted()
+                    go(FsManager.ROOT, "/")
+                } else {
+                    vm.toast(
+                        t(
+                            "打开 / 需要 Root。请在 Magisk/KernelSU 中允许本应用。",
+                            "Opening / needs Root. Allow this app in Magisk/KernelSU.",
+                        ),
+                    )
+                }
+            }
+        }
         Item(Icons.Filled.Download, t("下载", "Downloads")) { go(LocalFs.ID, vm.fsm.storageRoot + "/Download") }
 
         Section(t("提权访问（隐藏 / 系统文件）", "Elevated access"))
-        var rootGranted by remember { mutableStateOf(RootRunner.granted()) }
         // Always clickable — never greyed out. Granting Magisk/KernelSU refreshes the subtitle.
         Item(
             Icons.Filled.Security,
-            if (rootGranted) t("Root（已授权 · / 根目录）", "Root (granted · /)")
+            if (rootGranted) t("Root（已授权 · 浏览 / 用 Root 后端）", "Root (granted · use Root backend for /)")
             else t("Root（点此请求 su 授权）", "Root (tap to request su)"),
         ) {
             scope.launch {
@@ -98,13 +122,18 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
                 val ok = withContext(Dispatchers.IO) { RootRunner.check() }
                 vm.busy = null
                 rootGranted = ok
-                if (ok) go(FsManager.ROOT, "/")
-                else vm.toast(
-                    t(
-                        "未获得 Root。请在 Magisk/KernelSU 中允许本应用后重试。",
-                        "Root not available. Allow this app in Magisk/KernelSU, then retry.",
-                    ),
-                )
+                if (ok) {
+                    // Flip any LocalFs panes stuck on / or /storage/emulated over to ShellFs.
+                    vm.onRootGranted()
+                    go(FsManager.ROOT, "/")
+                } else {
+                    vm.toast(
+                        t(
+                            "未获得 Root。请在 Magisk/KernelSU 中允许本应用后重试。",
+                            "Root not available. Allow this app in Magisk/KernelSU, then retry.",
+                        ),
+                    )
+                }
             }
         }
         Item(Icons.Filled.Shield, t("Shizuku：Android/data", "Shizuku: Android/data")) {

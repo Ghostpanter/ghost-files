@@ -52,12 +52,6 @@ class HostedServerHub(
 
     @Synchronized
     fun start(kind: HostedKind): HostedRuntimeStatus {
-        if (kind == HostedKind.SMB) {
-            return HostedRuntimeStatus(
-                kind = kind, running = false,
-                error = "SMB 服务需 Root（需绑定 445；Android 无可用的免 Root 纯 Java SMB2 服务端）",
-            )
-        }
         val cfg = getConfig(kind).let {
             val root = it.rootPath.ifBlank { defaultRoot() }
             it.copy(rootPath = root, enabled = true)
@@ -88,7 +82,7 @@ class HostedServerHub(
         HostedKind.FTP, HostedKind.FTPS -> FtpHostedServer(File(dataDir, "hosted-tls.p12"))
         HostedKind.WEBDAV, HostedKind.WEBDAVS -> WebDavHostedServer(File(dataDir, "hosted-tls.p12"))
         HostedKind.SFTP -> SftpHostedServer(File(dataDir, "hosted-sftp-hostkey.ser"))
-        HostedKind.SMB -> error("SMB not implemented")
+        HostedKind.SMB -> SmbHostedServer()
         HostedKind.HTTP -> HttpRemoteServer()
     }
 }

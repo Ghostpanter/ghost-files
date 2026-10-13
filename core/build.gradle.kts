@@ -23,6 +23,7 @@ dependencies {
     api("com.hierynomus:sshj:0.39.0")
     api("com.squareup.okhttp3:okhttp:4.12.0")
     // Hosted LAN servers (no Root needed for high ports)
+    // Hosted SMB2/3 is implemented in-process (see server/smb2); no JFileServer.
     api("org.apache.ftpserver:ftpserver-core:1.2.0")
     api("org.apache.sshd:sshd-core:2.13.2")
     api("org.apache.sshd:sshd-sftp:2.13.2")

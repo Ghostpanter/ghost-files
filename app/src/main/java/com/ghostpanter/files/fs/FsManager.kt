@@ -68,8 +68,41 @@ class FsManager(
     fun localFile(fsId: String, path: String): java.io.File? =
         if (fsId == LocalFs.ID) java.io.File(path) else null
 
+    /**
+     * Paths that [LocalFs] (java.io.File) typically cannot list on modern Android,
+     * even with MANAGE_EXTERNAL_STORAGE — need Root [ShellFs] (or Shizuku for Android/data).
+     * Examples: `/`, `/storage`, `/storage/emulated`, `/data`, `/system`.
+     * Primary user storage (`/storage/emulated/0/...`) stays on LocalFs.
+     */
+    fun prefersRoot(path: String): Boolean {
+        val n = com.ghostpanter.files.core.VPath.normalize(path)
+        if (n == storageRoot || n.startsWith("$storageRoot/")) {
+            return n.contains("/Android/data") || n.contains("/Android/obb")
+        }
+        // Parents of emulated storage, or any non-/storage tree.
+        if (n == "/storage" || n == "/storage/emulated") return true
+        if (n.startsWith("/storage/")) return false // other volumes: try LocalFs first
+        return true // /, /data, /system, /proc, ...
+    }
+
+    /**
+     * If the tab asked for LocalFs but Root is already granted and the path needs elevation,
+     * switch to the Root backend id. Magisk grant alone does not change LocalFs behaviour.
+     */
+    fun elevateFsId(fsId: String, path: String): String {
+        if (fsId == LocalFs.ID && RootRunner.granted() && prefersRoot(path)) return ROOT
+        return fsId
+    }
+
     companion object {
         const val ROOT = "root"
         const val SHIZUKU = "shizuku"
+
+        fun looksLikePermissionDenied(msg: String?): Boolean {
+            if (msg.isNullOrBlank()) return false
+            val m = msg.lowercase()
+            return "无权限" in msg || "permission" in m || "denied" in m || "eacces" in m ||
+                "无法进入" in msg || "access" in m
+        }
     }
 }

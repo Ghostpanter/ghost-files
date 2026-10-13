@@ -49,10 +49,13 @@ class HostedStore(context: Context) {
         val raw = p.getString(kind.name, null) ?: return null
         return runCatching {
             val o = JSONObject(raw)
+            val portRaw = o.optInt("port", kind.defaultPort)
+            // v0.6.4+: hosted SMB moved from stub port 445 to high-port 4455 (no Root).
+            val port = if (kind == HostedKind.SMB && (portRaw == 445 || portRaw <= 0)) kind.defaultPort else portRaw
             HostedServiceConfig(
                 kind = kind,
                 enabled = o.optBoolean("enabled", false),
-                port = o.optInt("port", kind.defaultPort),
+                port = port,
                 username = o.optString("username", "ghost"),
                 password = Crypto.decrypt(o.optString("password")),
                 anonymous = o.optBoolean("anonymous", false),

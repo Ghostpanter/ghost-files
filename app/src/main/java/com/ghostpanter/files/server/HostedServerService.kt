@@ -214,7 +214,7 @@ class HostedServerService : Service() {
             syncFromStore(ctx)
             refreshListenHint(ctx)
             for (c in GhostApp.graph.hosted.configs.values) {
-                if (!c.enabled || c.kind.needsRoot) continue
+                if (!c.enabled) continue
                 if (c.kind == HostedKind.FTPS || c.kind == HostedKind.WEBDAVS) continue
                 set(ctx, c.kind, true)
             }
@@ -255,7 +255,20 @@ class HostedServerService : Service() {
                         h.start(HostedKind.SFTP)
                     }
                 }
-                HostedKind.SMB -> h.start(HostedKind.SMB) // returns error status
+                HostedKind.SMB -> {
+                    h.stop(HostedKind.SMB)
+                    if (enable) {
+                        h.putConfig(cfg.copy(enabled = true))
+                        h.start(HostedKind.SMB)
+                    }
+                }
+                HostedKind.HTTP -> {
+                    h.stop(HostedKind.HTTP)
+                    if (enable) {
+                        h.putConfig(cfg.copy(enabled = true))
+                        h.start(HostedKind.HTTP)
+                    }
+                }
                 else -> {}
             }
         }

@@ -83,10 +83,40 @@ class HostedServersTest {
         assertFalse(isLanAddress("::ffff:8.8.8.8"))
     }
 
-    @Test fun smbReportsRootRequired() {
+    @Test fun smbHostedRoundTripSmb2WithSmbclient() {
+        val port = freePort()
+        val shareRoot = java.io.File(root, "smb-share").also { it.mkdirs() }
+        java.io.File(shareRoot, "hello.txt").writeText("ghost-smb2")
+        hub.putConfig(
+            hub.defaultConfig(HostedKind.SMB).copy(
+                port = port,
+                password = "secret",
+                username = "ghost",
+                rootPath = shareRoot.absolutePath,
+                anonymous = false,
+            ),
+        )
         val st = hub.start(HostedKind.SMB)
-        assertFalse(st.running)
-        assertTrue(st.error!!.contains("Root"))
+        assertTrue(st.error ?: "ok", st.running)
+        // Primary verification via smbclient SMB2.1 (smbj may hang on optional IOCTLs).
+        val outFile = java.io.File("/tmp/gf-smb2-hello.txt").also { it.delete() }
+        val putSrc = java.io.File("/tmp/gf-smb2-put.txt").also { it.writeText("ping") }
+        val smbclient = listOf(
+            "smbclient", "//127.0.0.1/share", "-p", port.toString(),
+            "-m", "SMB2",
+            "--option=client min protocol=SMB2_02",
+            "--option=client max protocol=SMB2_10",
+            "-U", "ghost%secret",
+            "-c", "ls; get hello.txt ${outFile.absolutePath}; put ${putSrc.absolutePath} from-client.txt",
+        )
+        val proc = ProcessBuilder(smbclient).redirectErrorStream(true).start()
+        val out = proc.inputStream.bufferedReader().readText()
+        val code = proc.waitFor()
+        assertTrue("smbclient SMB2 failed ($code): $out", code == 0)
+        assertEquals("ghost-smb2", outFile.readText())
+        assertEquals("ping", java.io.File(shareRoot, "from-client.txt").readText())
+        hub.stop(HostedKind.SMB)
+        assertFalse(hub.status(HostedKind.SMB).running)
     }
 
     @Test fun randomPasswordLength() {

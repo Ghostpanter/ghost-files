@@ -75,8 +75,8 @@ fun ServersScreen(vm: MainViewModel) {
         ) {
             Text(
                 t(
-                    "开启后，局域网内其他设备可通过下列地址连接本机并读写共享目录。FTP 明文不安全，请优先用 SFTP / WebDAV(HTTPS) / FTPS。连 NAS/电脑上的共享请用侧栏「添加服务器」（客户端，无需 Root）。",
-                    "When enabled, other LAN devices can read/write this phone. Prefer SFTP / WebDAV(HTTPS) / FTPS. To open a NAS/PC share, use drawer → Add server (client, no Root).",
+                    "开启后，局域网内其他设备可通过下列地址连接本机并读写共享目录。FTP 明文不安全，请优先用 SFTP / WebDAV(HTTPS) / FTPS。本机 SMB 为 SMB2（2.1）、默认端口 4455（免 Root，无需开 SMB1）；连 NAS/电脑请用侧栏「添加服务器」。",
+                    "When enabled, other LAN devices can read/write this phone. Prefer SFTP / WebDAV(HTTPS) / FTPS. Hosted SMB is SMB2 (2.1) on port 4455 (no Root, no SMB1). To open a NAS/PC share, use drawer → Add server.",
                 ),
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.outline,
             )
@@ -102,17 +102,6 @@ fun ServersScreen(vm: MainViewModel) {
                     status = st,
                     ip = ip,
                     onToggle = { on ->
-                        if (kind.needsRoot) {
-                            Toast.makeText(
-                                ctx,
-                                t(
-                                    "本机 SMB 服务暂未内置（与是否 Root 无关）。连 NAS 请用侧栏「添加服务器」。",
-                                    "Hosted SMB is not bundled (Root does not unlock it). Use drawer → Add server for NAS.",
-                                ),
-                                Toast.LENGTH_LONG,
-                            ).show()
-                            return@ServiceCard
-                        }
                         if (on && !cfg.anonymous && cfg.password.isBlank()) {
                             store.upsert(cfg.copy(password = randomPassword()))
                         }
@@ -185,9 +174,9 @@ private fun ServiceCard(
                     Text(kind.label, fontWeight = FontWeight.SemiBold)
                     Text(
                         when {
-                            kind.needsRoot -> t("暂未内置 · 连 NAS 用「添加服务器」", "Not bundled · use Add server for NAS")
                             running -> t("监听中 · ${ip ?: "?"}:${cfg.effectivePort}", "Listening · ${ip ?: "?"}:${cfg.effectivePort}")
                             status.error != null -> status.error!!
+                            kind == HostedKind.SMB -> t("已停止 · SMB2 端口 ${cfg.effectivePort}", "Stopped · SMB2 port ${cfg.effectivePort}")
                             else -> t("已停止", "Stopped")
                         },
                         fontSize = 12.sp,
@@ -198,13 +187,13 @@ private fun ServiceCard(
                         },
                     )
                 }
-                Switch(checked = running, onCheckedChange = onToggle, enabled = !kind.needsRoot)
+                Switch(checked = running, onCheckedChange = onToggle)
             }
             Text(
                 t("共享目录：${cfg.rootPath.ifBlank { "（默认下载目录）" }}", "Share root: ${cfg.rootPath.ifBlank { "(Downloads)" }}"),
                 fontSize = 11.sp, color = MaterialTheme.colorScheme.outline, maxLines = 2,
             )
-            if (url != null && !kind.needsRoot) {
+            if (url != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(url, Modifier.weight(1f), fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 2)
                     IconButton(onClick = { onCopy(url) }) { Icon(Icons.Filled.ContentCopy, t("复制", "Copy")) }
@@ -217,7 +206,7 @@ private fun ServiceCard(
             if (running && status.clientCount > 0) {
                 Text(t("当前客户端：${status.clientCount}", "Clients: ${status.clientCount}"), fontSize = 12.sp)
             }
-            if (!cfg.anonymous && kind != HostedKind.SMB) {
+            if (!cfg.anonymous) {
                 Text(
                     t("账号 ${cfg.username} · 密码已保存", "User ${cfg.username} · password saved"),
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
@@ -227,8 +216,17 @@ private fun ServiceCard(
                 Text(t("⚠ 明文 FTP：密码与文件均不加密", "⚠ Cleartext FTP: password and data are not encrypted"),
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
             }
+            if (kind == HostedKind.SMB) {
+                Text(
+                    t(
+                        "连接：smbclient //${ip ?: "IP"}/share -p ${cfg.effectivePort} -U ${cfg.username}（SMB2）。Win11 24H2+：New-SmbMapping -RemotePath \\\\${ip ?: "IP"}\\share -TcpPort ${cfg.effectivePort} -UserName ${cfg.username}。免 Root；资源管理器默认只认 445。",
+                        "Connect: smbclient //${ip ?: "IP"}/share -p ${cfg.effectivePort} -U ${cfg.username} (SMB2). Win11 24H2+: New-SmbMapping -TcpPort ${cfg.effectivePort}. No Root; Explorer still expects 445.",
+                    ),
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
+                )
+            }
             Row {
-                TextButton(onClick = onEdit, enabled = !kind.needsRoot) { Text(t("设置", "Settings")) }
+                TextButton(onClick = onEdit) { Text(t("设置", "Settings")) }
             }
         }
     }
