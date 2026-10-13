@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.SSLServerSocketFactory
 
 /**
- * Lightweight Class-1 WebDAV server (PROPFIND/GET/PUT/DELETE/MKCOL/MOVE/COPY/HEAD/OPTIONS)
+ * Lightweight Class-1 WebDAV server (PROPFIND/GET/PUT/PATCH/DELETE/MKCOL/MOVE/COPY/HEAD/OPTIONS)
  * with HTTP Basic auth. Optional TLS via [SelfSignedTls].
  */
 class WebDavHostedServer(
@@ -156,12 +156,12 @@ class WebDavHostedServer(
         val file = fileOf(root, path)
         // PROPFIND (and similar) may carry an XML body — consume it before responding
         // so the keep-alive stream stays aligned for the next request.
-        if (req.method != "PUT" && (req.contentLength > 0 || req.chunked)) {
+        if (req.method != "PUT" && req.method != "PATCH" && (req.contentLength > 0 || req.chunked)) {
             runCatching { copyBody(req, OutputStream.nullOutputStream()) }
         }
         when (req.method) {
             "OPTIONS" -> writeResponse(out, 200, mapOf(
-                "Allow" to "OPTIONS, GET, HEAD, PUT, DELETE, MKCOL, PROPFIND, MOVE, COPY",
+                "Allow" to "OPTIONS, GET, HEAD, PUT, PATCH, DELETE, MKCOL, PROPFIND, MOVE, COPY",
                 "DAV" to "1",
                 "Content-Length" to "0",
             ), ByteArray(0))
@@ -227,6 +227,41 @@ class WebDavHostedServer(
                     copyBody(req, dest)
                 }
                 writeResponse(out, 201, mapOf("Content-Length" to "0"), ByteArray(0))
+            }
+            "PATCH" -> {
+                // SabreDAV / Nextcloud style append: X-Update-Range: bytes=OFFSET-
+                if (file.isDirectory) {
+                    copyBody(req, OutputStream.nullOutputStream())
+                    writeResponse(out, 405, emptyMap(), ByteArray(0)); return
+                }
+                val range = req.headers["x-update-range"] ?: req.headers["content-range"]
+                val offset = when {
+                    range == null -> -1L
+                    range.contains("bytes=") -> range.substringAfter("bytes=").substringBefore('-').toLongOrNull() ?: -1L
+                    range.contains("bytes ") -> range.substringAfter("bytes ").substringBefore('-').toLongOrNull() ?: -1L
+                    else -> -1L
+                }
+                if (offset < 0) {
+                    copyBody(req, OutputStream.nullOutputStream())
+                    writeResponse(out, 400, emptyMap(), ByteArray(0)); return
+                }
+                file.parentFile?.mkdirs()
+                if (!file.exists()) file.writeBytes(ByteArray(0))
+                java.io.RandomAccessFile(file, "rw").use { raf ->
+                    if (offset > raf.length()) {
+                        copyBody(req, OutputStream.nullOutputStream())
+                        writeResponse(out, 416, emptyMap(), ByteArray(0)); return
+                    }
+                    raf.seek(offset)
+                    val dest = object : OutputStream() {
+                        override fun write(b: Int) { raf.write(b) }
+                        override fun write(b: ByteArray, off: Int, len: Int) { raf.write(b, off, len) }
+                    }
+                    copyBody(req, dest)
+                    // Truncate any leftover beyond new EOF if Content-Length known
+                    if (req.contentLength >= 0) raf.setLength(offset + req.contentLength)
+                }
+                writeResponse(out, 204, mapOf("Content-Length" to "0"), ByteArray(0))
             }
             "MKCOL" -> {
                 if (file.exists()) writeResponse(out, 405, emptyMap(), ByteArray(0))

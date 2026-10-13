@@ -42,7 +42,7 @@ class WebDavFs(
     override val id = config.fsId
     override val displayName = config.name
     override val capabilities = setOf(
-        Capability.RESUME_READ, Capability.SERVER_COPY, Capability.RENAME_MOVE, Capability.REMOTE,
+        Capability.RESUME_READ, Capability.RESUME_WRITE, Capability.SERVER_COPY, Capability.RENAME_MOVE, Capability.REMOTE,
     )
 
     private val base: HttpUrl = (baseUrlOverride ?: run {
@@ -194,15 +194,16 @@ class WebDavFs(
     }
 
     override fun openWrite(path: String, offset: Long, sizeHint: Long): OutputStream {
-        if (offset > 0) throw FsException("WebDAV 不支持续传上传")
         val pipe = ArrayBlockingQueue<ByteArray>(8)
         val eofMarker = ByteArray(0)
         val failureRef = java.util.concurrent.atomic.AtomicReference<Throwable?>()
         val responseRef = java.util.concurrent.atomic.AtomicReference<Response?>()
         val finished = CountDownLatch(1)
+        // Remaining bytes after [offset]. sizeHint is total final size when known.
+        val remainingHint = if (sizeHint >= 0 && offset > 0) (sizeHint - offset).coerceAtLeast(0) else if (offset == 0L) sizeHint else -1L
         val body = object : RequestBody() {
             override fun contentType() = OCTET
-            override fun contentLength() = sizeHint
+            override fun contentLength() = remainingHint
             override fun writeTo(sink: BufferedSink) {
                 while (true) {
                     val chunk = pipe.poll(timeouts.readMs.toLong() * 2, TimeUnit.MILLISECONDS)
@@ -212,7 +213,16 @@ class WebDavFs(
                 }
             }
         }
-        val req = Request.Builder().url(url(path)).put(body).build()
+        // offset==0: normal PUT. offset>0: SabreDAV/Nextcloud PATCH with X-Update-Range.
+        val req = if (offset > 0) {
+            Request.Builder().url(url(path))
+                .patch(body)
+                .header("X-Update-Range", "bytes=$offset-")
+                .header("Content-Range", "bytes $offset-/*")
+                .build()
+        } else {
+            Request.Builder().url(url(path)).put(body).build()
+        }
         val worker = Thread({
             try {
                 responseRef.set(http.newCall(req).execute())
@@ -222,7 +232,7 @@ class WebDavFs(
             } finally {
                 finished.countDown()
             }
-        }, "webdav-put").apply { isDaemon = true; start() }
+        }, if (offset > 0) "webdav-patch" else "webdav-put").apply { isDaemon = true; start() }
 
         return object : OutputStream() {
             private var closed = false

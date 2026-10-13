@@ -62,6 +62,19 @@ class MiniDav(private val root: File, private val prefix: String = "/dav") : Dis
                 if (!f.parentFile.isDirectory) return MockResponse().setResponseCode(409)
                 f.writeBytes(request.body.readByteArray()); MockResponse().setResponseCode(201)
             }
+            "PATCH" -> {
+                if (!f.parentFile.isDirectory) return MockResponse().setResponseCode(409)
+                val range = request.getHeader("X-Update-Range") ?: request.getHeader("Content-Range") ?: return MockResponse().setResponseCode(400)
+                val offset = range.substringAfter("bytes=").substringAfter("bytes ").substringBefore('-').toLongOrNull()
+                    ?: return MockResponse().setResponseCode(400)
+                val chunk = request.body.readByteArray()
+                val raf = java.io.RandomAccessFile(f, "rw")
+                raf.seek(offset)
+                raf.write(chunk)
+                raf.setLength(offset + chunk.size)
+                raf.close()
+                MockResponse().setResponseCode(204)
+            }
             "MKCOL" -> if (f.exists()) MockResponse().setResponseCode(405) else { f.mkdir(); MockResponse().setResponseCode(201) }
             "DELETE" -> if (!f.exists()) MockResponse().setResponseCode(404) else { f.deleteRecursively(); MockResponse().setResponseCode(204) }
             "MOVE", "COPY" -> {

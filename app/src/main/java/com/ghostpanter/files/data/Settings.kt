@@ -87,4 +87,9 @@ class Settings(context: Context) : ViewPrefs {
     var viewMode: String
         get() = p.getString("view_mode", "LIST") ?: "LIST"
         set(v) { p.edit().putString("view_mode", v).apply() }
+
+    /** system | light | dark */
+    var themeMode: String
+        get() = p.getString("theme_mode", "system") ?: "system"
+        set(v) { p.edit().putString("theme_mode", v).apply() }
 }

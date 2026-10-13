@@ -55,9 +55,12 @@ class MainActivity : ComponentActivity() {
         when {
             intent?.getBooleanExtra(EXTRA_SHOW_SERVERS, false) == true -> vm.screen = Screen.Servers
             intent?.getBooleanExtra(EXTRA_SHOW_TRANSFERS, false) == true -> vm.screen = Screen.Transfers
+            intent?.action == "com.ghostpanter.files.action.SHOW_SERVERS" -> vm.screen = Screen.Servers
+            intent?.action == "com.ghostpanter.files.action.SHOW_TRANSFERS" -> vm.screen = Screen.Transfers
+            intent?.action == "com.ghostpanter.files.action.SCAN_LAN" -> vm.screen = Screen.LanScan
         }
         setContent {
-            GhostTheme { MainScreen(vm, this) }
+            GhostThemeFromSettings(vm.g.settings.themeMode) { MainScreen(vm, this) }
         }
         lifecycleScope.launch {
             vm.events.collect { handle(it) }

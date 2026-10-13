@@ -15,6 +15,9 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -224,8 +227,25 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
         val idx = entries.indexOfFirst { it.path == h }
         if (idx >= 0 && state.firstVisibleItemIndex == 0) state.scrollToItem((idx - 3).coerceAtLeast(0))
     }
+    val grid = GhostApp.graph.settings.viewMode == "GRID"
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(state = state, modifier = Modifier.fillMaxSize()) {
+        if (grid) {
+            LazyVerticalGrid(columns = GridCells.Adaptive(96.dp), modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(4.dp)) {
+                if (tab.path != "/") item(key = "..") {
+                    ParentRow { host.navigateTo(pane, com.ghostpanter.files.core.VPath.parent(tab.path)) }
+                }
+                items(entries.size, key = { entries[it].path }) { i ->
+                    val e = entries[i]
+                    FileRow(
+                        e = e, selecting = tab.selecting, selected = e.path in tab.selected,
+                        highlighted = e.path == tab.highlight, wide = false,
+                        onClick = { host.onEntryClick(pane, e) },
+                        onLongClick = { host.onEntryLongPress(pane, e) },
+                        onSwipe = { host.onEntrySwipe(pane, e) },
+                    )
+                }
+            }
+        } else LazyColumn(state = state, modifier = Modifier.fillMaxSize()) {
             if (tab.path != "/") item(key = "..") {
                 ParentRow { host.navigateTo(pane, com.ghostpanter.files.core.VPath.parent(tab.path)) }
             }

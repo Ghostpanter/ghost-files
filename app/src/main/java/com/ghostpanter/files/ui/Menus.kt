@@ -50,6 +50,15 @@ fun MainViewModel.buildEntryMenu(pane: PaneState, targets: List<FileEntry>): Act
         if (Archives.kindOf(single.name) == Archives.Kind.ZIP) {
             add(t("ZIP 内增删…", "Edit ZIP…"), Icons.Filled.Edit) { dialog = DialogState.ZipEdit(pane.index, single) }
         }
+        if (Archives.kindOf(single.name) in setOf(Archives.Kind.ZIP, Archives.Kind.SEVEN_Z)) {
+            add(t("测试压缩包完整性", "Test archive"), Icons.Filled.Verified) {
+                dialog = DialogState.ArchiveTest(pane.index, single)
+            }
+        }
+        add(t("分割文件…", "Split file…"), Icons.Filled.CallSplit) { dialog = DialogState.SplitFile(pane.index, single) }
+        if (single.name.matches(Regex(""".+\.\d{3}$"""))) {
+            add(t("合并分卷", "Merge parts"), Icons.Filled.CallMerge) { mergeParts(tab, single) }
+        }
     }
     add(t("压缩…（可设密码）", "Compress… (password)"), Icons.Filled.FolderZip) { dialog = DialogState.Compress(pane.index, targets) }
     if (single != null && Archives.isArchive(single.name)) add(t("解压…", "Extract…"), Icons.Filled.Unarchive) { pendingExtract = tab to single }
@@ -92,6 +101,16 @@ fun MainViewModel.buildMoreMenu(pane: PaneState): ActionMenu {
         screen = Screen.Compare(tab.fsId, left.path, o.fsId, right.path)
     }
     add(t("排序方式", "Sort"), Icons.AutoMirrored.Filled.Sort) { dialog = DialogState.Sort }
+    add(t("视图：列表 / 网格", "View: list / grid"), Icons.Filled.GridView) {
+        g.settings.viewMode = if (g.settings.viewMode == "GRID") "LIST" else "GRID"
+        toast(if (g.settings.viewMode == "GRID") t("网格视图", "Grid") else t("列表视图", "List"))
+    }
+    add(t("主题：跟随 / 浅色 / 深色", "Theme: system / light / dark"), Icons.Filled.DarkMode) {
+        g.settings.themeMode = when (g.settings.themeMode) {
+            "system" -> "light"; "light" -> "dark"; else -> "system"
+        }
+        toast(t("主题：${g.settings.themeMode}（需重建界面生效）", "Theme: ${g.settings.themeMode}"))
+    }
     add(if (g.settings.showHidden) t("不显示隐藏文件", "Hide hidden files") else t("显示隐藏文件", "Show hidden files"),
         if (g.settings.showHidden) Icons.Filled.VisibilityOff else Icons.Filled.Visibility) { g.settings.showHidden = !g.settings.showHidden }
     add(t("新建标签页", "New tab"), Icons.Filled.Tab) { newTab(pane) }

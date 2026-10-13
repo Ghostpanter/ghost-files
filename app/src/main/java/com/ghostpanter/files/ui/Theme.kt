@@ -50,3 +50,13 @@ private val Dark = darkColorScheme(
 fun GhostTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = if (dark) Dark else Light, typography = Typography(), content = content)
 }
+
+@Composable
+fun GhostThemeFromSettings(themeMode: String, content: @Composable () -> Unit) {
+    val dark = when (themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> isSystemInDarkTheme()
+    }
+    GhostTheme(dark = dark, content = content)
+}

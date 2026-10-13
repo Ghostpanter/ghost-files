@@ -671,4 +671,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     }
 
     fun hasCap(tab: TabState, c: Capability) = runCatching { fs(tab).has(c) }.getOrDefault(false)
+
+    fun splitFile(tab: TabState, e: FileEntry, partSizeMb: Int) {
+        val fs = fs(tab)
+        runBusy(t("正在分割…", "Splitting…"), listOf(tab)) {
+            val parts = com.ghostpanter.files.core.ops.FileSplit.split(
+                fs, e.path, partSizeMb.toLong() * 1024 * 1024,
+                isCancelled = { !isActive() },
+            ) { busy = t("分割 ", "Split ") + formatSize(it) }
+            toast(t("已分成 ${parts.size} 卷", "Split into ${parts.size} parts"))
+        }
+    }
+
+    fun mergeParts(tab: TabState, first: FileEntry) {
+        val fs = fs(tab)
+        val destName = first.name.replace(Regex("""\.\d{3}$"""), "")
+        runBusy(t("正在合并…", "Merging…"), listOf(tab)) {
+            var dest = VPath.join(tab.path, destName)
+            var n = 1
+            while (fs.stat(dest) != null) dest = VPath.join(tab.path, VPath.numbered(destName, n++))
+            com.ghostpanter.files.core.ops.FileSplit.merge(fs, first.path, dest, isCancelled = { !isActive() }) {
+                busy = t("合并 ", "Merge ") + formatSize(it)
+            }
+            toast(t("已合并到 ", "Merged to ") + VPath.name(dest))
+        }
+    }
+
+    fun testArchive(tab: TabState, e: FileEntry, password: String?) {
+        val fs = fs(tab)
+        runBusy(t("正在测试压缩包…", "Testing archive…"), emptyList()) {
+            val r = com.ghostpanter.files.core.ops.ArchiveTest.test(
+                fs, e.path, fsm.localFile(tab.fsId, e.path), getApplication<Application>().cacheDir, password,
+                isCancelled = { !isActive() },
+            )
+            toast(if (r.ok) r.detail else t("失败：", "Failed: ") + r.detail)
+        }
+    }
 }

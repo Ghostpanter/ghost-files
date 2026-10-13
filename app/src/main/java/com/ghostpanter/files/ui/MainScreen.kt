@@ -44,6 +44,8 @@ sealed interface DialogState {
     data class Symlink(val pane: Int) : DialogState
     data class Remount(val pane: Int) : DialogState
     data class ZipEdit(val pane: Int, val entry: FileEntry) : DialogState
+    data class SplitFile(val pane: Int, val entry: FileEntry) : DialogState
+    data class ArchiveTest(val pane: Int, val entry: FileEntry) : DialogState
 }
 
 @Composable

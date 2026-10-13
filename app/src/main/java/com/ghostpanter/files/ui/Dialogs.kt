@@ -68,6 +68,8 @@ fun EntryDialogs(vm: MainViewModel, d: DialogState, dismiss: () -> Unit) {
         is DialogState.Symlink -> SymlinkDialog(vm, vm.pane(d.pane).tab, dismiss)
         is DialogState.Remount -> RemountDialog(vm, dismiss)
         is DialogState.ZipEdit -> ZipEditDialog(vm, vm.pane(d.pane).tab, d.entry, dismiss)
+        is DialogState.SplitFile -> SplitFileDialog(vm, vm.pane(d.pane).tab, d.entry, dismiss)
+        is DialogState.ArchiveTest -> ArchiveTestDialog(vm, vm.pane(d.pane).tab, d.entry, dismiss)
     }
 }
 
@@ -511,5 +513,48 @@ fun ZipEditDialog(vm: MainViewModel, tab: TabState, entry: FileEntry, dismiss: (
             }
         },
         dismissButton = { TextButton(onClick = dismiss) { Text(t("关闭", "Close")) } },
+    )
+}
+
+
+@Composable
+fun SplitFileDialog(vm: MainViewModel, tab: TabState, entry: FileEntry, dismiss: () -> Unit) {
+    var mb by remember { mutableStateOf("100") }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(t("分割文件", "Split file")) },
+        text = {
+            Column {
+                Text(entry.name, fontSize = 12.sp)
+                OutlinedTextField(mb, { mb = it.filter(Char::isDigit).take(6) }, singleLine = true,
+                    label = { Text(t("每卷大小（MB）", "Part size (MB)")) }, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = (mb.toIntOrNull() ?: 0) >= 1, onClick = {
+                vm.splitFile(tab, entry, mb.toInt()); dismiss()
+            }) { Text(t("分割", "Split")) }
+        },
+        dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
+    )
+}
+
+@Composable
+fun ArchiveTestDialog(vm: MainViewModel, tab: TabState, entry: FileEntry, dismiss: () -> Unit) {
+    var password by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(t("测试压缩包", "Test archive")) },
+        text = {
+            Column {
+                Text(entry.name)
+                OutlinedTextField(password, { password = it }, singleLine = true,
+                    label = { Text(t("密码（如有）", "Password")) }, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { vm.testArchive(tab, entry, password.ifBlank { null }); dismiss() }) { Text(t("开始测试", "Test")) }
+        },
+        dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
     )
 }

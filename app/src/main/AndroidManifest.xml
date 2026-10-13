@@ -43,6 +43,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Tasker / automation -->
+            <intent-filter>
+                <action android:name="com.ghostpanter.files.action.SHOW_TRANSFERS" />
+                <action android:name="com.ghostpanter.files.action.SHOW_SERVERS" />
+                <action android:name="com.ghostpanter.files.action.SCAN_LAN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <service
