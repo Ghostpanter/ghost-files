@@ -46,6 +46,7 @@ sealed interface DialogState {
     data class ZipEdit(val pane: Int, val entry: FileEntry) : DialogState
     data class SplitFile(val pane: Int, val entry: FileEntry) : DialogState
     data class ArchiveTest(val pane: Int, val entry: FileEntry) : DialogState
+    data class PasswordOp(val pane: Int, val entry: FileEntry, val op: String) : DialogState
 }
 
 @Composable
@@ -82,6 +83,9 @@ fun MainScreen(vm: MainViewModel, activity: MainActivity) {
             is Screen.Player -> PlayerScreen(vm, s)
             is Screen.ContentSearch -> ContentSearchScreen(vm, s)
             is Screen.Compare -> CompareScreen(vm, s)
+            is Screen.Preview -> PreviewScreen(vm, s)
+            Screen.Terminal -> TerminalScreen(vm)
+            is Screen.MusicTag -> MusicTagScreen(vm, s)
         }
     }
 

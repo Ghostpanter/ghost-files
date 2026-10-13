@@ -134,6 +134,20 @@ class MainActivity : ComponentActivity() {
                 i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 startActivity(Intent.createChooser(i, t("分享", "Share")))
             }
+            is UiEvent.ShareBluetooth -> {
+                val uris = ArrayList(e.files.map { uriFor(it) })
+                val i = if (uris.size == 1) Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0]).setType(mimeOf(e.files[0].name))
+                else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris).setType("*/*")
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                // Prefer system Bluetooth share activity when present
+                i.setPackage("com.android.bluetooth")
+                try {
+                    startActivity(i)
+                } catch (_: ActivityNotFoundException) {
+                    i.setPackage(null)
+                    startActivity(Intent.createChooser(i, t("蓝牙发送", "Bluetooth")))
+                }
+            }
             UiEvent.RequestAllFiles -> requestStorageAccess()
         }
     }

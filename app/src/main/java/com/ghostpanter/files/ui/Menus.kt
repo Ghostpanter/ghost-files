@@ -59,10 +59,40 @@ fun MainViewModel.buildEntryMenu(pane: PaneState, targets: List<FileEntry>): Act
         if (single.name.matches(Regex(""".+\.\d{3}$"""))) {
             add(t("合并分卷", "Merge parts"), Icons.Filled.CallMerge) { mergeParts(tab, single) }
         }
+        if (single.extension in AUDIO_EXT) {
+            add(t("音乐标签…", "Music tags…"), Icons.Filled.MusicNote) { screen = Screen.MusicTag(tab.fsId, single.path) }
+        }
+        if (single.extension == "apk") {
+            add(t("APK V1 签名…", "Sign APK (v1)…"), Icons.Filled.Verified) { signApkV1(tab, single) }
+        }
+        if (com.ghostpanter.files.core.ops.ApksOps.isBundle(single.name)) {
+            add(t("解包 APKS/XAPK", "Extract APKS/XAPK"), Icons.Filled.Unarchive) {
+                openEntry(tab, single) // routes to extractApksBundle via openEntry
+            }
+        }
+        if (single.name.endsWith(".gfenc") || single.name.endsWith(".aes")) {
+            add(t("解密容器…", "Decrypt…"), Icons.Filled.Lock) { dialog = DialogState.PasswordOp(pane.index, single, "decrypt") }
+        } else {
+            add(t("加密为 .gfenc…", "Encrypt to .gfenc…"), Icons.Filled.Lock) { dialog = DialogState.PasswordOp(pane.index, single, "encrypt") }
+        }
+        if (single.extension == "pdf" || single.extension in PREVIEW_MD || single.extension == "epub" || single.extension in FONT_EXT) {
+            add(t("预览", "Preview"), Icons.Filled.Visibility) {
+                val kind = when {
+                    single.extension == "pdf" -> "pdf"
+                    single.extension == "epub" -> "epub"
+                    single.extension in FONT_EXT -> "font"
+                    else -> "md"
+                }
+                screen = Screen.Preview(tab.fsId, single.path, kind)
+            }
+        }
     }
-    add(t("压缩…（可设密码）", "Compress… (password)"), Icons.Filled.FolderZip) { dialog = DialogState.Compress(pane.index, targets) }
+    add(t("压缩…（可设密码/分卷）", "Compress… (password/split)"), Icons.Filled.FolderZip) { dialog = DialogState.Compress(pane.index, targets) }
     if (single != null && Archives.isArchive(single.name)) add(t("解压…", "Extract…"), Icons.Filled.Unarchive) { pendingExtract = tab to single }
-    if (targets.any { !it.isDirectory }) add(t("分享", "Share"), Icons.Filled.Share) { share(tab, targets) }
+    if (targets.any { !it.isDirectory }) {
+        add(t("分享", "Share"), Icons.Filled.Share) { share(tab, targets) }
+        add(t("蓝牙发送", "Send via Bluetooth"), Icons.Filled.Bluetooth) { shareBluetooth(tab, targets) }
+    }
     add(t("复制（剪贴板）", "Copy (clipboard)"), Icons.Filled.ContentCopy) { tab.selected = targets.map { it.path }.toSet(); setClip(tab, TransferOp.COPY) }
     add(t("剪切（剪贴板）", "Cut (clipboard)"), Icons.Filled.ContentCut) { tab.selected = targets.map { it.path }.toSet(); setClip(tab, TransferOp.MOVE) }
     if (single != null) {
@@ -118,6 +148,7 @@ fun MainViewModel.buildMoreMenu(pane: PaneState): ActionMenu {
     add(t("复制当前路径", "Copy current path"), Icons.Filled.Link) { copyText(tab.path) }
     add(t("扫描局域网", "Scan LAN"), Icons.Filled.Radar) { screen = Screen.LanScan }
     add(t("本机服务", "Hosted services"), Icons.Filled.CloudUpload) { screen = Screen.Servers }
+    add(t("终端", "Terminal"), Icons.Filled.Code) { screen = Screen.Terminal }
     add(t("应用管理（备份 APK）", "App manager"), Icons.Filled.Apps) { screen = Screen.Apps }
     add(t("传输队列", "Transfers"), Icons.Filled.SwapVert) { screen = Screen.Transfers }
     add(t("目录属性", "Folder properties"), Icons.Filled.Info) {

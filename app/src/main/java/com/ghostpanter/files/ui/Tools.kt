@@ -115,6 +115,7 @@ fun CompressDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>, d
     var name by remember { mutableStateOf(base) }
     var password by remember { mutableStateOf("") }
     var showPw by remember { mutableStateOf(false) }
+    var volumeMb by remember { mutableStateOf("") } // empty = single file
     AlertDialog(
         onDismissRequest = dismiss,
         title = { Text(t("压缩", "Compress")) },
@@ -138,10 +139,28 @@ fun CompressDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>, d
                     if (kind == Archives.Kind.ZIP && password.isNotEmpty()) Text(t("AES-256 加密 ZIP（zip4j）", "AES-256 ZIP"), fontSize = 11.sp)
                     if (kind == Archives.Kind.SEVEN_Z && password.isNotEmpty()) Text(t("AES 加密 7z", "AES 7z"), fontSize = 11.sp)
                 }
+                if (kind == Archives.Kind.ZIP) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        volumeMb, { volumeMb = it.filter(Char::isDigit).take(6) }, singleLine = true,
+                        label = { Text(t("分卷大小 MB（留空=不分卷）", "Split size MB (empty=off)")) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 if (kind == Archives.Kind.SEVEN_Z) Text(t("7z 先在缓存目录生成再写入目标，需要等量空闲空间", "7z is built in cache first"), fontSize = 11.sp)
             }
         },
-        confirmButton = { TextButton(onClick = { vm.compress(tab, entries, name, kind, password.ifBlank { null }); dismiss() }) { Text(t("压缩", "Compress")) } },
+        confirmButton = {
+            TextButton(onClick = {
+                val mb = volumeMb.toIntOrNull()
+                if (kind == Archives.Kind.ZIP && mb != null && mb > 0) {
+                    vm.compressVolume(tab, entries, name, mb, password.ifBlank { null })
+                } else {
+                    vm.compress(tab, entries, name, kind, password.ifBlank { null })
+                }
+                dismiss()
+            }) { Text(t("压缩", "Compress")) }
+        },
         dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
     )
 }
@@ -438,6 +457,22 @@ fun AppsScreen(vm: MainViewModel) {
                             r.onSuccess { vm.toast(t("已备份到 ", "Saved to ") + it) }.onFailure { vm.toast(t("备份失败：", "Backup failed: ") + it.message) }
                         }
                     }) { Text(t("备份 APK", "Backup APK") + if (a.splits.isNotEmpty()) "（APKS）" else "") }
+                    TextButton(onClick = {
+                        dismiss()
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    val shell = vm.fsm.root
+                                    val dir = backupDir().apply { mkdirs() }
+                                    val out = java.io.File(dir, a.pkg + "-data.tar")
+                                    com.ghostpanter.files.core.ops.AppDataBackup.backup(shell, a.pkg, out)
+                                    out.path
+                                }
+                            }
+                            r.onSuccess { vm.toast(t("数据已备份到 ", "Data backed up to ") + it) }
+                                .onFailure { vm.toast(t("数据备份失败（需 Root）：", "Data backup failed (needs Root): ") + it.message) }
+                        }
+                    }) { Text(t("备份应用数据（Root）", "Backup app data (Root)")) }
                     TextButton(onClick = { dismiss(); runCatching { ctx.packageManager.getLaunchIntentForPackage(a.pkg)?.let(ctx::startActivity) } }) { Text(t("启动", "Launch")) }
                     TextButton(onClick = { dismiss(); runCatching { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + a.pkg))) } }) { Text(t("应用信息", "App info")) }
                     if (!a.system) TextButton(onClick = { dismiss(); runCatching { ctx.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:" + a.pkg))) } }) { Text(t("卸载", "Uninstall")) }

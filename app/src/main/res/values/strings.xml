@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Ghost 文件</string>
+    <string name="app_name">双栏文件管理器</string>
     <string name="transfer_channel">文件传输</string>
     <string name="hosted_channel">本机服务</string>
 </resources>

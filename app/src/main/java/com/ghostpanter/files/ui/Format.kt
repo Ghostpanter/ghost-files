@@ -21,13 +21,15 @@ private val shortFmt = ThreadLocal.withInitial { SimpleDateFormat("yy-MM-dd HH:m
 fun formatTimeShort(ms: Long): String = if (ms <= 0) "" else shortFmt.get()!!.format(Date(ms))
 
 val TEXT_EXT = setOf(
-    "txt", "log", "md", "json", "xml", "yml", "yaml", "ini", "conf", "cfg", "prop", "properties", "sh", "py",
+    "txt", "log", "json", "xml", "yml", "yaml", "ini", "conf", "cfg", "prop", "properties", "sh", "py",
     "js", "ts", "kt", "kts", "java", "c", "h", "cpp", "hpp", "html", "htm", "css", "csv", "gradle", "toml",
     "sql", "bat", "lua", "rc", "smali", "list", "srt", "ass", "nfo", "env", "gitignore",
 )
 val IMAGE_EXT = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
 val VIDEO_EXT = setOf("mp4", "mkv", "avi", "mov", "webm", "3gp", "flv", "ts", "m4v", "wmv")
 val AUDIO_EXT = setOf("mp3", "flac", "wav", "aac", "ogg", "m4a", "opus", "wma", "ape")
+val FONT_EXT = setOf("ttf", "otf", "ttc", "otc", "woff")
+val PREVIEW_MD = setOf("md", "markdown")
 
 fun mimeOf(name: String): String {
     val ext = name.substringAfterLast('.', "").lowercase()

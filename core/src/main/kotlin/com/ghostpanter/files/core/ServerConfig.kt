@@ -28,6 +28,12 @@ data class ServerConfig(
     /** SFTP: OpenSSH/PEM private key text (optional). */
     val privateKey: String = "",
     val anonymous: Boolean = false,
+    /** SFTP ProxyJump / bastion host (optional). */
+    val jumpHost: String = "",
+    val jumpPort: Int = 22,
+    val jumpUser: String = "",
+    val jumpPassword: String = "",
+    val jumpPrivateKey: String = "",
 ) {
     val effectivePort: Int get() = if (port > 0) port else protocol.defaultPort
     val fsId: String get() = "net:$id"

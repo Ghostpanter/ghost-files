@@ -45,6 +45,7 @@ class SftpFs(
     private val lock = Any()
     @Volatile private var ssh: SSHClient? = null
     @Volatile private var sftp: SFTPClient? = null
+    @Volatile private var jumpSsh: SSHClient? = null
 
     private val hostKey = "${config.host}:${config.effectivePort}"
 
@@ -65,26 +66,43 @@ class SftpFs(
         closeQuietly()
         val cfg = sshConfig().also { it.keepAliveProvider = KeepAliveProvider.KEEP_ALIVE }
         val c = SSHClient(cfg)
+        var jump: SSHClient? = null
         try {
             c.addHostKeyVerifier(verifier)
             c.connectTimeout = timeouts.connectMs
             c.timeout = timeouts.readMs
-            c.connect(config.host, config.effectivePort)
-            c.connection.keepAlive.keepAliveInterval = timeouts.keepAliveSec
-            if (config.privateKey.isNotBlank()) {
-                val kp = if (config.password.isNotEmpty()) {
-                    c.loadKeys(config.privateKey, null, net.schmizz.sshj.userauth.password.PasswordUtils.createOneOff(config.password.toCharArray()))
-                } else c.loadKeys(config.privateKey, null, null)
-                c.authPublickey(config.username, kp)
+            if (config.jumpHost.isNotBlank()) {
+                val jcfg = sshConfig().also { it.keepAliveProvider = KeepAliveProvider.KEEP_ALIVE }
+                val j = SSHClient(jcfg)
+                jump = j
+                j.addHostKeyVerifier(object : HostKeyVerifier {
+                    private val key = "${config.jumpHost}:${if (config.jumpPort > 0) config.jumpPort else 22}"
+                    override fun verify(hostname: String, port: Int, key: PublicKey): Boolean {
+                        val fp = fingerprint(key)
+                        val known = hostKeys.get(this.key)
+                        if (known == null) { hostKeys.put(this.key, fp); return true }
+                        return known == fp
+                    }
+                    override fun findExistingAlgorithms(hostname: String, port: Int): List<String> = emptyList()
+                })
+                j.connectTimeout = timeouts.connectMs
+                j.timeout = timeouts.readMs
+                j.connect(config.jumpHost, if (config.jumpPort > 0) config.jumpPort else 22)
+                authSsh(j, config.jumpUser.ifBlank { config.username }, config.jumpPassword, config.jumpPrivateKey)
+                c.connectVia(j.newDirectConnection(config.host, config.effectivePort))
             } else {
-                c.authPassword(config.username, config.password)
+                c.connect(config.host, config.effectivePort)
             }
+            c.connection.keepAlive.keepAliveInterval = timeouts.keepAliveSec
+            authSsh(c, config.username, config.password, config.privateKey)
             val nf = c.newSFTPClient()
             ssh = c
             sftp = nf
+            jumpSsh = jump
             return nf
         } catch (e: Exception) {
             runCatching { c.disconnect() }
+            runCatching { jump?.disconnect() }
             val msg = e.message ?: e.javaClass.simpleName
             if (msg.contains("host key", true) || msg.contains("HOST_KEY", true)) {
                 throw FsException("主机密钥与上次记录不一致，已拒绝连接（可能被中间人攻击）。如服务器重装过，请在服务器设置中重置指纹。", e)
@@ -93,11 +111,25 @@ class SftpFs(
         }
     }
 
+
+    private fun authSsh(client: SSHClient, user: String, password: String, privateKey: String) {
+        if (privateKey.isNotBlank()) {
+            val kp = if (password.isNotEmpty()) {
+                client.loadKeys(privateKey, null, net.schmizz.sshj.userauth.password.PasswordUtils.createOneOff(password.toCharArray()))
+            } else client.loadKeys(privateKey, null, null)
+            client.authPublickey(user, kp)
+        } else {
+            client.authPassword(user, password)
+        }
+    }
+
     private fun closeQuietly() {
         runCatching { sftp?.close() }
         runCatching { ssh?.disconnect() }
+        runCatching { jumpSsh?.disconnect() }
         sftp = null
         ssh = null
+        jumpSsh = null
     }
 
     private inline fun <T> io(what: String, block: (SFTPClient) -> T): T {

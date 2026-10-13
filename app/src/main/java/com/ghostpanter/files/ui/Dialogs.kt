@@ -70,6 +70,7 @@ fun EntryDialogs(vm: MainViewModel, d: DialogState, dismiss: () -> Unit) {
         is DialogState.ZipEdit -> ZipEditDialog(vm, vm.pane(d.pane).tab, d.entry, dismiss)
         is DialogState.SplitFile -> SplitFileDialog(vm, vm.pane(d.pane).tab, d.entry, dismiss)
         is DialogState.ArchiveTest -> ArchiveTestDialog(vm, vm.pane(d.pane).tab, d.entry, dismiss)
+        is DialogState.PasswordOp -> PasswordOpDialog(vm, vm.pane(d.pane).tab, d.entry, d.op, dismiss)
     }
 }
 
@@ -249,6 +250,11 @@ fun ServerEditor(vm: MainViewModel, existing: ServerConfig?, dismiss: () -> Unit
     var passive by remember { mutableStateOf(existing?.passiveMode ?: true) }
     var anonymous by remember { mutableStateOf(existing?.anonymous ?: false) }
     var key by remember { mutableStateOf(existing?.privateKey ?: "") }
+    var jumpHost by remember { mutableStateOf(existing?.jumpHost ?: "") }
+    var jumpPort by remember { mutableStateOf(existing?.jumpPort?.takeIf { it > 0 && it != 22 }?.toString() ?: "") }
+    var jumpUser by remember { mutableStateOf(existing?.jumpUser ?: "") }
+    var jumpPass by remember { mutableStateOf(existing?.jumpPassword ?: "") }
+    var jumpKey by remember { mutableStateOf(existing?.jumpPrivateKey ?: "") }
     var testing by remember { mutableStateOf<String?>(null) }
     var protoMenu by remember { mutableStateOf(false) }
     var detected by remember { mutableStateOf<List<String>?>(null) }
@@ -260,6 +266,8 @@ fun ServerEditor(vm: MainViewModel, existing: ServerConfig?, dismiss: () -> Unit
         name = name.ifBlank { host }, protocol = protocol, host = host.trim(), port = port.toIntOrNull() ?: 0,
         username = user.trim(), password = pass, path = path.trim(), domain = domain.trim(),
         encoding = encoding.ifBlank { "UTF-8" }, passiveMode = passive, privateKey = key, anonymous = anonymous,
+        jumpHost = jumpHost.trim(), jumpPort = jumpPort.toIntOrNull() ?: 22,
+        jumpUser = jumpUser.trim(), jumpPassword = jumpPass, jumpPrivateKey = jumpKey,
     )
 
     AlertDialog(
@@ -337,8 +345,20 @@ fun ServerEditor(vm: MainViewModel, existing: ServerConfig?, dismiss: () -> Unit
                         OutlinedTextField(encoding, { encoding = it }, label = { Text(t("编码 (UTF-8 / GBK)", "Encoding")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(passive, { passive = it }); Text(t("被动模式 (PASV)", "Passive mode")) }
                     }
-                    Protocol.SFTP -> OutlinedTextField(key, { key = it }, label = { Text(t("私钥 (可选，粘贴 OpenSSH/PEM)", "Private key (optional)")) },
-                        minLines = 2, maxLines = 4, modifier = Modifier.fillMaxWidth(), textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp))
+                    Protocol.SFTP -> {
+                        OutlinedTextField(key, { key = it }, label = { Text(t("私钥 (可选，粘贴 OpenSSH/PEM)", "Private key (optional)")) },
+                            minLines = 2, maxLines = 4, modifier = Modifier.fillMaxWidth(), textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp))
+                        Text(t("ProxyJump（跳板机，可选）", "ProxyJump (optional)"), fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 8.dp))
+                        Row {
+                            OutlinedTextField(jumpHost, { jumpHost = it }, label = { Text(t("跳板主机", "Jump host")) }, singleLine = true, modifier = Modifier.weight(2f))
+                            Spacer(Modifier.width(6.dp))
+                            OutlinedTextField(jumpPort, { jumpPort = it.filter(Char::isDigit) }, label = { Text("22") }, singleLine = true, modifier = Modifier.weight(1f))
+                        }
+                        OutlinedTextField(jumpUser, { jumpUser = it }, label = { Text(t("跳板用户（默认同目标）", "Jump user (default=target)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(jumpPass, { jumpPass = it }, label = { Text(t("跳板密码", "Jump password")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(jumpKey, { jumpKey = it }, label = { Text(t("跳板私钥（可选）", "Jump private key")) },
+                            minLines = 2, maxLines = 3, modifier = Modifier.fillMaxWidth(), textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp))
+                    }
                     else -> Unit
                 }
                 if (protocol == Protocol.SFTP && existing != null) {
@@ -554,6 +574,33 @@ fun ArchiveTestDialog(vm: MainViewModel, tab: TabState, entry: FileEntry, dismis
         },
         confirmButton = {
             TextButton(onClick = { vm.testArchive(tab, entry, password.ifBlank { null }); dismiss() }) { Text(t("开始测试", "Test")) }
+        },
+        dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
+    )
+}
+
+
+@Composable
+fun PasswordOpDialog(vm: MainViewModel, tab: TabState, entry: FileEntry, op: String, dismiss: () -> Unit) {
+    var password by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(if (op == "encrypt") t("加密为 .gfenc", "Encrypt to .gfenc") else t("解密容器", "Decrypt")) },
+        text = {
+            Column {
+                Text(entry.name, fontSize = 12.sp)
+                OutlinedTextField(password, { password = it }, singleLine = true,
+                    label = { Text(t("密码", "Password")) },
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth())
+                Text(t("AES-256-GCM 本应用容器；EncFS/gocryptfs / AES Crypt 桌面格式未兼容。", "App AES-GCM container; EncFS/gocryptfs/AES Crypt not supported."), fontSize = 11.sp)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = password.isNotEmpty(), onClick = {
+                if (op == "encrypt") vm.encryptGfenc(tab, entry, password) else vm.decryptGfenc(tab, entry, password)
+                dismiss()
+            }) { Text(t("确定", "OK")) }
         },
         dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
     )

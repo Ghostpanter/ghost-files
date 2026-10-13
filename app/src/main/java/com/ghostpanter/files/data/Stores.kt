@@ -25,6 +25,9 @@ class ServerStore(context: Context) {
                     path = o.optString("path"), domain = o.optString("domain"),
                     encoding = o.optString("encoding", "UTF-8"), passiveMode = o.optBoolean("passive", true),
                     privateKey = Crypto.decrypt(o.optString("privateKey")), anonymous = o.optBoolean("anonymous", false),
+                    jumpHost = o.optString("jumpHost"), jumpPort = o.optInt("jumpPort", 22),
+                    jumpUser = o.optString("jumpUser"), jumpPassword = Crypto.decrypt(o.optString("jumpPassword")),
+                    jumpPrivateKey = Crypto.decrypt(o.optString("jumpPrivateKey")),
                 )
             }.getOrNull()
         }
@@ -38,6 +41,8 @@ class ServerStore(context: Context) {
             put("password", Crypto.encrypt(s.password)); put("path", s.path); put("domain", s.domain)
             put("encoding", s.encoding); put("passive", s.passiveMode)
             put("privateKey", Crypto.encrypt(s.privateKey)); put("anonymous", s.anonymous)
+            put("jumpHost", s.jumpHost); put("jumpPort", s.jumpPort); put("jumpUser", s.jumpUser)
+            put("jumpPassword", Crypto.encrypt(s.jumpPassword)); put("jumpPrivateKey", Crypto.encrypt(s.jumpPrivateKey))
         })
         p.edit().putString("list", arr.toString()).apply()
     }

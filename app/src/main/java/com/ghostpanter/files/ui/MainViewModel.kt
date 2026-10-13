@@ -65,12 +65,16 @@ sealed interface Screen {
     data class Player(val fsId: String, val path: String, val siblings: List<String>, val audioOnly: Boolean = false) : Screen
     data class ContentSearch(val fsId: String, val root: String) : Screen
     data class Compare(val leftFs: String, val leftPath: String, val rightFs: String, val rightPath: String) : Screen
+    data class Preview(val fsId: String, val path: String, val kind: String) : Screen
+    data object Terminal : Screen
+    data class MusicTag(val fsId: String, val path: String) : Screen
 }
 
 sealed interface UiEvent {
     data class Toast(val text: String) : UiEvent
     data class OpenFile(val file: File, val mime: String, val chooser: Boolean) : UiEvent
     data class Share(val files: List<File>) : UiEvent
+    data class ShareBluetooth(val files: List<File>) : UiEvent
     data object RequestAllFiles : UiEvent
 }
 
@@ -492,7 +496,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                                 .put("path", s.path).put("domain", s.domain).put("encoding", s.encoding)
                                 .put("passive", s.passiveMode)
                                 .put("privateKey", com.ghostpanter.files.data.Crypto.encrypt(s.privateKey))
-                                .put("anonymous", s.anonymous))
+                                .put("anonymous", s.anonymous)
+                                .put("jumpHost", s.jumpHost).put("jumpPort", s.jumpPort).put("jumpUser", s.jumpUser)
+                                .put("jumpPassword", com.ghostpanter.files.data.Crypto.encrypt(s.jumpPassword))
+                                .put("jumpPrivateKey", com.ghostpanter.files.data.Crypto.encrypt(s.jumpPrivateKey)))
                         }
                     }.toString()
                 },
@@ -528,6 +535,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                     encoding = x.optString("encoding", "UTF-8"), passiveMode = x.optBoolean("passive", true),
                     privateKey = com.ghostpanter.files.data.Crypto.decrypt(x.optString("privateKey")),
                     anonymous = x.optBoolean("anonymous", false),
+                    jumpHost = x.optString("jumpHost"), jumpPort = x.optInt("jumpPort", 22),
+                    jumpUser = x.optString("jumpUser"),
+                    jumpPassword = com.ghostpanter.files.data.Crypto.decrypt(x.optString("jumpPassword")),
+                    jumpPrivateKey = com.ghostpanter.files.data.Crypto.decrypt(x.optString("jumpPrivateKey")),
                 ))
             }
             toast(t("导入完成（服务器密码需同一设备 Keystore）", "Imported (passwords need same device Keystore)"))
@@ -588,6 +599,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     // ---------------------------------------------------------------- opening files
 
     /** Gives a java.io.File for [e]: direct for local files, otherwise a cached download. */
+    suspend fun materializeForPreview(fsId: String, e: FileEntry): File = materialize(fsId, e)
+
     private suspend fun materialize(fsId: String, e: FileEntry): File {
         fsm.localFile(fsId, e.path)?.let { if (it.canRead()) return it }
         val dir = File(getApplication<Application>().cacheDir, "open/" + Integer.toHexString((fsId + e.path).hashCode()))
@@ -618,7 +631,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
         if (e.isDirectory && !chooser) { navigate(tab, tab.fsId, e.path); return }
         val ext = e.extension
         when {
-            asText || (!chooser && ext in TEXT_EXT) -> screen = Screen.Editor(tab.fsId, e.path)
+            asText -> screen = Screen.Editor(tab.fsId, e.path)
+            !chooser && ext in PREVIEW_MD -> screen = Screen.Preview(tab.fsId, e.path, "md")
+            !chooser && ext == "pdf" -> screen = Screen.Preview(tab.fsId, e.path, "pdf")
+            !chooser && ext == "epub" -> screen = Screen.Preview(tab.fsId, e.path, "epub")
+            !chooser && ext in FONT_EXT -> screen = Screen.Preview(tab.fsId, e.path, "font")
+            !chooser && ext in TEXT_EXT -> screen = Screen.Editor(tab.fsId, e.path)
             !chooser && ext in IMAGE_EXT -> {
                 val sibs = sortEntries(tab.entries.filter { it.extension in IMAGE_EXT }, g.settings.sortBy, g.settings.ascending, false).map { it.path }
                 screen = Screen.Image(tab.fsId, e.path, sibs)
@@ -629,6 +647,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                 screen = Screen.Player(tab.fsId, e.path, sibs, audioOnly = ext in AUDIO_EXT)
             }
             !chooser && ext == "apk" -> withFile(tab, e) { f -> screen = Screen.Apk(f, e.name) }
+            !chooser && com.ghostpanter.files.core.ops.ApksOps.isBundle(e.name) -> withFile(tab, e) { f -> extractApksBundle(tab, f) }
             !chooser && Archives.isArchive(e.name) -> pendingExtract = tab to e
             else -> withFile(tab, e) { f -> _events.tryEmit(UiEvent.OpenFile(f, mimeOf(e.name), chooser)) }
         }
@@ -646,6 +665,93 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                 then(f)
             } catch (ex: CancellationException) {
                 busy = null
+            } catch (ex: Exception) {
+                busy = null
+                toast(ex.message ?: ex.javaClass.simpleName)
+            }
+        }
+    }
+
+
+    fun extractApksBundle(tab: TabState, file: java.io.File) {
+        runBusy(t("解包 APKS/XAPK…", "Extracting APKS/XAPK…"), listOf(tab)) {
+            val dest = java.io.File(tab.path.takeIf { fsm.localFile(tab.fsId, tab.path) != null }
+                ?: getApplication<Application>().getExternalFilesDir(null)!!.path,
+                file.nameWithoutExtension)
+            // Prefer local dest next to archive when on local fs
+            val outDir = fsm.localFile(tab.fsId, tab.path)?.let { java.io.File(it, file.nameWithoutExtension) }
+                ?: java.io.File(getApplication<Application>().cacheDir, "apks/" + file.nameWithoutExtension)
+            val r = com.ghostpanter.files.core.ops.ApksOps.extract(file, outDir)
+            toast(t("已解出 ${r.apks.size} 个 APK 到 ", "Extracted ${r.apks.size} APKs to ") + r.dir.path)
+            if (tab.fsId == com.ghostpanter.files.core.LocalFs.ID) {
+                navigate(tab, tab.fsId, r.dir.path)
+            }
+        }
+    }
+
+    fun encryptGfenc(tab: TabState, e: FileEntry, password: String) {
+        runBusy(t("加密…", "Encrypting…"), listOf(tab)) {
+            val src = materialize(tab.fsId, e)
+            val out = java.io.File(src.parentFile, e.name + ".gfenc")
+            com.ghostpanter.files.core.ops.AesCrypt.encrypt(src, out, password)
+            if (tab.fsId != com.ghostpanter.files.core.LocalFs.ID || fsm.localFile(tab.fsId, e.path)?.parent != out.parent) {
+                val dest = VPath.join(tab.path, out.name)
+                fsm.get(tab.fsId).openWrite(dest).use { o -> out.inputStream().use { it.copyTo(o) } }
+            }
+            toast(t("已生成 ", "Created ") + out.name)
+        }
+    }
+
+    fun decryptGfenc(tab: TabState, e: FileEntry, password: String) {
+        runBusy(t("解密…", "Decrypting…"), listOf(tab)) {
+            val src = materialize(tab.fsId, e)
+            val name = e.name.removeSuffix(".gfenc").removeSuffix(".aes")
+            val out = java.io.File(src.parentFile, name.ifBlank { e.name + ".dec" })
+            com.ghostpanter.files.core.ops.AesCrypt.decrypt(src, out, password)
+            if (tab.fsId != com.ghostpanter.files.core.LocalFs.ID) {
+                val dest = VPath.join(tab.path, out.name)
+                fsm.get(tab.fsId).openWrite(dest).use { o -> out.inputStream().use { it.copyTo(o) } }
+            }
+            toast(t("已解密到 ", "Decrypted to ") + out.name)
+        }
+    }
+
+    fun signApkV1(tab: TabState, e: FileEntry) {
+        runBusy(t("APK V1 签名…", "Signing APK (v1)…"), listOf(tab)) {
+            val src = materialize(tab.fsId, e)
+            val ks = java.io.File(getApplication<Application>().filesDir, "apk-sign.p12")
+            val out = java.io.File(src.parentFile, e.name.removeSuffix(".apk") + "-signed.apk")
+            com.ghostpanter.files.core.ops.ApkSign.signV1(src, out, ks)
+            if (tab.fsId != com.ghostpanter.files.core.LocalFs.ID) {
+                val dest = VPath.join(tab.path, out.name)
+                fsm.get(tab.fsId).openWrite(dest).use { o -> out.inputStream().use { it.copyTo(o) } }
+            }
+            toast(t("已签名（仅 V1）: ", "Signed (v1 only): ") + out.name)
+        }
+    }
+
+    fun compressVolume(tab: TabState, entries: List<FileEntry>, name: String, partMb: Int, password: String?) {
+        runBusy(t("创建分卷 ZIP…", "Creating split ZIP…"), listOf(tab)) {
+            val dest = VPath.join(tab.path, if (name.endsWith(".zip")) name else "$name.zip")
+            val cache = java.io.File(getApplication<Application>().cacheDir, "volzip")
+            val parts = com.ghostpanter.files.core.ops.VolumeZip.create(
+                fsm.get(tab.fsId), entries, fsm.get(tab.fsId), dest,
+                partMb * 1024L * 1024L, password, cache, isCancelled = { !isActive() },
+            )
+            toast(t("已创建 ${parts.size} 个分卷", "Created ${parts.size} volumes"))
+        }
+    }
+
+    fun shareBluetooth(tab: TabState, entries: List<FileEntry>) {
+        val files = entries.filter { !it.isDirectory }
+        if (files.isEmpty()) return
+        busyJob?.cancel()
+        busy = t("准备蓝牙分享…", "Preparing Bluetooth…")
+        busyJob = viewModelScope.launch {
+            try {
+                val out = files.map { materialize(tab.fsId, it) }
+                busy = null
+                _events.tryEmit(UiEvent.ShareBluetooth(out))
             } catch (ex: Exception) {
                 busy = null
                 toast(ex.message ?: ex.javaClass.simpleName)
