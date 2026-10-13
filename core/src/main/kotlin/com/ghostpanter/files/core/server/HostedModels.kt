@@ -2,13 +2,18 @@ package com.ghostpanter.files.core.server
 
 /**
  * Built-in LAN services this phone can host so other devices connect TO us.
- * SMB is listed for UI completeness but is not implemented without Root
- * (Windows hard-requires port 445; no maintained pure-Java SMB2 server fits Android).
+ *
+ * Hosted SMB (others connect TO this phone on port 445) is not implemented:
+ * Windows expects privileged port 445, and there is no maintained pure-Java
+ * SMB2 server that fits Android. Granting Magisk Root does NOT unlock it.
+ * Connecting OUT to a NAS/PC is the SMB *client* (drawer → Add server) and
+ * never needs Root.
  */
 enum class HostedKind(
     val label: String,
     val defaultPort: Int,
     val scheme: String,
+    /** UI-only: service is unavailable (not implemented). Not tied to live Root grant. */
     val needsRoot: Boolean = false,
 ) {
     FTP("FTP", 2121, "ftp"),

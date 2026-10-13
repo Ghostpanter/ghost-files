@@ -75,8 +75,8 @@ fun ServersScreen(vm: MainViewModel) {
         ) {
             Text(
                 t(
-                    "开启后，局域网内其他设备可通过下列地址连接本机并读写共享目录。FTP 明文传输不安全，生产环境请优先用 SFTP / WebDAV(HTTPS) / FTPS。",
-                    "When enabled, other LAN devices can read/write the shared folder. Prefer SFTP / WebDAV(HTTPS) / FTPS over plain FTP.",
+                    "开启后，局域网内其他设备可通过下列地址连接本机并读写共享目录。FTP 明文不安全，请优先用 SFTP / WebDAV(HTTPS) / FTPS。连 NAS/电脑上的共享请用侧栏「添加服务器」（客户端，无需 Root）。",
+                    "When enabled, other LAN devices can read/write this phone. Prefer SFTP / WebDAV(HTTPS) / FTPS. To open a NAS/PC share, use drawer → Add server (client, no Root).",
                 ),
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.outline,
             )
@@ -105,7 +105,10 @@ fun ServersScreen(vm: MainViewModel) {
                         if (kind.needsRoot) {
                             Toast.makeText(
                                 ctx,
-                                t("SMB 服务需 Root，当前版本暂未内置", "SMB server needs Root; not bundled yet"),
+                                t(
+                                    "本机 SMB 服务暂未内置（与是否 Root 无关）。连 NAS 请用侧栏「添加服务器」。",
+                                    "Hosted SMB is not bundled (Root does not unlock it). Use drawer → Add server for NAS.",
+                                ),
                                 Toast.LENGTH_LONG,
                             ).show()
                             return@ServiceCard
@@ -182,7 +185,7 @@ private fun ServiceCard(
                     Text(kind.label, fontWeight = FontWeight.SemiBold)
                     Text(
                         when {
-                            kind.needsRoot -> t("需 Root · 暂未内置", "Needs Root · not bundled")
+                            kind.needsRoot -> t("暂未内置 · 连 NAS 用「添加服务器」", "Not bundled · use Add server for NAS")
                             running -> t("监听中 · ${ip ?: "?"}:${cfg.effectivePort}", "Listening · ${ip ?: "?"}:${cfg.effectivePort}")
                             status.error != null -> status.error!!
                             else -> t("已停止", "Stopped")

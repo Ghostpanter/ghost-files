@@ -3,18 +3,105 @@ package com.ghostpanter.files.fs
 import android.content.pm.PackageManager
 import com.ghostpanter.files.core.ShellRunner
 import rikka.shizuku.Shizuku
+import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
-/** Root via `su -c`. Each command is its own su process, so a hung command can't wedge the others. */
+/**
+ * Root via `su`. Each command is its own su process, so a hung command can't wedge the others.
+ *
+ * Magisk / KernelSU / ColorOS often put `su` outside the app PATH, so we probe several
+ * well-known locations and both `su -c` and Magisk-style `su 0 sh -c` invocations.
+ */
 object RootRunner : ShellRunner {
-    override fun start(script: String): Process = ProcessBuilder("su", "-c", script).start()
+    /** How to invoke su once a working form is found: either "-c" or "0" (Magisk uid form). */
+    private data class SuForm(val binary: String, val mode: String)
 
-    /** Blocks until the su prompt is answered (or times out). */
-    fun check(): Boolean = runCatching {
-        val p = ProcessBuilder("su", "-c", "id").redirectErrorStream(true).start()
+    private val resolved = AtomicReference<SuForm?>(null)
+    private val grantedFlag = AtomicBoolean(false)
+
+    /** True after the last successful [check]. */
+    fun granted(): Boolean = grantedFlag.get()
+
+    /**
+     * True if any known su binary is present on disk (PATH "su" always counts as maybe).
+     * Does not prompt Magisk.
+     */
+    fun binaryPresent(): Boolean = candidateBinaries().any { path ->
+        if (path == "su") true else File(path).let { it.isFile && it.canExecute() }
+    }
+
+    /** PATH `su` first (Magisk/KernelSU usual entry), then absolute paths for ColorOS PATH quirks. */
+    private fun candidateBinaries(): List<String> = listOf(
+        "su",
+        "/system/bin/su",
+        "/system/xbin/su",
+        "/sbin/su",
+        "/vendor/bin/su",
+        "/debug_ramdisk/su",
+    )
+
+    private fun forms(): List<SuForm> =
+        candidateBinaries().flatMap { b -> listOf(SuForm(b, "-c"), SuForm(b, "0")) }
+
+    private fun processFor(form: SuForm, script: String): Process =
+        when (form.mode) {
+            "0" -> ProcessBuilder(form.binary, "0", "sh", "-c", script).redirectErrorStream(true).start()
+            else -> ProcessBuilder(form.binary, "-c", script).redirectErrorStream(true).start()
+        }
+
+    override fun start(script: String): Process {
+        val form = resolved.get()
+            ?: run {
+                if (!check(timeoutSec = 8)) throw IOException("su not available")
+                resolved.get() ?: throw IOException("su not available")
+            }
+        return processFor(form, script)
+    }
+
+    /**
+     * Blocks until the Magisk/KernelSU prompt is answered (or [timeoutSec] elapses).
+     * On success, caches the working su form for later [start] calls.
+     */
+    fun check(timeoutSec: Long = 25): Boolean {
+        val cached = resolved.get()
+        if (cached != null) {
+            if (tryForm(cached, timeoutSec.coerceAtLeast(1))) {
+                grantedFlag.set(true)
+                return true
+            }
+            resolved.set(null)
+        }
+        val deadlineNs = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSec.coerceAtLeast(1))
+        var firstLive = true
+        for (form in forms()) {
+            if (form.binary.startsWith('/') && !File(form.binary).exists()) continue
+            val leftSec = TimeUnit.NANOSECONDS.toSeconds(deadlineNs - System.nanoTime())
+            if (leftSec < 1) break
+            // First live candidate gets the Magisk-prompt budget; later ones stay short.
+            val slice = if (firstLive) leftSec else leftSec.coerceAtMost(3)
+            firstLive = false
+            if (tryForm(form, slice)) {
+                resolved.set(form)
+                grantedFlag.set(true)
+                return true
+            }
+        }
+        grantedFlag.set(false)
+        return false
+    }
+
+    private fun tryForm(form: SuForm, timeoutSec: Long): Boolean = runCatching {
+        val p = processFor(form, "id")
         p.outputStream.close()
-        if (!p.waitFor(20, TimeUnit.SECONDS)) { p.destroy(); return false }
-        p.inputStream.bufferedReader().readText().contains("uid=0")
+        if (!p.waitFor(timeoutSec.coerceAtLeast(1), TimeUnit.SECONDS)) {
+            p.destroyForcibly()
+            return false
+        }
+        val out = p.inputStream.bufferedReader().readText()
+        p.exitValue() == 0 && out.contains("uid=0")
     }.getOrDefault(false)
 }
 
