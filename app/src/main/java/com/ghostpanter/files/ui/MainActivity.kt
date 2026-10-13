@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
             intent?.action == "com.ghostpanter.files.action.SCAN_LAN" -> vm.screen = Screen.LanScan
         }
         setContent {
-            GhostThemeFromSettings(vm.g.settings.themeMode) { MainScreen(vm, this) }
+            GhostThemeFromSettings(vm.g.settings.themeMode, vm.g.settings.oledBlack) { MainScreen(vm, this) }
         }
         lifecycleScope.launch {
             vm.events.collect { handle(it) }

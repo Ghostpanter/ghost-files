@@ -88,8 +88,15 @@ class Settings(context: Context) : ViewPrefs {
         get() = p.getString("view_mode", "LIST") ?: "LIST"
         set(v) { p.edit().putString("view_mode", v).apply() }
 
-    /** system | light | dark */
+    /** system | light | dark — state so theme recomposes when toggled. */
+    private val _themeMode = mutableStateOf(p.getString("theme_mode", "system") ?: "system")
     var themeMode: String
-        get() = p.getString("theme_mode", "system") ?: "system"
-        set(v) { p.edit().putString("theme_mode", v).apply() }
+        get() = _themeMode.value
+        set(v) { _themeMode.value = v; p.edit().putString("theme_mode", v).apply() }
+
+    /** When true and dark theme is active, use pure black (#000000) surfaces for OLED. Default off. */
+    private val _oledBlack = bool("oled_black", false)
+    var oledBlack: Boolean
+        get() = _oledBlack.value
+        set(v) { _oledBlack.value = v; p.edit().putBoolean("oled_black", v).apply() }
 }

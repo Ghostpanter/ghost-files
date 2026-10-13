@@ -148,6 +148,7 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         Section(t("设置", "Settings"))
         Toggle(t("显示隐藏文件", "Show hidden files"), settings.showHidden) { settings.showHidden = it }
         Toggle(t("列表缩略图", "List thumbnails"), settings.showThumbnails) { settings.showThumbnails = it }
+        Toggle(t("OLED 纯黑（深色背景 #000000）", "OLED black (#000000)"), settings.oledBlack) { settings.oledBlack = it }
         Item(Icons.Filled.Upload, t("导出配置 / 书签 / 服务器", "Export settings / bookmarks / servers")) {
             val dest = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
             dest?.mkdirs()

@@ -482,7 +482,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                 settingsJson = ConfigBackup.settingsToJson(
                     settings.showHidden, settings.foldersFirst, settings.ascending, settings.recycleBin,
                     settings.sortBy.name, settings.paneRatio, settings.concurrentJobs, settings.jobsPerServer,
-                    settings.showThumbnails, settings.viewMode,
+                    settings.showThumbnails, settings.viewMode, settings.oledBlack,
                 ),
                 bookmarksJson = ConfigBackup.bookmarksToJson(g.bookmarks.items.map { Triple(it.label, it.fsId, it.path) }),
                 serversJson = java.io.File(getApplication<Application>().filesDir.parent, "shared_prefs/servers.xml").let {
@@ -519,6 +519,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
             g.settings.recycleBin = o.optBoolean("recycle_bin", g.settings.recycleBin)
             g.settings.showThumbnails = o.optBoolean("show_thumbnails", true)
             g.settings.viewMode = o.optString("view_mode", "LIST")
+            g.settings.oledBlack = o.optBoolean("oled_black", false)
+            if (o.has("theme_mode")) g.settings.themeMode = o.optString("theme_mode", g.settings.themeMode)
             for ((label, fs, path) in ConfigBackup.parseBookmarks(snap.bookmarksJson)) {
                 g.bookmarks.add(com.ghostpanter.files.data.Bookmark(label, fs, path))
             }

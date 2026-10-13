@@ -66,7 +66,7 @@ object ConfigBackup {
     fun settingsToJson(
         showHidden: Boolean, foldersFirst: Boolean, ascending: Boolean, recycleBin: Boolean,
         sortBy: String, paneRatio: Float, concurrentJobs: Int, jobsPerServer: Int,
-        showThumbnails: Boolean = true, viewMode: String = "LIST",
+        showThumbnails: Boolean = true, viewMode: String = "LIST", oledBlack: Boolean = false,
     ): String = buildString {
         append('{')
         fun kv(k: String, v: String) { if (length > 1) append(','); append('"').append(k).append('"').append(':').append(v) }
@@ -80,6 +80,7 @@ object ConfigBackup {
         kv("jobs_per_server", jobsPerServer.toString())
         kv("show_thumbnails", showThumbnails.toString())
         kv("view_mode", "\"$viewMode\"")
+        kv("oled_black", oledBlack.toString())
         append('}')
     }
 

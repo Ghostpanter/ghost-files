@@ -46,17 +46,48 @@ private val Dark = darkColorScheme(
     outlineVariant = Color(0xFF3A434B),
 )
 
+/** OLED: pure black canvas; keep accents/text readable. Slight lift only on variant containers. */
+private val DarkOled = darkColorScheme(
+    primary = Color(0xFF7DB8EE),
+    onPrimary = Color(0xFF00213D),
+    primaryContainer = Color(0xFF1B4A75),
+    onPrimaryContainer = Color(0xFFD3E6F8),
+    secondary = Color(0xFFB4C8D9),
+    secondaryContainer = Color(0xFF2A3540),
+    tertiary = Color(0xFF5FD3C3),
+    background = Color(0xFF000000),
+    surface = Color(0xFF000000),
+    surfaceVariant = Color(0xFF1A1A1A),
+    onSurface = Color(0xFFE8EAED),
+    onSurfaceVariant = Color(0xFFC2CAD2),
+    surfaceContainer = Color(0xFF000000),
+    surfaceContainerLow = Color(0xFF000000),
+    surfaceContainerHigh = Color(0xFF0A0A0A),
+    surfaceContainerHighest = Color(0xFF141414),
+    outline = Color(0xFF8A96A1),
+    outlineVariant = Color(0xFF2A2A2A),
+)
+
 @Composable
-fun GhostTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (dark) Dark else Light, typography = Typography(), content = content)
+fun GhostTheme(
+    dark: Boolean = isSystemInDarkTheme(),
+    oledBlack: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    val scheme = when {
+        dark && oledBlack -> DarkOled
+        dark -> Dark
+        else -> Light
+    }
+    MaterialTheme(colorScheme = scheme, typography = Typography(), content = content)
 }
 
 @Composable
-fun GhostThemeFromSettings(themeMode: String, content: @Composable () -> Unit) {
+fun GhostThemeFromSettings(themeMode: String, oledBlack: Boolean = false, content: @Composable () -> Unit) {
     val dark = when (themeMode) {
         "light" -> false
         "dark" -> true
         else -> isSystemInDarkTheme()
     }
-    GhostTheme(dark = dark, content = content)
+    GhostTheme(dark = dark, oledBlack = oledBlack, content = content)
 }

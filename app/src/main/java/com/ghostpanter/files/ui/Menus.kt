@@ -139,7 +139,17 @@ fun MainViewModel.buildMoreMenu(pane: PaneState): ActionMenu {
         g.settings.themeMode = when (g.settings.themeMode) {
             "system" -> "light"; "light" -> "dark"; else -> "system"
         }
-        toast(t("主题：${g.settings.themeMode}（需重建界面生效）", "Theme: ${g.settings.themeMode}"))
+        toast(t("主题：${g.settings.themeMode}", "Theme: ${g.settings.themeMode}"))
+    }
+    add(
+        if (g.settings.oledBlack) t("OLED 纯黑：开", "OLED black: on") else t("OLED 纯黑：关", "OLED black: off"),
+        Icons.Filled.Brightness2,
+    ) {
+        g.settings.oledBlack = !g.settings.oledBlack
+        toast(
+            if (g.settings.oledBlack) t("OLED 纯黑已开（深色主题下生效）", "OLED black on (dark theme)")
+            else t("OLED 纯黑已关", "OLED black off"),
+        )
     }
     add(if (g.settings.showHidden) t("不显示隐藏文件", "Hide hidden files") else t("显示隐藏文件", "Show hidden files"),
         if (g.settings.showHidden) Icons.Filled.VisibilityOff else Icons.Filled.Visibility) { g.settings.showHidden = !g.settings.showHidden }
