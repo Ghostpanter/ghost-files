@@ -78,4 +78,13 @@ class Settings(context: Context) : ViewPrefs {
     fun safTrees(): List<String> = p.getStringSet("saf_trees", emptySet())!!.toList().sorted()
     fun addSafTree(uri: String) { p.edit().putStringSet("saf_trees", safTrees().toSet() + uri).apply() }
     fun removeSafTree(uri: String) { p.edit().putStringSet("saf_trees", safTrees().toSet() - uri).apply() }
+
+    private val _showThumbnails = bool("show_thumbnails", true)
+    var showThumbnails: Boolean
+        get() = _showThumbnails.value
+        set(v) { _showThumbnails.value = v; p.edit().putBoolean("show_thumbnails", v).apply() }
+
+    var viewMode: String
+        get() = p.getString("view_mode", "LIST") ?: "LIST"
+        set(v) { p.edit().putString("view_mode", v).apply() }
 }

@@ -1,8 +1,10 @@
 package com.ghostpanter.files.ui
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -11,9 +13,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ghostpanter.files.core.Capability
@@ -26,11 +29,12 @@ import com.ghostpanter.files.core.ops.DirStats
 import com.ghostpanter.files.core.ops.FsStats
 import com.ghostpanter.files.core.transfer.ConflictPolicy
 import com.ghostpanter.files.t
+import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.UUID
 
 @Composable
 fun EntryDialogs(vm: MainViewModel, d: DialogState, dismiss: () -> Unit) {
@@ -61,6 +65,9 @@ fun EntryDialogs(vm: MainViewModel, d: DialogState, dismiss: () -> Unit) {
         is DialogState.Properties -> PropertiesDialog(vm, vm.pane(d.pane).tab, d.entry, dismiss)
         is DialogState.Chmod -> ChmodDialog(vm, vm.pane(d.pane).tab, d.entry, dismiss)
         DialogState.Sort -> SortDialog(vm, dismiss)
+        is DialogState.Symlink -> SymlinkDialog(vm, vm.pane(d.pane).tab, dismiss)
+        is DialogState.Remount -> RemountDialog(vm, dismiss)
+        is DialogState.ZipEdit -> ZipEditDialog(vm, vm.pane(d.pane).tab, d.entry, dismiss)
     }
 }
 
@@ -377,3 +384,132 @@ fun ServerEditor(vm: MainViewModel, existing: ServerConfig?, dismiss: () -> Unit
 
 @Suppress("unused")
 private fun capLabel(c: Capability) = c.name
+
+@Composable
+fun SymlinkDialog(vm: MainViewModel, tab: TabState, dismiss: () -> Unit) {
+    var link by remember { mutableStateOf("") }
+    var target by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(t("创建软链接", "Create symlink")) },
+        text = {
+            Column {
+                Text(t("在当前目录创建链接。本机普通目录可能无权限，失败时请用 Root/Shizuku。", "May need Root/Shizuku."), fontSize = 12.sp)
+                OutlinedTextField(link, { link = it }, singleLine = true, label = { Text(t("链接名", "Link name")) }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(target, { target = it }, singleLine = true, label = { Text(t("目标路径", "Target path")) }, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = { TextButton(enabled = link.isNotBlank() && target.isNotBlank(), onClick = { vm.createSymlink(tab, link, target); dismiss() }) { Text(t("创建", "Create")) } },
+        dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
+    )
+}
+
+@Composable
+fun RemountDialog(vm: MainViewModel, dismiss: () -> Unit) {
+    var mp by remember { mutableStateOf("/system") }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(t("Root 重新挂载为读写", "Root remount rw")) },
+        text = {
+            Column {
+                Text(t("危险操作：可能导致无法开机。改完文件后请尽快改回只读。", "Dangerous — remount ro afterwards."), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                OutlinedTextField(mp, { mp = it }, singleLine = true, label = { Text(t("挂载点", "Mount point")) }, modifier = Modifier.fillMaxWidth())
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (p in listOf("/system", "/vendor", "/product", "/odm", "/data")) AssistChip({ mp = p }, { Text(p) })
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { vm.remountRw(mp); dismiss() }) { Text(t("挂载读写", "Remount rw")) } },
+        dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
+    )
+}
+
+@Composable
+fun ZipEditDialog(vm: MainViewModel, tab: TabState, entry: FileEntry, dismiss: () -> Unit) {
+    var password by remember { mutableStateOf("") }
+    var entries by remember { mutableStateOf<List<String>?>(null) }
+    var err by remember { mutableStateOf<String?>(null) }
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(entry.path, password) {
+        entries = null; err = null
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val local = vm.fsm.localFile(tab.fsId, entry.path)
+                val file = local ?: run {
+                    val tmp = File(vm.getApplication<android.app.Application>().cacheDir, "zipedit/${entry.name}")
+                    tmp.parentFile?.mkdirs()
+                    vm.fsm.get(tab.fsId).openRead(entry.path).use { i -> tmp.outputStream().use { i.copyTo(it) } }
+                    tmp
+                }
+                com.ghostpanter.files.core.ops.ZipEdit.listEntries(file, password.ifBlank { null })
+            }.onSuccess { entries = it }.onFailure { err = it.message }
+        }
+    }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(t("编辑 ZIP 内文件", "Edit ZIP contents")) },
+        text = {
+            Column(Modifier.heightIn(max = 420.dp)) {
+                OutlinedTextField(password, { password = it }, singleLine = true, label = { Text(t("密码（如有）", "Password")) }, modifier = Modifier.fillMaxWidth())
+                when {
+                    err != null -> Text(err!!, color = MaterialTheme.colorScheme.error)
+                    entries == null -> CircularProgressIndicator()
+                    else -> LazyColumn(Modifier.heightIn(max = 280.dp)) {
+                        items(entries!!) { name ->
+                            Row(Modifier.fillMaxWidth().clickable {
+                                selected = if (name in selected) selected - name else selected + name
+                            }, verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(name in selected, { checked -> selected = if (checked) selected + name else selected - name })
+                                Text(name, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+                Text(t("删除选中条目不会整包重压（zip4j）。添加请用对面栏选文件后点下方按钮。", "Delete uses zip4j in-place."), fontSize = 11.sp)
+            }
+        },
+        confirmButton = {
+            Row {
+                TextButton(enabled = selected.isNotEmpty(), onClick = {
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            runCatching {
+                                val cache = vm.getApplication<android.app.Application>().cacheDir
+                                com.ghostpanter.files.core.ops.ZipEdit.withLocalZip(vm.fsm.get(tab.fsId), entry.path, cache, password.ifBlank { null }) { f ->
+                                    com.ghostpanter.files.core.ops.ZipEdit.removeEntries(f, selected.toList(), password.ifBlank { null })
+                                }
+                            }.onSuccess { vm.toast(t("已删除 ${selected.size} 项", "Removed")); vm.refresh(tab) }
+                                .onFailure { vm.toast(it.message ?: "err") }
+                        }
+                        dismiss()
+                    }
+                }) { Text(t("删除选中", "Delete")) }
+                TextButton(onClick = {
+                    val add = vm.other(vm.panes[1 - vm.activePane]).tab.selectedEntries().filter { !it.isDirectory }
+                    if (add.isEmpty()) { vm.toast(t("请先在对面栏选中要加入的文件", "Select files in other pane")); return@TextButton }
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            runCatching {
+                                val cache = vm.getApplication<android.app.Application>().cacheDir
+                                com.ghostpanter.files.core.ops.ZipEdit.withLocalZip(vm.fsm.get(tab.fsId), entry.path, cache, password.ifBlank { null }) { zf ->
+                                    for (a in add) {
+                                        val local = vm.fsm.localFile(vm.panes[1 - vm.activePane].tab.fsId, a.path) ?: run {
+                                            val tmp = File(cache, "zipadd/${a.name}"); tmp.parentFile?.mkdirs()
+                                            vm.fsm.get(vm.panes[1 - vm.activePane].tab.fsId).openRead(a.path).use { i -> tmp.outputStream().use { i.copyTo(it) } }
+                                            tmp
+                                        }
+                                        com.ghostpanter.files.core.ops.ZipEdit.addOrUpdate(zf, local, a.name, password.ifBlank { null })
+                                    }
+                                }
+                            }.onSuccess { vm.toast(t("已添加 ${add.size} 项", "Added")); vm.refresh(tab) }
+                                .onFailure { vm.toast(it.message ?: "err") }
+                        }
+                        dismiss()
+                    }
+                }) { Text(t("从对面添加", "Add from other")) }
+            }
+        },
+        dismissButton = { TextButton(onClick = dismiss) { Text(t("关闭", "Close")) } },
+    )
+}

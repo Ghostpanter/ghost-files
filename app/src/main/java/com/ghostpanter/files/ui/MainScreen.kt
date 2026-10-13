@@ -41,6 +41,9 @@ sealed interface DialogState {
     data object Sort : DialogState
     data class Hash(val pane: Int, val entry: FileEntry) : DialogState
     data class BatchRename(val pane: Int, val entries: List<FileEntry>) : DialogState
+    data class Symlink(val pane: Int) : DialogState
+    data class Remount(val pane: Int) : DialogState
+    data class ZipEdit(val pane: Int, val entry: FileEntry) : DialogState
 }
 
 @Composable
@@ -74,6 +77,9 @@ fun MainScreen(vm: MainViewModel, activity: MainActivity) {
             Screen.Servers -> ServersScreen(vm)
             is Screen.Hex -> HexScreen(vm, s)
             Screen.Apps -> AppsScreen(vm)
+            is Screen.Player -> PlayerScreen(vm, s)
+            is Screen.ContentSearch -> ContentSearchScreen(vm, s)
+            is Screen.Compare -> CompareScreen(vm, s)
         }
     }
 

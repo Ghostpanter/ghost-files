@@ -17,6 +17,7 @@ import com.ghostpanter.files.core.ShellFs
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.VirtualFs
 import com.ghostpanter.files.core.ops.Archives
+import com.ghostpanter.files.core.ops.ConfigBackup
 import com.ghostpanter.files.core.ops.RecycleBin
 import com.ghostpanter.files.core.transfer.ConflictPolicy
 import com.ghostpanter.files.core.transfer.JobState
@@ -61,6 +62,9 @@ sealed interface Screen {
     data object Servers : Screen
     data class Hex(val fsId: String, val path: String) : Screen
     data object Apps : Screen
+    data class Player(val fsId: String, val path: String, val siblings: List<String>, val audioOnly: Boolean = false) : Screen
+    data class ContentSearch(val fsId: String, val root: String) : Screen
+    data class Compare(val leftFs: String, val leftPath: String, val rightFs: String, val rightPath: String) : Screen
 }
 
 sealed interface UiEvent {
@@ -427,25 +431,106 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
 
     private fun validName(n: String) = n.isNotBlank() && n != "." && n != ".." && !n.contains('/') && !n.contains('\u0000')
 
-    fun compress(tab: TabState, entries: List<FileEntry>, name: String, kind: Archives.Kind = Archives.Kind.ZIP) {
+    fun compress(tab: TabState, entries: List<FileEntry>, name: String, kind: Archives.Kind = Archives.Kind.ZIP, password: String? = null) {
         val fs = fs(tab)
         val ext = Archives.extensionOf(kind)
         val fileName = name.trim().let { if (it.endsWith(ext, true)) it else it + ext }
         if (!validName(fileName)) { toast(t("名称无效", "Invalid name")); return }
         tab.selected = emptySet()
         runBusy(t("正在压缩…", "Compressing…"), listOf(tab)) {
-            // Never overwrite an existing file silently; drop the partial archive on failure/cancel.
             var target = VPath.join(tab.path, fileName)
             var n = 1
             while (fs.stat(target) != null) target = VPath.join(tab.path, VPath.numbered(fileName.removeSuffix(ext), n++) + ext)
             try {
-                Archives.compress(kind, fs, entries, fs, target, getApplication<Application>().cacheDir, isCancelled = { !isActive() }) {
+                Archives.compress(kind, fs, entries, fs, target, getApplication<Application>().cacheDir, password = password, isCancelled = { !isActive() }) {
                     busy = t("压缩: ", "Compress: ") + it.name
                 }
             } catch (e: Throwable) {
                 runCatching { fs.delete(target, false) }
                 throw e
             }
+        }
+    }
+
+    fun createSymlink(tab: TabState, linkName: String, target: String) {
+        if (!validName(linkName.trim())) { toast(t("名称无效", "Invalid name")); return }
+        val fs = fs(tab)
+        runBusy(t("创建软链接…", "Creating symlink…"), listOf(tab)) {
+            val link = VPath.join(tab.path, linkName.trim())
+            val shell = fs as? ShellFs
+            com.ghostpanter.files.core.ops.SymlinkOps.createLink(link, target.trim(), shell)
+        }
+    }
+
+    fun remountRw(mountPoint: String) {
+        val shell = runCatching { fsm.get(com.ghostpanter.files.fs.FsManager.ROOT) as ShellFs }.getOrNull()
+            ?: run { toast(t("需要 Root", "Root required")); return }
+        runBusy(t("重新挂载读写…", "Remounting rw…"), emptyList()) {
+            com.ghostpanter.files.core.ops.SymlinkOps.remountRw(shell, mountPoint)
+            toast(t("已挂载为读写（风险操作，改完请改回只读）", "Remounted rw — remount ro when done"))
+        }
+    }
+
+    fun exportBackup(destPath: String) {
+        runBusy(t("导出配置…", "Exporting…"), emptyList()) {
+            val settings = g.settings
+            val snap = ConfigBackup.Snapshot(
+                settingsJson = ConfigBackup.settingsToJson(
+                    settings.showHidden, settings.foldersFirst, settings.ascending, settings.recycleBin,
+                    settings.sortBy.name, settings.paneRatio, settings.concurrentJobs, settings.jobsPerServer,
+                    settings.showThumbnails, settings.viewMode,
+                ),
+                bookmarksJson = ConfigBackup.bookmarksToJson(g.bookmarks.items.map { Triple(it.label, it.fsId, it.path) }),
+                serversJson = java.io.File(getApplication<Application>().filesDir.parent, "shared_prefs/servers.xml").let {
+                    // Re-serialize from store so passwords stay Crypto-encrypted blobs
+                    org.json.JSONArray().also { arr ->
+                        for (s in g.servers.servers) {
+                            arr.put(org.json.JSONObject()
+                                .put("id", s.id).put("name", s.name).put("protocol", s.protocol.name)
+                                .put("host", s.host).put("port", s.port).put("username", s.username)
+                                .put("password", com.ghostpanter.files.data.Crypto.encrypt(s.password))
+                                .put("path", s.path).put("domain", s.domain).put("encoding", s.encoding)
+                                .put("passive", s.passiveMode)
+                                .put("privateKey", com.ghostpanter.files.data.Crypto.encrypt(s.privateKey))
+                                .put("anonymous", s.anonymous))
+                        }
+                    }.toString()
+                },
+            )
+            ConfigBackup.exportZip(java.io.File(destPath), snap)
+            toast(t("已导出到 ", "Exported to ") + destPath)
+        }
+    }
+
+    fun importBackup(srcPath: String) {
+        runBusy(t("导入配置…", "Importing…"), emptyList()) {
+            val snap = ConfigBackup.importZip(java.io.File(srcPath))
+            val o = org.json.JSONObject(snap.settingsJson)
+            g.settings.showHidden = o.optBoolean("show_hidden", g.settings.showHidden)
+            g.settings.foldersFirst = o.optBoolean("folders_first", g.settings.foldersFirst)
+            g.settings.ascending = o.optBoolean("ascending", g.settings.ascending)
+            g.settings.recycleBin = o.optBoolean("recycle_bin", g.settings.recycleBin)
+            g.settings.showThumbnails = o.optBoolean("show_thumbnails", true)
+            g.settings.viewMode = o.optString("view_mode", "LIST")
+            for ((label, fs, path) in ConfigBackup.parseBookmarks(snap.bookmarksJson)) {
+                g.bookmarks.add(com.ghostpanter.files.data.Bookmark(label, fs, path))
+            }
+            val arr = org.json.JSONArray(snap.serversJson)
+            for (i in 0 until arr.length()) {
+                val x = arr.getJSONObject(i)
+                g.servers.upsert(com.ghostpanter.files.core.ServerConfig(
+                    id = x.getString("id"), name = x.getString("name"),
+                    protocol = com.ghostpanter.files.core.Protocol.valueOf(x.getString("protocol")),
+                    host = x.getString("host"), port = x.optInt("port"),
+                    username = x.optString("username"),
+                    password = com.ghostpanter.files.data.Crypto.decrypt(x.optString("password")),
+                    path = x.optString("path"), domain = x.optString("domain"),
+                    encoding = x.optString("encoding", "UTF-8"), passiveMode = x.optBoolean("passive", true),
+                    privateKey = com.ghostpanter.files.data.Crypto.decrypt(x.optString("privateKey")),
+                    anonymous = x.optBoolean("anonymous", false),
+                ))
+            }
+            toast(t("导入完成（服务器密码需同一设备 Keystore）", "Imported (passwords need same device Keystore)"))
         }
     }
 
@@ -537,6 +622,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
             !chooser && ext in IMAGE_EXT -> {
                 val sibs = sortEntries(tab.entries.filter { it.extension in IMAGE_EXT }, g.settings.sortBy, g.settings.ascending, false).map { it.path }
                 screen = Screen.Image(tab.fsId, e.path, sibs)
+            }
+            !chooser && (ext in VIDEO_EXT || ext in AUDIO_EXT) -> {
+                val set = if (ext in AUDIO_EXT) AUDIO_EXT else VIDEO_EXT
+                val sibs = sortEntries(tab.entries.filter { it.extension in set }, g.settings.sortBy, g.settings.ascending, false).map { it.path }
+                screen = Screen.Player(tab.fsId, e.path, sibs, audioOnly = ext in AUDIO_EXT)
             }
             !chooser && ext == "apk" -> withFile(tab, e) { f -> screen = Screen.Apk(f, e.name) }
             !chooser && Archives.isArchive(e.name) -> pendingExtract = tab to e

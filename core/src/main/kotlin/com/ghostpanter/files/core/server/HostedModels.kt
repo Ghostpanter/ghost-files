@@ -17,6 +17,7 @@ enum class HostedKind(
     WEBDAVS("WebDAV (HTTPS)", 8443, "https"),
     SFTP("SFTP", 2222, "sftp"),
     SMB("SMB", 445, "smb", needsRoot = true),
+    HTTP("HTTP 远程管理", 8787, "http"),
 }
 
 data class HostedServiceConfig(

@@ -33,6 +33,11 @@ dependencies {
     api("org.apache.commons:commons-compress:1.27.1")
     api("org.tukaani:xz:1.10")
     api("com.github.junrar:junrar:7.5.5")
+    // Encrypted ZIP + in-archive edit
+    api("net.lingala.zip4j:zip4j:2.11.5")
+    // Zstd / LZ4
+    api("com.github.luben:zstd-jni:1.5.6-6")
+    api("org.lz4:lz4-java:1.8.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")

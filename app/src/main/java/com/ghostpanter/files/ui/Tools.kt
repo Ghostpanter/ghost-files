@@ -42,6 +42,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.RandomAccessFile
 
 private fun copyToClipboard(ctx: Context, label: String, text: String) {
     (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(label, text))
@@ -112,6 +113,8 @@ fun CompressDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>, d
     var kind by remember { mutableStateOf(Archives.Kind.ZIP) }
     val base = if (entries.size == 1) (if (entries[0].isDirectory) entries[0].name else entries[0].name.substringBeforeLast('.').ifEmpty { entries[0].name }) else "archive"
     var name by remember { mutableStateOf(base) }
+    var password by remember { mutableStateOf("") }
+    var showPw by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = dismiss,
         title = { Text(t("压缩", "Compress")) },
@@ -123,10 +126,22 @@ fun CompressDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>, d
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (k in Archives.creatable) FilterChip(kind == k, { kind = k }, label = { Text(Archives.extensionOf(k).removePrefix(".")) })
                 }
+                if (kind == Archives.Kind.ZIP || kind == Archives.Kind.SEVEN_Z) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        password, { password = it }, singleLine = true,
+                        label = { Text(t("密码（留空=不加密）", "Password (empty=none)")) },
+                        visualTransformation = if (showPw) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        trailingIcon = { IconButton(onClick = { showPw = !showPw }) { Icon(if (showPw) Icons.Filled.VisibilityOff else Icons.Filled.Visibility, null) } },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (kind == Archives.Kind.ZIP && password.isNotEmpty()) Text(t("AES-256 加密 ZIP（zip4j）", "AES-256 ZIP"), fontSize = 11.sp)
+                    if (kind == Archives.Kind.SEVEN_Z && password.isNotEmpty()) Text(t("AES 加密 7z", "AES 7z"), fontSize = 11.sp)
+                }
                 if (kind == Archives.Kind.SEVEN_Z) Text(t("7z 先在缓存目录生成再写入目标，需要等量空闲空间", "7z is built in cache first"), fontSize = 11.sp)
             }
         },
-        confirmButton = { TextButton(onClick = { vm.compress(tab, entries, name, kind); dismiss() }) { Text(t("压缩", "Compress")) } },
+        confirmButton = { TextButton(onClick = { vm.compress(tab, entries, name, kind, password.ifBlank { null }); dismiss() }) { Text(t("压缩", "Compress")) } },
         dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
     )
 }
@@ -190,7 +205,7 @@ fun BatchRenameDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>
     )
 }
 
-// ------------------------------------------------------------------ hex viewer
+// ------------------------------------------------------------------ hex viewer / editor
 
 private const val HEX_PAGE = 4096
 
@@ -200,13 +215,21 @@ fun HexScreen(vm: MainViewModel, s: Screen.Hex) {
     var size by remember { mutableLongStateOf(-1L) }
     var page by remember { mutableLongStateOf(0L) }
     var bytes by remember { mutableStateOf<ByteArray?>(null) }
+    var dirty by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var jump by remember { mutableStateOf(false) }
+    var editOffset by remember { mutableStateOf<Int?>(null) }
+    var editValue by remember { mutableStateOf("") }
+    var confirmSave by remember { mutableStateOf(false) }
+    var remote by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(s, page) {
+        if (dirty && bytes != null) return@LaunchedEffect
         bytes = null
         withContext(Dispatchers.IO) {
             runCatching {
                 val fs = vm.fsm.get(s.fsId)
+                remote = fs.has(com.ghostpanter.files.core.Capability.REMOTE)
                 if (size < 0) size = fs.stat(s.path)?.size ?: 0L
                 val off = page * HEX_PAGE
                 fs.openRead(s.path, off).use { input ->
@@ -219,15 +242,41 @@ fun HexScreen(vm: MainViewModel, s: Screen.Hex) {
         }
     }
     val pages = if (size <= 0) 1L else (size + HEX_PAGE - 1) / HEX_PAGE
+    fun save() {
+        val b = bytes ?: return
+        confirmSave = false
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    val fs = vm.fsm.get(s.fsId)
+                    val off = page * HEX_PAGE
+                    // Read full file into temp for remote / non-resume write, patch page, write back.
+                    val tmp = File(vm.getApplication<android.app.Application>().cacheDir, "hex-save.bin")
+                    fs.openRead(s.path).use { input -> tmp.outputStream().use { input.copyTo(it) } }
+                    RandomAccessFile(tmp, "rw").use { raf ->
+                        raf.seek(off)
+                        raf.write(b)
+                    }
+                    fs.openWrite(s.path, 0, tmp.length()).use { out -> tmp.inputStream().use { it.copyTo(out) } }
+                    tmp.delete()
+                }.onSuccess {
+                    dirty = false
+                    size = -1
+                    vm.toast(t("已保存（覆盖原文件）", "Saved (overwrote)"))
+                }.onFailure { vm.toast(t("保存失败: ", "Save failed: ") + it.message) }
+            }
+        }
+    }
     Scaffold(topBar = {
         TopAppBar(
-            title = { Text(VPath.name(s.path) + "  (HEX)", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            title = { Text(VPath.name(s.path) + "  (HEX)" + if (dirty) " *" else "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             navigationIcon = { IconButton(onClick = { vm.screen = Screen.Main }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
             actions = {
-                IconButton(enabled = page > 0, onClick = { page-- }) { Icon(Icons.Filled.ChevronLeft, t("上一页", "Prev")) }
+                IconButton(enabled = page > 0 && !dirty, onClick = { page-- }) { Icon(Icons.Filled.ChevronLeft, t("上一页", "Prev")) }
                 Text("${page + 1}/$pages", fontSize = 12.sp)
-                IconButton(enabled = page < pages - 1, onClick = { page++ }) { Icon(Icons.Filled.ChevronRight, t("下一页", "Next")) }
-                IconButton(onClick = { jump = true }) { Icon(Icons.Filled.Directions, t("跳转偏移", "Go to offset")) }
+                IconButton(enabled = page < pages - 1 && !dirty, onClick = { page++ }) { Icon(Icons.Filled.ChevronRight, t("下一页", "Next")) }
+                IconButton(onClick = { jump = true }) { Icon(Icons.Filled.Directions, t("跳转", "Go")) }
+                IconButton(enabled = dirty, onClick = { confirmSave = true }) { Icon(Icons.Filled.Save, t("保存", "Save")) }
             },
         )
     }) { pad ->
@@ -238,8 +287,23 @@ fun HexScreen(vm: MainViewModel, s: Screen.Hex) {
                 b == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 else -> {
                     val rows = (b.size + 15) / 16
-                    LazyColumn(Modifier.fillMaxSize().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp)) {
-                        items(rows) { r -> Text(hexRow(b, r, page * HEX_PAGE), fontFamily = FontFamily.Monospace, fontSize = 12.sp, softWrap = false) }
+                    Column(Modifier.fillMaxSize()) {
+                        if (remote) Text(t("远程文件：保存时会下载→修改→上传覆盖", "Remote: download-edit-upload on save"), fontSize = 11.sp, modifier = Modifier.padding(6.dp))
+                        LazyColumn(Modifier.weight(1f).fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp)) {
+                            items(rows) { r ->
+                                val line = hexRow(b, r, page * HEX_PAGE)
+                                Text(
+                                    line, fontFamily = FontFamily.Monospace, fontSize = 12.sp, softWrap = false,
+                                    modifier = Modifier.clickable {
+                                        editOffset = r * 16
+                                        editValue = (0 until 16).mapNotNull { i ->
+                                            val k = r * 16 + i
+                                            if (k < b.size) "%02X".format(b[k].toInt() and 0xff) else null
+                                        }.joinToString(" ")
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -248,9 +312,36 @@ fun HexScreen(vm: MainViewModel, s: Screen.Hex) {
     if (jump) {
         NameDialog(t("跳转到偏移（十进制或 0x 十六进制）", "Go to offset (dec or 0x hex)"), "0x", { jump = false }, selectAll = true) { v ->
             val off = v.trim().lowercase().let { if (it.startsWith("0x")) it.drop(2).toLongOrNull(16) else it.toLongOrNull() }
-            if (off != null && off >= 0) page = (off / HEX_PAGE).coerceAtMost(pages - 1)
+            if (off != null && off >= 0) { dirty = false; page = (off / HEX_PAGE).coerceAtMost(pages - 1) }
         }
     }
+    if (editOffset != null) {
+        AlertDialog(
+            onDismissRequest = { editOffset = null },
+            title = { Text(t("编辑字节（空格分隔十六进制）", "Edit bytes (hex)")) },
+            text = { OutlinedTextField(editValue, { editValue = it }, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val start = editOffset!!
+                    val parts = editValue.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    val b = bytes?.copyOf() ?: return@TextButton
+                    for ((i, p) in parts.withIndex()) {
+                        val v = p.toIntOrNull(16) ?: continue
+                        val idx = start + i
+                        if (idx in b.indices) b[idx] = v.toByte()
+                    }
+                    bytes = b; dirty = true; editOffset = null
+                }) { Text(t("应用", "Apply")) }
+            },
+            dismissButton = { TextButton(onClick = { editOffset = null }) { Text(t("取消", "Cancel")) } },
+        )
+    }
+    if (confirmSave) AlertDialog(
+        onDismissRequest = { confirmSave = false },
+        text = { Text(t("确定覆盖保存？远程文件会整文件重传。", "Overwrite? Remote files are fully re-uploaded.")) },
+        confirmButton = { TextButton(onClick = { save() }) { Text(t("覆盖保存", "Overwrite")) } },
+        dismissButton = { TextButton(onClick = { confirmSave = false }) { Text(t("取消", "Cancel")) } },
+    )
 }
 
 fun hexRow(b: ByteArray, row: Int, base: Long): String {

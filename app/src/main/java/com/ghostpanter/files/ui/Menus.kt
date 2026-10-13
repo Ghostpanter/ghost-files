@@ -42,10 +42,16 @@ fun MainViewModel.buildEntryMenu(pane: PaneState, targets: List<FileEntry>): Act
     if (single != null && !single.isDirectory) {
         add(t("打开方式…", "Open with…"), Icons.AutoMirrored.Filled.OpenInNew) { openEntry(tab, single, chooser = true) }
         add(t("文本编辑器打开", "Open as text"), Icons.Filled.EditNote) { openEntry(tab, single, asText = true) }
-        add(t("十六进制查看", "Hex viewer"), Icons.Filled.DataObject) { screen = Screen.Hex(tab.fsId, single.path) }
+        add(t("十六进制编辑", "Hex editor"), Icons.Filled.DataObject) { screen = Screen.Hex(tab.fsId, single.path) }
         add(t("校验值（MD5/SHA）", "Checksums"), Icons.Filled.Fingerprint) { dialog = DialogState.Hash(pane.index, single) }
+        if (single.extension in VIDEO_EXT || single.extension in AUDIO_EXT) {
+            add(t("播放", "Play"), Icons.Filled.PlayArrow) { openEntry(tab, single) }
+        }
+        if (Archives.kindOf(single.name) == Archives.Kind.ZIP) {
+            add(t("ZIP 内增删…", "Edit ZIP…"), Icons.Filled.Edit) { dialog = DialogState.ZipEdit(pane.index, single) }
+        }
     }
-    add(t("压缩…（zip/7z/tar.gz）", "Compress…"), Icons.Filled.FolderZip) { dialog = DialogState.Compress(pane.index, targets) }
+    add(t("压缩…（可设密码）", "Compress… (password)"), Icons.Filled.FolderZip) { dialog = DialogState.Compress(pane.index, targets) }
     if (single != null && Archives.isArchive(single.name)) add(t("解压…", "Extract…"), Icons.Filled.Unarchive) { pendingExtract = tab to single }
     if (targets.any { !it.isDirectory }) add(t("分享", "Share"), Icons.Filled.Share) { share(tab, targets) }
     add(t("复制（剪贴板）", "Copy (clipboard)"), Icons.Filled.ContentCopy) { tab.selected = targets.map { it.path }.toSet(); setClip(tab, TransferOp.COPY) }
@@ -75,7 +81,16 @@ fun MainViewModel.buildMoreMenu(pane: PaneState): ActionMenu {
     }
     add(t("交换窗口", "Swap panes"), Icons.Filled.SwapHoriz) { swapPanes() }
     add(t("跳转路径…", "Go to path…"), Icons.Filled.Directions) { pathJump = pane }
-    add(t("搜索", "Search"), Icons.Filled.Search) { screen = Screen.Search(tab.fsId, tab.path) }
+    add(t("搜索文件名", "Search names"), Icons.Filled.Search) { screen = Screen.Search(tab.fsId, tab.path) }
+    add(t("搜索文件内容", "Search contents"), Icons.Filled.ManageSearch) { screen = Screen.ContentSearch(tab.fsId, tab.path) }
+    add(t("创建软链接…", "Create symlink…"), Icons.Filled.Link) { dialog = DialogState.Symlink(pane.index) }
+    add(t("Root 挂载分区读写…", "Root remount rw…"), Icons.Filled.Storage) { dialog = DialogState.Remount(pane.index) }
+    add(t("与对面对比", "Compare with other pane"), Icons.Filled.Compare) {
+        val o = other(pane).tab
+        val left = tab.selectedEntries().singleOrNull() ?: FileEntry(tab.path, tab.title, true, 0, 0)
+        val right = o.selectedEntries().singleOrNull() ?: FileEntry(o.path, o.title, true, 0, 0)
+        screen = Screen.Compare(tab.fsId, left.path, o.fsId, right.path)
+    }
     add(t("排序方式", "Sort"), Icons.AutoMirrored.Filled.Sort) { dialog = DialogState.Sort }
     add(if (g.settings.showHidden) t("不显示隐藏文件", "Hide hidden files") else t("显示隐藏文件", "Show hidden files"),
         if (g.settings.showHidden) Icons.Filled.VisibilityOff else Icons.Filled.Visibility) { g.settings.showHidden = !g.settings.showHidden }

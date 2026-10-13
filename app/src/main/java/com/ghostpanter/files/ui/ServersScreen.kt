@@ -81,7 +81,7 @@ fun ServersScreen(vm: MainViewModel) {
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.outline,
             )
             // Present FTP(+FTPS toggle in editor), WebDAV, SFTP, SMB
-            listOf(HostedKind.FTP, HostedKind.WEBDAV, HostedKind.SFTP, HostedKind.SMB).forEach { kind ->
+            listOf(HostedKind.FTP, HostedKind.WEBDAV, HostedKind.SFTP, HostedKind.HTTP, HostedKind.SMB).forEach { kind ->
                 val cfg = store.get(kind)
                 val st = statuses[kind] ?: HostedRuntimeStatus(kind, false)
                 // FTPS / WEBDAVS reflected via useTls on the base kind
@@ -172,6 +172,7 @@ private fun ServiceCard(
                         HostedKind.FTP, HostedKind.FTPS -> Icons.Filled.Dns
                         HostedKind.WEBDAV, HostedKind.WEBDAVS -> Icons.Filled.Cloud
                         HostedKind.SFTP -> Icons.Filled.Terminal
+                        HostedKind.HTTP -> Icons.Filled.Language
                         HostedKind.SMB -> Icons.Filled.Lan
                     },
                     null, tint = MaterialTheme.colorScheme.primary,
@@ -204,6 +205,10 @@ private fun ServiceCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(url, Modifier.weight(1f), fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 2)
                     IconButton(onClick = { onCopy(url) }) { Icon(Icons.Filled.ContentCopy, t("复制", "Copy")) }
+                }
+                if (kind == HostedKind.HTTP && running) {
+                    Text(t("用浏览器扫码打开远程管理页", "Scan to open remote page in browser"), fontSize = 11.sp)
+                    QrImage(url, modifier = Modifier.padding(top = 4.dp).align(Alignment.CenterHorizontally))
                 }
             }
             if (running && status.clientCount > 0) {

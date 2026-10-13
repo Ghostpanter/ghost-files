@@ -1,5 +1,6 @@
 package com.ghostpanter.files.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -37,7 +39,11 @@ import androidx.compose.ui.unit.sp
 import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.core.LocalFs
 import com.ghostpanter.files.data.ViewPrefs
+import com.ghostpanter.files.GhostApp
 import com.ghostpanter.files.t
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 
 /** Entries of [tab] after hidden-file filter, name filter and sorting. */
 @Composable
@@ -303,8 +309,19 @@ fun FileRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val (icon, tint) = iconFor(e)
-        Box {
-            Icon(icon, null, tint = tint, modifier = Modifier.size(28.dp))
+        val showThumbs = GhostApp.graph.settings.showThumbnails
+        var thumb by remember(e.path, showThumbs) { mutableStateOf<android.graphics.Bitmap?>(null) }
+        LaunchedEffect(e.path, showThumbs) {
+            if (!showThumbs || e.isDirectory) { thumb = null; return@LaunchedEffect }
+            thumb = withContext(Dispatchers.IO) {
+                val local = File(e.path).takeIf { it.isFile && it.canRead() }
+                Thumbnails.load("local", e, local, size = 96)
+            }
+        }
+        Box(Modifier.size(28.dp)) {
+            val tb = thumb
+            if (tb != null) Image(tb.asImageBitmap(), null, Modifier.size(28.dp).clip(RoundedCornerShape(3.dp)))
+            else Icon(icon, null, tint = tint, modifier = Modifier.size(28.dp))
             if (e.isLink) Icon(Icons.Filled.Link, null, Modifier.size(12.dp).align(Alignment.BottomEnd), tint = MaterialTheme.colorScheme.tertiary)
         }
         Spacer(Modifier.width(6.dp))

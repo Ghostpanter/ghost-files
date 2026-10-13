@@ -147,6 +147,21 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
 
         Section(t("设置", "Settings"))
         Toggle(t("显示隐藏文件", "Show hidden files"), settings.showHidden) { settings.showHidden = it }
+        Toggle(t("列表缩略图", "List thumbnails"), settings.showThumbnails) { settings.showThumbnails = it }
+        Item(Icons.Filled.Upload, t("导出配置 / 书签 / 服务器", "Export settings / bookmarks / servers")) {
+            val dest = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            dest?.mkdirs()
+            val f = java.io.File(dest, "ghost-files-backup.gfbackup")
+            vm.exportBackup(f.absolutePath); close()
+        }
+        Item(Icons.Filled.Download, t("导入配置备份", "Import backup")) {
+            val f = java.io.File(
+                android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+                "ghost-files-backup.gfbackup",
+            )
+            if (f.isFile) { vm.importBackup(f.absolutePath); close() }
+            else vm.toast(t("请将备份放到 Download/ghost-files-backup.gfbackup", "Place backup at Download/ghost-files-backup.gfbackup"))
+        }
         Toggle(t("文件夹优先", "Folders first"), settings.foldersFirst) { settings.foldersFirst = it }
         Toggle(t("删除时移入回收站（本机）", "Delete to recycle bin (local)"), settings.recycleBin) { settings.recycleBin = it }
         var jobs by remember { mutableIntStateOf(settings.concurrentJobs) }

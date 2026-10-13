@@ -59,3 +59,13 @@
 -dontwarn org.apache.sshd.**
 -dontwarn org.apache.commons.logging.**
 -dontwarn edu.umd.cs.findbugs.annotations.**
+
+# v0.5.0 extras
+-keep class net.lingala.zip4j.** { *; }
+-keep class com.github.luben.zstd.** { *; }
+-keep class net.jpountz.** { *; }
+-keep class com.google.zxing.** { *; }
+-keep class androidx.media3.** { *; }
+-dontwarn com.github.luben.zstd.**
+-dontwarn net.jpountz.**
+-dontwarn androidx.media3.**

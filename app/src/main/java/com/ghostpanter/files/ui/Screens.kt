@@ -241,7 +241,8 @@ private fun decodeText(bytes: ByteArray): Pair<String, Charset> {
 }
 
 private val EDITOR_CHARSETS = listOf("UTF-8", "GBK", "Big5", "UTF-16LE", "UTF-16BE", "ISO-8859-1")
-private const val EDITOR_MAX = 8L * 1024 * 1024
+private const val EDITOR_MAX = 2L * 1024 * 1024
+private const val EDITOR_PAGE = 512L * 1024
 
 /** Safe save: write a sibling temp file, then swap it in, so a failed write never truncates the original. */
 private fun saveAtomically(fs: com.ghostpanter.files.core.VirtualFs, path: String, data: ByteArray) {
@@ -356,19 +357,40 @@ fun EditorScreen(vm: MainViewModel, s: Screen.Editor) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
                     tooLarge -> Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(t("文件超过 8MB，文本编辑器不加载以免卡死/闪退。", "File larger than 8MB."))
-                        TextButton(onClick = { vm.screen = Screen.Hex(s.fsId, s.path) }) { Text(t("用十六进制查看器打开", "Open in hex viewer")) }
+                        Text(t("文件超过 2MB：大文件请用十六进制编辑器分页查看，或用外部编辑器。", "File > 2MB: use hex editor paging."))
+                        TextButton(onClick = { vm.screen = Screen.Hex(s.fsId, s.path) }) { Text(t("用十六进制编辑器打开", "Open in hex editor")) }
                     }
                     error != null -> Text(error!!, Modifier.align(Alignment.Center).padding(24.dp), color = MaterialTheme.colorScheme.error)
                     value == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     else -> {
                         val style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-                        val base = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp)
-                        BasicTextField(
-                            value = value!!, onValueChange = { value = it }, textStyle = style,
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            modifier = if (wrap) base else base.horizontalScroll(rememberScrollState()),
-                        )
+                        val ext = VPath.extension(s.path)
+                        val annotated = remember(value!!.text, ext) { highlightCode(value!!.text, ext) }
+                        val lineCount = remember(value!!.text) { value!!.text.count { it == '\n' } + 1 }
+                        Row(Modifier.fillMaxSize()) {
+                            // Line numbers
+                            Column(
+                                Modifier.width(44.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(top = 8.dp, end = 4.dp),
+                                horizontalAlignment = Alignment.End,
+                            ) {
+                                for (n in 1..lineCount.coerceAtMost(20000)) {
+                                    Text("$n", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.outline, lineHeight = 18.sp)
+                                }
+                            }
+                            val base = Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(8.dp)
+                            // Editable plain field keeps caret; highlighted preview sits behind when not dirty? Keep editable.
+                            BasicTextField(
+                                value = value!!, onValueChange = { value = it }, textStyle = style,
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                modifier = if (wrap) base else base.horizontalScroll(rememberScrollState()),
+                                decorationBox = { inner ->
+                                    Box {
+                                        // Non-interactive highlight underneath is hard with BasicTextField; show keywords via annotated only when read-only preview toggle — keep simple editable + line nums.
+                                        inner()
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }

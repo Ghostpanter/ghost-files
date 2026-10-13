@@ -47,7 +47,7 @@ class HostedServerHub(
         servers[kind]?.status() ?: HostedRuntimeStatus(kind = kind, running = false)
 
     fun allStatus(): List<HostedRuntimeStatus> =
-        listOf(HostedKind.FTP, HostedKind.FTPS, HostedKind.WEBDAV, HostedKind.WEBDAVS, HostedKind.SFTP, HostedKind.SMB)
+        listOf(HostedKind.FTP, HostedKind.FTPS, HostedKind.WEBDAV, HostedKind.WEBDAVS, HostedKind.SFTP, HostedKind.SMB, HostedKind.HTTP)
             .map { status(it) }
 
     @Synchronized
@@ -89,5 +89,6 @@ class HostedServerHub(
         HostedKind.WEBDAV, HostedKind.WEBDAVS -> WebDavHostedServer(File(dataDir, "hosted-tls.p12"))
         HostedKind.SFTP -> SftpHostedServer(File(dataDir, "hosted-sftp-hostkey.ser"))
         HostedKind.SMB -> error("SMB not implemented")
+        HostedKind.HTTP -> HttpRemoteServer()
     }
 }

@@ -1,0 +1,305 @@
+package com.ghostpanter.files.ui
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.media.MediaMetadataRetriever
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.ghostpanter.files.core.FileEntry
+import com.ghostpanter.files.core.VPath
+import com.ghostpanter.files.core.ops.Compare
+import com.ghostpanter.files.core.ops.ContentSearch
+import com.ghostpanter.files.core.ops.ConfigBackup
+import com.ghostpanter.files.t
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.nio.charset.Charset
+
+// ------------------------------------------------------------------ content search
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ContentSearchScreen(vm: MainViewModel, s: Screen.ContentSearch) {
+    var query by remember { mutableStateOf("") }
+    var recursive by remember { mutableStateOf(true) }
+    var ignoreCase by remember { mutableStateOf(true) }
+    var regex by remember { mutableStateOf(false) }
+    var nameFilter by remember { mutableStateOf("") }
+    var running by remember { mutableStateOf(false) }
+    val hits = remember { mutableStateListOf<ContentSearch.Hit>() }
+    val scope = rememberCoroutineScope()
+    var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var progress by remember { mutableStateOf("") }
+    fun start() {
+        job?.cancel(); hits.clear()
+        if (query.isBlank()) return
+        running = true
+        job = scope.launch {
+            withContext(Dispatchers.IO) {
+                val ctx = coroutineContext
+                ContentSearch.search(
+                    vm.fsm.get(s.fsId), s.root,
+                    ContentSearch.Options(query, ignoreCase, regex, recursive = recursive, nameFilter = nameFilter),
+                    isCancelled = { !ctx.isActive },
+                    onHit = { h -> scope.launch { hits.add(h) } },
+                    onProgress = { p -> progress = p },
+                )
+            }
+            running = false
+        }
+    }
+    Scaffold(topBar = {
+        TopAppBar(
+            title = { Text(t("内容搜索", "Content search")) },
+            navigationIcon = { IconButton(onClick = { job?.cancel(); vm.screen = Screen.Main }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
+        )
+    }) { pad ->
+        Column(Modifier.padding(pad).fillMaxSize()) {
+            OutlinedTextField(query, { query = it }, singleLine = true, label = { Text(t("关键词 / 正则", "Keyword / regex")) }, modifier = Modifier.fillMaxWidth().padding(8.dp))
+            OutlinedTextField(nameFilter, { nameFilter = it }, singleLine = true, label = { Text(t("文件名过滤（可选 *?）", "Name filter")) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
+            Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(recursive, { recursive = it }); Text(t("子目录", "Recursive"))
+                Checkbox(ignoreCase, { ignoreCase = it }); Text(t("忽略大小写", "Ignore case"))
+                Checkbox(regex, { regex = it }); Text(t("正则", "Regex"))
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = { start() }) { Icon(Icons.Filled.Search, null) }
+            }
+            if (running) Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(16.dp)); Spacer(Modifier.width(8.dp))
+                Text(progress, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                TextButton(onClick = { job?.cancel(); running = false }) { Text(t("停止", "Stop")) }
+            }
+            Text(t("${hits.size} 处命中", "${hits.size} hits"), Modifier.padding(horizontal = 12.dp), fontSize = 12.sp)
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(hits.toList(), key = { "${it.entry.path}:${it.line}:${it.column}:${it.preview.hashCode()}" }) { h ->
+                    ListItem(
+                        headlineContent = { Text("${h.entry.name}:${h.line}") },
+                        supportingContent = { Text(h.preview, fontFamily = FontFamily.Monospace, fontSize = 12.sp, maxLines = 2) },
+                        modifier = Modifier.clickable {
+                            job?.cancel(); vm.screen = Screen.Editor(s.fsId, h.entry.path)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ compare
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CompareScreen(vm: MainViewModel, s: Screen.Compare) {
+    val scope = rememberCoroutineScope()
+    var rows by remember { mutableStateOf<List<Compare.Row>?>(null) }
+    var err by remember { mutableStateOf<String?>(null) }
+    var progress by remember { mutableStateOf("") }
+    var textDiff by remember { mutableStateOf<Compare.TextDiff?>(null) }
+    var hashFiles by remember { mutableStateOf(true) }
+    LaunchedEffect(s, hashFiles) {
+        rows = null; err = null; textDiff = null
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val lfs = vm.fsm.get(s.leftFs); val rfs = vm.fsm.get(s.rightFs)
+                val le = lfs.stat(s.leftPath); val re = rfs.stat(s.rightPath)
+                when {
+                    le == null || re == null -> listOf(Compare.compareFiles(lfs, s.leftPath, rfs, s.rightPath))
+                    le.isDirectory && re.isDirectory -> Compare.compareTrees(lfs, s.leftPath, rfs, s.rightPath, hashFiles, { false }) { progress = it }
+                    !le.isDirectory && !re.isDirectory -> {
+                        val row = Compare.compareFiles(lfs, s.leftPath, rfs, s.rightPath)
+                        if (row.kind == Compare.Kind.DIFFERENT && VPath.extension(le.name) in TEXT_EXT) {
+                            val lt = lfs.openRead(s.leftPath).use { it.readBytes().toString(Charsets.UTF_8) }
+                            val rt = rfs.openRead(s.rightPath).use { it.readBytes().toString(Charsets.UTF_8) }
+                            textDiff = Compare.textDiff(lt, rt)
+                        }
+                        listOf(row)
+                    }
+                    else -> listOf(Compare.Row("", Compare.Kind.TYPE_MISMATCH, le, re, detail = "一边是文件一边是目录"))
+                }
+            }.onSuccess { rows = it }.onFailure { err = it.message }
+        }
+    }
+    Scaffold(topBar = {
+        TopAppBar(
+            title = { Text(t("对比", "Compare")) },
+            navigationIcon = { IconButton(onClick = { vm.screen = Screen.Main }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
+            actions = {
+                TextButton(onClick = { hashFiles = !hashFiles }) { Text(if (hashFiles) t("哈希", "Hash") else t("大小", "Size")) }
+            },
+        )
+    }) { pad ->
+        Column(Modifier.padding(pad).fillMaxSize()) {
+            Text("${vm.fsm.label(s.leftFs)} ${s.leftPath}\n↔ ${vm.fsm.label(s.rightFs)} ${s.rightPath}", Modifier.padding(8.dp), fontSize = 12.sp)
+            when {
+                err != null -> Text(err!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
+                rows == null -> Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    CircularProgressIndicator(); Text(progress, fontSize = 11.sp)
+                }
+                else -> {
+                    val summary = rows!!.groupingBy { it.kind }.eachCount()
+                    Text(summary.entries.joinToString(" · ") { "${it.key}: ${it.value}" }, Modifier.padding(horizontal = 8.dp), fontSize = 12.sp)
+                    LazyColumn(Modifier.weight(1f)) {
+                        items(rows!!, key = { it.rel + it.kind }) { r ->
+                            val color = when (r.kind) {
+                                Compare.Kind.SAME -> MaterialTheme.colorScheme.outline
+                                Compare.Kind.LEFT_ONLY -> MaterialTheme.colorScheme.primary
+                                Compare.Kind.RIGHT_ONLY -> MaterialTheme.colorScheme.tertiary
+                                else -> MaterialTheme.colorScheme.error
+                            }
+                            ListItem(
+                                headlineContent = { Text(r.rel.ifEmpty { VPath.name(s.leftPath) }, color = color) },
+                                supportingContent = { Text("${r.kind} ${r.detail.orEmpty()}", fontSize = 11.sp) },
+                            )
+                        }
+                    }
+                    textDiff?.let { td ->
+                        HorizontalDivider()
+                        Text(t("文本差异", "Text diff"), Modifier.padding(8.dp), style = MaterialTheme.typography.titleSmall)
+                        LazyColumn(Modifier.heightIn(max = 280.dp).padding(horizontal = 8.dp)) {
+                            items(td.unified) { line ->
+                                val c = when {
+                                    line.startsWith("+") -> Color(0xFF2E7D32)
+                                    line.startsWith("-") -> Color(0xFFC62828)
+                                    line.startsWith("@") -> MaterialTheme.colorScheme.primary
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                }
+                                Text(line, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = c, softWrap = false, modifier = Modifier.horizontalScroll(rememberScrollState()))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ QR helper
+
+@Composable
+fun QrImage(text: String, size: Int = 512, modifier: Modifier = Modifier) {
+    val bmp = remember(text, size) {
+        runCatching {
+            val bit = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size)
+            val b = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565)
+            for (x in 0 until size) for (y in 0 until size) {
+                b.setPixel(x, y, if (bit[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+            }
+            b
+        }.getOrNull()
+    }
+    if (bmp != null) Image(bmp.asImageBitmap(), contentDescription = text, modifier = modifier.size((size / 3).dp))
+}
+
+// ------------------------------------------------------------------ thumbnails
+
+object Thumbnails {
+    private val cache = object : LinkedHashMap<String, Bitmap>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) = size > 80
+    }
+
+    fun load(fsId: String, entry: FileEntry, localFile: File?, apkIcon: (() -> Bitmap?)? = null, size: Int = 96): Bitmap? {
+        val key = "$fsId:${entry.path}:${entry.lastModified}:$size"
+        synchronized(cache) { cache[key] }?.let { return it }
+        val ext = entry.extension.lowercase()
+        val bmp = when {
+            ext in IMAGE_EXT && localFile != null && localFile.canRead() -> decodeImage(localFile, size)
+            ext in VIDEO_EXT && localFile != null && localFile.canRead() -> decodeVideo(localFile, size)
+            ext == "apk" -> apkIcon?.invoke()
+            else -> null
+        } ?: return null
+        synchronized(cache) { cache[key] = bmp }
+        return bmp
+    }
+
+    private fun decodeImage(f: File, size: Int): Bitmap? {
+        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(f.path, o)
+        var sample = 1
+        while (o.outWidth / sample > size * 2 || o.outHeight / sample > size * 2) sample *= 2
+        return BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })
+    }
+
+    private fun decodeVideo(f: File, size: Int): Bitmap? = runCatching {
+        val r = MediaMetadataRetriever()
+        r.setDataSource(f.path)
+        val frame = r.frameAtTime
+        r.release()
+        frame?.let { Bitmap.createScaledBitmap(it, size, size, true) }
+    }.getOrNull()
+}
+
+fun highlightCode(text: String, ext: String): androidx.compose.ui.text.AnnotatedString {
+    val keywords = when (ext) {
+        "kt", "kts", "java" -> setOf("fun", "val", "var", "class", "object", "if", "else", "when", "return", "import", "package", "public", "private", "override", "suspend", "data")
+        "py" -> setOf("def", "class", "import", "from", "return", "if", "elif", "else", "for", "while", "with", "as", "None", "True", "False")
+        "js", "ts" -> setOf("function", "const", "let", "var", "return", "if", "else", "class", "import", "export", "async", "await")
+        "json" -> emptySet()
+        "xml", "html", "htm" -> emptySet()
+        "md" -> emptySet()
+        else -> setOf("if", "else", "for", "while", "return")
+    }
+    return buildAnnotatedString {
+        if (keywords.isEmpty() && ext !in setOf("json", "xml", "html", "htm", "md")) {
+            append(text); return@buildAnnotatedString
+        }
+        val kwColor = SpanStyle(color = Color(0xFFCC7832))
+        val strColor = SpanStyle(color = Color(0xFF6A8759))
+        val cmtColor = SpanStyle(color = Color(0xFF808080))
+        var i = 0
+        while (i < text.length) {
+            when {
+                text.startsWith("//", i) || text.startsWith("#", i) && ext == "py" -> {
+                    val end = text.indexOf('\n', i).let { if (it < 0) text.length else it }
+                    withStyle(cmtColor) { append(text.substring(i, end)) }; i = end
+                }
+                text[i] == '"' || text[i] == '\'' -> {
+                    val q = text[i]; var j = i + 1
+                    while (j < text.length && text[j] != q) { if (text[j] == '\\') j++; j++ }
+                    if (j < text.length) j++
+                    withStyle(strColor) { append(text.substring(i, j)) }; i = j
+                }
+                text[i].isLetter() || text[i] == '_' -> {
+                    var j = i + 1
+                    while (j < text.length && (text[j].isLetterOrDigit() || text[j] == '_')) j++
+                    val w = text.substring(i, j)
+                    if (w in keywords) withStyle(kwColor) { append(w) } else append(w)
+                    i = j
+                }
+                else -> { append(text[i]); i++ }
+            }
+        }
+    }
+}
