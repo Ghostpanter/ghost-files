@@ -73,7 +73,7 @@ with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(dst, "w") as zout:
         zout.writestr(new, data)
 PY
 aligned_apk="$OUT_DIR/.coloros-aligned.apk"
-"$ZIPALIGN" -f 4 "$clean_apk" "$aligned_apk"
+"$ZIPALIGN" -f -P 16 4 "$clean_apk" "$aligned_apk"
 "$APKSIGNER" sign \
     --ks "$KEYSTORE_PATH" --ks-key-alias "$KEY_ALIAS" \
     --ks-pass env:KEYSTORE_PASS --key-pass env:KEY_PASS \
@@ -91,7 +91,7 @@ if printf '%s\n' "$v_out" | grep -q 'not protected by signature'; then
     echo "build-apk: unprotected META-INF entries remain" >&2; printf '%s\n' "$v_out" | grep 'not protected' >&2; exit 1
 fi
 printf '%s\n' "$v_out" | grep -E 'Verified using|Number of signers' | sed 's/^/  /'
-"$ZIPALIGN" -c 4 "$APK"
+"$ZIPALIGN" -c -P 16 4 "$APK"
 
 badging=$("$AAPT2" dump badging "$APK")
 want_vn=$(sed -n 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"\(.*\)".*/\1/p' "$ROOT/app/build.gradle.kts" | head -1)

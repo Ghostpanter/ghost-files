@@ -9,7 +9,9 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.Settings
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,6 +38,7 @@ import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.ops.Archives
 import com.ghostpanter.files.core.ops.BatchRename
 import com.ghostpanter.files.core.ops.Checksums
+import com.ghostpanter.files.fs.RootRunner
 import com.ghostpanter.files.t
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
@@ -386,7 +389,16 @@ fun hexRow(b: ByteArray, row: Int, base: Long): String {
 
 private class AppRow(val label: String, val pkg: String, val version: String, val system: Boolean, val apk: String, val splits: List<String>, val size: Long, val info: ApplicationInfo)
 
-@OptIn(ExperimentalMaterial3Api::class)
+private data class BatchBackupProgress(
+    val mode: String,
+    val index: Int,
+    val total: Int,
+    val currentLabel: String,
+    val ok: Int,
+    val fail: Int,
+)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AppsScreen(vm: MainViewModel) {
     val ctx = LocalContext.current
@@ -395,7 +407,13 @@ fun AppsScreen(vm: MainViewModel) {
     var apps by remember { mutableStateOf<List<AppRow>?>(null) }
     var showSystem by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var selected by remember { mutableStateOf<AppRow?>(null) }
+    var detail by remember { mutableStateOf<AppRow?>(null) }
+    var selecting by remember { mutableStateOf(false) }
+    var selectedPkgs by remember { mutableStateOf(setOf<String>()) }
+    var batchProgress by remember { mutableStateOf<BatchBackupProgress?>(null) }
+    var batchBusy by remember { mutableStateOf(false) }
+    val rootOk = RootRunner.granted()
+
     LaunchedEffect(Unit) {
         apps = withContext(Dispatchers.IO) {
             @Suppress("DEPRECATION")
@@ -410,31 +428,179 @@ fun AppsScreen(vm: MainViewModel) {
             }.sortedBy { it.label.lowercase() }
         }
     }
-    Scaffold(topBar = {
-        TopAppBar(
-            title = { Text(t("应用管理", "Apps")) },
-            navigationIcon = { IconButton(onClick = { vm.screen = Screen.Main }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
-            actions = { FilterChip(showSystem, { showSystem = !showSystem }, { Text(t("系统应用", "System")) }) },
-        )
-    }) { pad ->
+
+    fun exitSelect() {
+        selecting = false
+        selectedPkgs = emptySet()
+    }
+
+    fun togglePkg(pkg: String) {
+        selectedPkgs = if (pkg in selectedPkgs) selectedPkgs - pkg else selectedPkgs + pkg
+        if (selectedPkgs.isEmpty()) selecting = false
+    }
+
+    fun selectedApps(shown: List<AppRow>): List<AppRow> = shown.filter { it.pkg in selectedPkgs }
+
+    fun runBatchApk(targets: List<AppRow>) {
+        if (targets.isEmpty() || batchBusy) return
+        batchBusy = true
+        scope.launch {
+            var ok = 0
+            var fail = 0
+            val total = targets.size
+            for ((i, a) in targets.withIndex()) {
+                batchProgress = BatchBackupProgress("apk", i + 1, total, a.label, ok, fail)
+                val r = withContext(Dispatchers.IO) { runCatching { backupApk(a) } }
+                if (r.isSuccess) ok++ else fail++
+            }
+            batchProgress = null
+            batchBusy = false
+            exitSelect()
+            vm.toast(
+                t("批量备份 APK 完成：成功 $ok，失败 $fail", "Batch APK backup: $ok ok, $fail failed") +
+                    " → ${backupDir().path}",
+            )
+        }
+    }
+
+    fun runBatchData(targets: List<AppRow>) {
+        if (targets.isEmpty() || batchBusy) return
+        batchBusy = true
+        scope.launch {
+            var ok = 0
+            var fail = 0
+            val total = targets.size
+            for ((i, a) in targets.withIndex()) {
+                batchProgress = BatchBackupProgress("data", i + 1, total, a.label, ok, fail)
+                val r = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val shell = vm.fsm.root
+                        val dir = backupDir().apply { mkdirs() }
+                        val out = File(dir, a.pkg + "-data.tar")
+                        com.ghostpanter.files.core.ops.AppDataBackup.backup(shell, a.pkg, out)
+                        out.path
+                    }
+                }
+                if (r.isSuccess) ok++ else fail++
+            }
+            batchProgress = null
+            batchBusy = false
+            exitSelect()
+            vm.toast(
+                t("批量数据备份完成：成功 $ok，失败 $fail（需 Root）", "Batch data backup: $ok ok, $fail failed (needs Root)"),
+            )
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        if (selecting) t("已选 ${selectedPkgs.size}", "${selectedPkgs.size} selected")
+                        else t("应用管理", "Apps"),
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = {
+                        if (selecting) exitSelect() else vm.screen = Screen.Main
+                    }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+                },
+                actions = {
+                    if (selecting) {
+                        val list = apps
+                        val shown = list?.filter {
+                            (showSystem || !it.system) &&
+                                (query.isBlank() || it.label.contains(query, true) || it.pkg.contains(query, true))
+                        }.orEmpty()
+                        TextButton(onClick = {
+                            selectedPkgs = if (selectedPkgs.size >= shown.size) emptySet() else shown.map { it.pkg }.toSet()
+                            if (selectedPkgs.isEmpty()) selecting = false
+                        }) { Text(if (selectedPkgs.size >= shown.size && shown.isNotEmpty()) t("取消全选", "None") else t("全选", "All")) }
+                    } else {
+                        FilterChip(showSystem, { showSystem = !showSystem }, { Text(t("系统应用", "System")) })
+                        IconButton(onClick = { selecting = true }) {
+                            Icon(Icons.Filled.Checklist, contentDescription = t("多选", "Select"))
+                        }
+                    }
+                },
+            )
+        },
+        bottomBar = {
+            if (selecting && selectedPkgs.isNotEmpty()) {
+                BottomAppBar {
+                    val list = apps
+                    val shown = list?.filter {
+                        (showSystem || !it.system) &&
+                            (query.isBlank() || it.label.contains(query, true) || it.pkg.contains(query, true))
+                    }.orEmpty()
+                    val targets = selectedApps(shown)
+                    TextButton(enabled = !batchBusy && targets.isNotEmpty(), onClick = { runBatchApk(targets) }) {
+                        Text(t("备份 APK（${targets.size}）", "Backup APK (${targets.size})"))
+                    }
+                    if (rootOk) {
+                        TextButton(enabled = !batchBusy && targets.isNotEmpty(), onClick = { runBatchData(targets) }) {
+                            Text(t("备份数据 Root（${targets.size}）", "Backup data Root (${targets.size})"))
+                        }
+                    }
+                }
+            }
+        },
+    ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            OutlinedTextField(query, { query = it }, singleLine = true, placeholder = { Text(t("搜索名称或包名", "Search")) },
-                leadingIcon = { Icon(Icons.Filled.Search, null) }, modifier = Modifier.fillMaxWidth().padding(8.dp))
+            OutlinedTextField(
+                query, { query = it }, singleLine = true,
+                placeholder = { Text(t("搜索名称或包名", "Search")) },
+                leadingIcon = { Icon(Icons.Filled.Search, null) },
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
+            )
             val list = apps
             if (list == null) Box(Modifier.fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
             else {
-                val shown = list.filter { (showSystem || !it.system) && (query.isBlank() || it.label.contains(query, true) || it.pkg.contains(query, true)) }
-                Text(t("${shown.size} 个应用", "${shown.size} apps"), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp))
+                val shown = list.filter {
+                    (showSystem || !it.system) &&
+                        (query.isBlank() || it.label.contains(query, true) || it.pkg.contains(query, true))
+                }
+                Text(
+                    t("${shown.size} 个应用 · 长按进入多选", "${shown.size} apps · long-press to multi-select"),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(shown, key = { it.pkg }) { a ->
-                        Row(Modifier.fillMaxWidth().clickable { selected = a }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val checked = a.pkg in selectedPkgs
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = {
+                                        if (selecting) togglePkg(a.pkg) else detail = a
+                                    },
+                                    onLongClick = {
+                                        selecting = true
+                                        selectedPkgs = selectedPkgs + a.pkg
+                                    },
+                                )
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (selecting) {
+                                Checkbox(checked, { togglePkg(a.pkg) })
+                                Spacer(Modifier.width(4.dp))
+                            }
                             val icon = remember(a.pkg) { runCatching { a.info.loadIcon(pm).toBitmap(96, 96).asImageBitmap() }.getOrNull() }
                             if (icon != null) Image(icon, null, Modifier.size(40.dp)) else Icon(Icons.Filled.Android, null, Modifier.size(40.dp))
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(a.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("${a.pkg}  ${a.version}  ${formatSize(a.size)}" + if (a.splits.isNotEmpty()) "  +${a.splits.size} split" else "",
-                                    fontSize = 11.sp, color = MaterialTheme.colorScheme.outline, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    "${a.pkg}  ${a.version}  ${formatSize(a.size)}" +
+                                        if (a.splits.isNotEmpty()) "  +${a.splits.size} split" else "",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
                     }
@@ -442,8 +608,9 @@ fun AppsScreen(vm: MainViewModel) {
             }
         }
     }
-    selected?.let { a ->
-        val dismiss = { selected = null }
+
+    detail?.let { a ->
+        val dismiss = { detail = null }
         AlertDialog(
             onDismissRequest = dismiss,
             title = { Text(a.label) },
@@ -454,7 +621,8 @@ fun AppsScreen(vm: MainViewModel) {
                         dismiss()
                         scope.launch {
                             val r = withContext(Dispatchers.IO) { runCatching { backupApk(a) } }
-                            r.onSuccess { vm.toast(t("已备份到 ", "Saved to ") + it) }.onFailure { vm.toast(t("备份失败：", "Backup failed: ") + it.message) }
+                            r.onSuccess { vm.toast(t("已备份到 ", "Saved to ") + it) }
+                                .onFailure { vm.toast(t("备份失败：", "Backup failed: ") + it.message) }
                         }
                     }) { Text(t("备份 APK", "Backup APK") + if (a.splits.isNotEmpty()) "（APKS）" else "") }
                     TextButton(onClick = {
@@ -464,7 +632,7 @@ fun AppsScreen(vm: MainViewModel) {
                                 runCatching {
                                     val shell = vm.fsm.root
                                     val dir = backupDir().apply { mkdirs() }
-                                    val out = java.io.File(dir, a.pkg + "-data.tar")
+                                    val out = File(dir, a.pkg + "-data.tar")
                                     com.ghostpanter.files.core.ops.AppDataBackup.backup(shell, a.pkg, out)
                                     out.path
                                 }
@@ -473,6 +641,11 @@ fun AppsScreen(vm: MainViewModel) {
                                 .onFailure { vm.toast(t("数据备份失败（需 Root）：", "Data backup failed (needs Root): ") + it.message) }
                         }
                     }) { Text(t("备份应用数据（Root）", "Backup app data (Root)")) }
+                    TextButton(onClick = {
+                        dismiss()
+                        selecting = true
+                        selectedPkgs = selectedPkgs + a.pkg
+                    }) { Text(t("加入多选", "Add to selection")) }
                     TextButton(onClick = { dismiss(); runCatching { ctx.packageManager.getLaunchIntentForPackage(a.pkg)?.let(ctx::startActivity) } }) { Text(t("启动", "Launch")) }
                     TextButton(onClick = { dismiss(); runCatching { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + a.pkg))) } }) { Text(t("应用信息", "App info")) }
                     if (!a.system) TextButton(onClick = { dismiss(); runCatching { ctx.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:" + a.pkg))) } }) { Text(t("卸载", "Uninstall")) }
@@ -483,6 +656,43 @@ fun AppsScreen(vm: MainViewModel) {
                     }) { Text(t("打开备份目录", "Open backup folder")) }
                 }
             },
+        )
+    }
+
+    batchProgress?.let { p ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = {
+                Text(
+                    if (p.mode == "data") t("批量备份应用数据", "Batch backup app data")
+                    else t("批量备份 APK", "Batch backup APKs"),
+                )
+            },
+            text = {
+                Column {
+                    Text(t("正在处理 ${p.index} / ${p.total}", "Processing ${p.index} / ${p.total}"))
+                    Text(p.currentLabel, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { p.index.toFloat() / p.total.coerceAtLeast(1) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        t("成功 ${p.ok} · 失败 ${p.fail}", "OK ${p.ok} · failed ${p.fail}"),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                    if (p.mode == "data") {
+                        Text(
+                            t("内部 /data/data 仅 Root 可读，非 MT 免授权。", "Internal /data/data needs Root; not MT-style no-auth."),
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
         )
     }
 }
