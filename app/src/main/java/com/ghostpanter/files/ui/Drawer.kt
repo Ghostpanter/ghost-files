@@ -65,7 +65,7 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
     fun go(fsId: String, path: String? = null) { vm.openFs(fsId, path); close() }
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
-        Text(t("Ghost 文件", "Ghost Files"), fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(16.dp, 6.dp))
+        Text(t("双栏文件管理器", "TwinPane File Manager"), fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(16.dp, 6.dp))
         Text("v${BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(horizontal = 16.dp))
 
         Section(t("本地存储", "Local storage"))

@@ -372,7 +372,7 @@ class WebDavHostedServer(
     private fun directoryHtml(dir: File, root: File): String = buildString {
         val title = xmlEsc(if (dir == root) "/" else "/" + dir.absolutePath.removePrefix(root.absolutePath).trimStart('/'))
         append("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">")
-        append("<title>Ghost 文件 - ").append(title).append("</title><style>body{font-family:sans-serif;margin:16px}a{text-decoration:none}td{padding:4px 12px 4px 0}</style></head><body>")
+        append("<title>双栏文件管理器 - ").append(title).append("</title><style>body{font-family:sans-serif;margin:16px}a{text-decoration:none}td{padding:4px 12px 4px 0}</style></head><body>")
         append("<h3>").append(title).append("</h3><table>")
         if (dir != root) append("<tr><td><a href=\"../\">⬆ 上级目录</a></td></tr>")
         val kids = dir.listFiles()?.sortedWith(compareBy<File>({ !it.isDirectory }, { it.name.lowercase() })) ?: emptyList()

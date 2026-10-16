@@ -107,7 +107,9 @@ fun PaneView(host: PaneHost, pane: PaneState, width: Dp, modifier: Modifier) {
     ) {
         if (pane.tabs.size > 1) TabStrip(host, pane, active)
         val tab = pane.tab
-        PathBar(host, pane, tab, active)
+        // Focus indicator: the path row moved to the top bar, so mark the focused pane with a thin accent line.
+        Box(Modifier.fillMaxWidth().height(2.dp).background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent))
+        if ((active && PaneUi.filterOpen) || tab.filter.isNotEmpty()) BasicFilterField(tab)
         Box(Modifier.weight(1f).fillMaxWidth()) { FileList(host, pane, tab, wide = width >= 360.dp) }
         StatusLine(host, tab, active)
     }
@@ -140,49 +142,56 @@ private fun TabStrip(host: PaneHost, pane: PaneState, active: Boolean) {
     }
 }
 
+/** UI state shared between the top bar and the panes. */
+object PaneUi {
+    var filterOpen by mutableStateOf(false)
+}
+
+/**
+ * Path of the focused pane, shown in the top bar (replaces the per-pane path rows).
+ * Backend chip + small 左/右 tag + tappable breadcrumb that auto-scrolls to the end so long paths
+ * keep the deepest segment visible; long-press opens the path menu.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PathBar(host: PaneHost, pane: PaneState, tab: TabState, active: Boolean) {
-    var filtering by remember { mutableStateOf(tab.filter.isNotEmpty()) }
+fun TopPathBar(host: PaneHost, modifier: Modifier = Modifier) {
+    val pane = host.panes[host.activePane]
+    val tab = pane.tab
     val scroll = rememberScrollState()
-    LaunchedEffect(tab.path, scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
-    val bg = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-    val fg = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-    Column(Modifier.background(bg)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(30.dp)) {
-            Text(
-                host.fsLabel(tab.fsId), fontSize = 10.sp, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 4.dp).widthIn(max = 72.dp)
-                    .background(fg.copy(alpha = 0.16f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp),
-            )
-            Row(
-                Modifier.weight(1f).horizontalScroll(scroll).padding(start = 2.dp)
-                    .combinedClickable(onClick = { host.activePane = pane.index }, onLongClick = { host.onPathLongPress(pane) }),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val parts = tab.path.trim('/').split('/').filter { it.isNotEmpty() }
-                Text("/", Modifier.clickable { host.navigateTo(pane, "/") }.padding(horizontal = 3.dp, vertical = 6.dp), fontSize = 12.sp, color = fg)
-                var acc = ""
-                parts.forEachIndexed { i, part ->
-                    acc += "/$part"
-                    val target = acc
-                    val last = i == parts.size - 1
-                    Text(
-                        part + if (!last) " /" else "",
-                        Modifier.clickable { host.navigateTo(pane, target) }.padding(horizontal = 2.dp, vertical = 6.dp),
-                        fontSize = 12.sp, maxLines = 1, color = fg,
-                        fontWeight = if (last) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
+    LaunchedEffect(host.activePane, tab.fsId, tab.path, scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
+    val fg = MaterialTheme.colorScheme.onSurface
+    val accent = MaterialTheme.colorScheme.primary
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            if (host.activePane == 0) t("左", "L") else t("右", "R"), fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.background(accent, RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp),
+        )
+        Spacer(Modifier.width(3.dp))
+        Text(
+            host.fsLabel(tab.fsId), fontSize = 10.sp, color = accent, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 72.dp)
+                .background(accent.copy(alpha = 0.14f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp),
+        )
+        Row(
+            Modifier.weight(1f).horizontalScroll(scroll).padding(start = 2.dp)
+                .combinedClickable(onClick = {}, onLongClick = { host.onPathLongPress(pane) }),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val parts = tab.path.trim('/').split('/').filter { it.isNotEmpty() }
+            Text("/", Modifier.clickable { host.navigateTo(pane, "/") }.padding(horizontal = 3.dp, vertical = 8.dp), fontSize = 13.sp, color = fg)
+            var acc = ""
+            parts.forEachIndexed { i, part ->
+                acc += "/$part"
+                val target = acc
+                val last = i == parts.size - 1
+                Text(
+                    part + if (!last) " /" else "",
+                    Modifier.clickable { host.navigateTo(pane, target) }.padding(horizontal = 2.dp, vertical = 8.dp),
+                    fontSize = 13.sp, maxLines = 1, color = if (last) accent else fg,
+                    fontWeight = if (last) FontWeight.SemiBold else FontWeight.Normal,
+                )
             }
-            Icon(
-                Icons.Filled.FilterList, t("筛选", "Filter"),
-                Modifier.size(28.dp).clickable { filtering = !filtering; if (!filtering) tab.filter = "" }.padding(5.dp), tint = fg,
-            )
-        }
-        if (filtering) {
-            BasicFilterField(tab)
+            Spacer(Modifier.width(4.dp))
         }
     }
 }

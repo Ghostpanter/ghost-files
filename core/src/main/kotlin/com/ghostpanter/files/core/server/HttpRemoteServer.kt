@@ -221,14 +221,14 @@ class HttpRemoteServer : HostedServer {
             """<p><a href="/${urlEncodePath(parent)}${if (parent.isEmpty()) "" else "/"}">.. 上级</a></p>"""
         }
         val html = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Ghost 文件 · 远程管理</title>
+<title>双栏文件管理器 · 远程管理</title>
 <style>
 body{font-family:system-ui,sans-serif;margin:16px;background:#0f1419;color:#e7ecf1}
 a{color:#6cb6ff} table{border-collapse:collapse;width:100%} td,th{padding:6px 8px;border-bottom:1px solid #243044;text-align:left;font-size:14px}
 button,input,select{background:#1b2430;color:#e7ecf1;border:1px solid #334155;border-radius:6px;padding:6px 10px}
 .card{background:#161b22;border:1px solid #243044;border-radius:10px;padding:12px;margin-bottom:12px}
 </style></head><body>
-<h2>Ghost 文件 · 远程管理</h2>
+<h2>双栏文件管理器 · 远程管理</h2>
 <div class="card">路径：/${escape(rel.ifEmpty { "" })}</div>
 $up
 <div class="card">

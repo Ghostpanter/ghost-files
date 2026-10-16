@@ -138,7 +138,7 @@ class OpsV050Test {
             assertEquals(200, ok.code)
             val body = ok.body!!.string()
             assertTrue(body.contains("hi.txt"))
-            assertTrue(body.contains("Ghost"))
+            assertTrue(body.contains("双栏文件管理器"))
         } finally {
             srv.stop()
         }

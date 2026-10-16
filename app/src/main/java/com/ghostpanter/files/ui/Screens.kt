@@ -170,7 +170,7 @@ private fun JobCard(vm: MainViewModel, j: JobSnapshot) {
 /** Full error report of a job (state, cause chain + stack trace, failures) to the clipboard. */
 private fun copyJobError(ctx: android.content.Context, j: JobSnapshot) {
     val text = buildString {
-        appendLine("Ghost 文件 ${com.ghostpanter.files.BuildConfig.VERSION_NAME} · ${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}")
+        appendLine("双栏文件管理器 ${com.ghostpanter.files.BuildConfig.VERSION_NAME} · ${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}")
         appendLine("${j.title} · ${j.state} · ${j.doneBytes}/${j.totalBytes} B · ${j.doneFiles}/${j.totalFiles} · 重试 ${j.retries} · 自动重连 ${j.reconnects}")
         j.error?.let { appendLine("错误：$it") }
         if (j.failures.isNotEmpty()) { appendLine("失败文件："); j.failures.forEach { appendLine("  $it") } }
@@ -178,7 +178,7 @@ private fun copyJobError(ctx: android.content.Context, j: JobSnapshot) {
         append(j.lastErrorDetail ?: j.lastError ?: "")
     }
     val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-    cm.setPrimaryClip(android.content.ClipData.newPlainText("Ghost 文件 error", text))
+    cm.setPrimaryClip(android.content.ClipData.newPlainText("双栏文件管理器 error", text))
     android.widget.Toast.makeText(ctx, t("已复制错误详情（日志：files/logs/transfer.log）", "Error copied"), android.widget.Toast.LENGTH_SHORT).show()
 }
 

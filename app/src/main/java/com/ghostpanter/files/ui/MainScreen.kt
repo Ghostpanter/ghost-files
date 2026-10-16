@@ -207,15 +207,21 @@ fun MainFrame(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = onDrawer) { Icon(Icons.Filled.Menu, t("菜单", "Menu")) }
-                    Column(Modifier.weight(1f)) {
+                    if (tab.selecting) {
                         Text(
-                            if (tab.selecting) t("已选 ${tab.selected.size} 项", "${tab.selected.size} selected") else t("Ghost 文件", "Ghost Files"),
-                            fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+                            t("已选 ${tab.selected.size} 项", "${tab.selected.size} selected"),
+                            fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, modifier = Modifier.weight(1f),
                         )
-                        Text(
-                            (if (host.activePane == 0) t("左窗口", "Left") else t("右窗口", "Right")) + " · " + host.fsLabel(tab.fsId),
-                            fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
+                    } else {
+                        TopPathBar(host, Modifier.weight(1f))
+                        IconButton(onClick = {
+                            val open = !(PaneUi.filterOpen || tab.filter.isNotEmpty())
+                            PaneUi.filterOpen = open
+                            if (!open) host.panes.forEach { p -> p.tab.filter = "" }
+                        }) {
+                            Icon(Icons.Filled.FilterList, t("筛选", "Filter"),
+                                tint = if (PaneUi.filterOpen || tab.filter.isNotEmpty()) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+                        }
                     }
                     IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, t("搜索", "Search")) }
                     IconButton(onClick = onSwap) { Icon(Icons.Filled.SwapHoriz, t("交换窗口", "Swap panes")) }
