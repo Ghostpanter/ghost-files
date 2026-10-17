@@ -37,12 +37,30 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import android.content.ClipData
+import android.content.ClipDescription
+import androidx.compose.foundation.border
+import androidx.compose.foundation.draganddrop.dragAndDropSource
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.DragAndDropTransferData
+import androidx.compose.ui.draganddrop.toAndroidDragEvent
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.core.LocalFs
 import com.ghostpanter.files.data.ViewPrefs
-import com.ghostpanter.files.GhostApp
 import com.ghostpanter.files.t
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -63,38 +81,62 @@ fun computeVisible(prefs: ViewPrefs, tab: TabState): List<FileEntry> {
 
 /**
  * MT-style dual pane: both panes are always visible side by side (also on phones in portrait),
- * separated by a draggable divider. [ratio] is the left pane's share of the width.
+ * separated by a draggable divider (double-tap resets to 50/50). [ratio] is the left pane's share.
+ * [perPaneHeader] (tablet frame): every pane shows its own path header.
  */
 @Composable
-fun DualPane(host: PaneHost, ratio: Float, onRatio: (Float) -> Unit, onRatioDone: () -> Unit, modifier: Modifier = Modifier) {
+fun DualPane(
+    host: PaneHost, ratio: Float, onRatio: (Float) -> Unit, onRatioDone: () -> Unit, modifier: Modifier = Modifier,
+    perPaneHeader: Boolean = false, dragAndDrop: Boolean = false,
+) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         val total = maxWidth
         val density = LocalDensity.current
         val totalPx = with(density) { total.toPx() }.coerceAtLeast(1f)
         val r = ratio.coerceIn(0.2f, 0.8f)
-        val divider = 6.dp
+        val divider = if (perPaneHeader) 8.dp else 6.dp
         val leftW = (total - divider) * r
         val rightW = total - divider - leftW
-        val dragState = rememberDraggableState { delta -> onRatio((r + delta / totalPx).coerceIn(0.2f, 0.8f)) }
         Row(Modifier.fillMaxSize()) {
-            PaneView(host, host.panes[0], leftW, Modifier.width(leftW))
-            Box(
-                Modifier.width(divider).fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.outlineVariant)
-                    .draggable(dragState, Orientation.Horizontal, onDragStopped = { onRatioDone() })
-                    .pointerInput(Unit) { detectTapGestures(onDoubleTap = { onRatio(0.5f); onRatioDone() }) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(Modifier.width(2.dp).height(28.dp).clip(RoundedCornerShape(1.dp)).background(MaterialTheme.colorScheme.outline))
-            }
-            PaneView(host, host.panes[1], rightW, Modifier.width(rightW))
+            PaneView(host, host.panes[0], leftW, Modifier.width(leftW), perPaneHeader, dragAndDrop)
+            SplitHandle(
+                onDelta = { delta -> onRatio((r + delta / totalPx).coerceIn(0.2f, 0.8f)) },
+                onDone = onRatioDone,
+                onReset = { onRatio(0.5f); onRatioDone() },
+                width = divider,
+            )
+            PaneView(host, host.panes[1], rightW, Modifier.width(rightW), perPaneHeader, dragAndDrop)
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun PaneView(host: PaneHost, pane: PaneState, width: Dp, modifier: Modifier) {
+fun PaneView(host: PaneHost, pane: PaneState, width: Dp, modifier: Modifier, perPaneHeader: Boolean = false, dragAndDrop: Boolean = false) {
     val active = host.activePane == pane.index
+    val ctx = LocalContext.current
+    var dropHover by remember { mutableStateOf(false) }
+    val dropTarget = remember(pane, host) {
+        object : DragAndDropTarget {
+            override fun onEntered(event: DragAndDropEvent) { dropHover = true }
+            override fun onExited(event: DragAndDropEvent) { dropHover = false }
+            override fun onEnded(event: DragAndDropEvent) { dropHover = false }
+            override fun onDrop(event: DragAndDropEvent): Boolean {
+                dropHover = false
+                val de = event.toAndroidDragEvent()
+                (de.localState as? DragPayload)?.let { p ->
+                    if (p.fromPane == pane.index) return false
+                    host.onDropEntries(p.fromPane, p.entries, pane); return true
+                }
+                val clip = de.clipData ?: return false
+                val uris = (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }.filter { it.scheme == "content" || it.scheme == "file" }
+                if (uris.isEmpty()) return false
+                (ctx as? android.app.Activity)?.let { a -> heldDropPermissions = a.requestDragAndDropPermissions(de) }
+                host.onDropUris(pane, uris)
+                return true
+            }
+        }
+    }
     Column(
         modifier.fillMaxHeight()
             // Any touch inside a pane makes it the active one (MT behaviour), without consuming the event.
@@ -103,17 +145,27 @@ fun PaneView(host: PaneHost, pane: PaneState, width: Dp, modifier: Modifier) {
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                     host.activePane = pane.index
                 }
-            },
+            }
+            .then(if (dragAndDrop) Modifier.dragAndDropTarget(shouldStartDragAndDrop = { true }, target = dropTarget) else Modifier)
+            .then(if (dropHover) Modifier.border(2.dp, MaterialTheme.colorScheme.primary) else Modifier),
     ) {
         if (pane.tabs.size > 1) TabStrip(host, pane, active)
         val tab = pane.tab
         // Focus indicator: the path row moved to the top bar, so mark the focused pane with a thin accent line.
         Box(Modifier.fillMaxWidth().height(2.dp).background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent))
-        if ((active && PaneUi.filterOpen) || tab.filter.isNotEmpty()) BasicFilterField(tab)
-        Box(Modifier.weight(1f).fillMaxWidth()) { FileList(host, pane, tab, wide = width >= 360.dp) }
+        if (perPaneHeader) {
+            Surface(color = if (active) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow) {
+                PathCrumbs(host, pane, showSide = false, modifier = Modifier.fillMaxWidth().height(34.dp).padding(start = 6.dp))
+            }
+        }
+        if ((active && PaneUi.filterOpen) || tab.filter.isNotEmpty()) BasicFilterField(tab, active)
+        Box(Modifier.weight(1f).fillMaxWidth()) { FileList(host, pane, tab, wide = width >= 360.dp, dragAndDrop = dragAndDrop) }
         StatusLine(host, tab, active)
     }
 }
+
+/** Keeps the latest cross-app drop grant alive while the import copies the files. */
+private var heldDropPermissions: android.view.DragAndDropPermissions? = null
 
 @Composable
 private fun TabStrip(host: PaneHost, pane: PaneState, active: Boolean) {
@@ -145,6 +197,12 @@ private fun TabStrip(host: PaneHost, pane: PaneState, active: Boolean) {
 /** UI state shared between the top bar and the panes. */
 object PaneUi {
     var filterOpen by mutableStateOf(false)
+    /** A text field inside the frame has focus: keyboard shortcuts must not steal its keys. */
+    var textFocused by mutableStateOf(false)
+    /** Bumped by Ctrl+F: the focused pane's filter field requests focus. */
+    var filterFocusRequest by mutableIntStateOf(0)
+    /** Bumped when the frame should take keyboard focus back (e.g. after Esc in the filter). */
+    var rootFocusRequest by mutableIntStateOf(0)
 }
 
 /**
@@ -154,19 +212,26 @@ object PaneUi {
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TopPathBar(host: PaneHost, modifier: Modifier = Modifier) {
-    val pane = host.panes[host.activePane]
+fun TopPathBar(host: PaneHost, modifier: Modifier = Modifier) = PathCrumbs(host, host.panes[host.activePane], showSide = true, modifier = modifier)
+
+/** Backend chip + breadcrumb of [pane]; [showSide] adds the 左/右 tag (single top bar mode). */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun PathCrumbs(host: PaneHost, pane: PaneState, showSide: Boolean, modifier: Modifier = Modifier) {
     val tab = pane.tab
+    val active = host.activePane == pane.index
     val scroll = rememberScrollState()
     LaunchedEffect(host.activePane, tab.fsId, tab.path, scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
     val fg = MaterialTheme.colorScheme.onSurface
-    val accent = MaterialTheme.colorScheme.primary
+    val accent = if (active || showSide) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            if (host.activePane == 0) t("左", "L") else t("右", "R"), fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.background(accent, RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp),
-        )
-        Spacer(Modifier.width(3.dp))
+        if (showSide) {
+            Text(
+                if (pane.index == 0) t("左", "L") else t("右", "R"), fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.background(accent, RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp),
+            )
+            Spacer(Modifier.width(3.dp))
+        }
         Text(
             host.fsLabel(tab.fsId), fontSize = 10.sp, color = accent, maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.widthIn(max = 72.dp)
@@ -197,13 +262,20 @@ fun TopPathBar(host: PaneHost, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun BasicFilterField(tab: TabState) {
+private fun BasicFilterField(tab: TabState, active: Boolean) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(PaneUi.filterFocusRequest) {
+        if (PaneUi.filterFocusRequest > 0 && active) runCatching { focus.requestFocus() }
+    }
+    DisposableEffect(Unit) { onDispose { PaneUi.textFocused = false } }
     Surface(color = MaterialTheme.colorScheme.surface) {
         androidx.compose.foundation.text.BasicTextField(
             value = tab.filter, onValueChange = { tab.filter = it }, singleLine = true,
             textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface),
             cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)
+                .focusRequester(focus)
+                .onFocusChanged { PaneUi.textFocused = it.isFocused },
             decorationBox = { inner ->
                 if (tab.filter.isEmpty()) Text(t("筛选当前目录…", "Filter…"), fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
                 inner()
@@ -227,32 +299,77 @@ private fun StatusLine(host: PaneHost, tab: TabState, active: Boolean) {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boolean) {
+private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boolean, dragAndDrop: Boolean) {
     val entries = visibleEntries(host.prefs, tab)
     val state = tab.listState
+    val gridState = tab.gridState
+    val grid = host.prefs.gridView
+    val spec = LocalDensitySpec.current
+    val showThumbs = host.prefs.thumbnails
+    val ctx = LocalContext.current
+    val parentOffset = if (tab.path != "/") 1 else 0
     LaunchedEffect(tab.highlight, entries.size) {
         val h = tab.highlight ?: return@LaunchedEffect
         val idx = entries.indexOfFirst { it.path == h }
-        if (idx >= 0 && state.firstVisibleItemIndex == 0) state.scrollToItem((idx - 3).coerceAtLeast(0))
+        if (idx >= 0 && state.firstVisibleItemIndex == 0 && !grid) state.scrollToItem((idx - 3).coerceAtLeast(0))
     }
-    val grid = GhostApp.graph.settings.viewMode == "GRID"
-    Box(Modifier.fillMaxSize()) {
+    // Keyboard cursor: keep the highlighted row visible.
+    LaunchedEffect(tab.scrollRequest) {
+        if (tab.scrollRequest == 0) return@LaunchedEffect
+        val idx = entries.indexOfFirst { it.path == tab.highlight }.takeIf { it >= 0 }?.plus(parentOffset) ?: return@LaunchedEffect
         if (grid) {
-            LazyVerticalGrid(columns = GridCells.Adaptive(96.dp), modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(4.dp)) {
+            val vis = gridState.layoutInfo.visibleItemsInfo
+            if (vis.isEmpty() || idx <= vis.first().index || idx >= vis.last().index) gridState.scrollToItem((idx - 2).coerceAtLeast(0))
+        } else {
+            val vis = state.layoutInfo.visibleItemsInfo
+            if (vis.isEmpty() || idx <= vis.first().index) state.scrollToItem(idx)
+            else if (idx >= vis.last().index) state.scrollToItem((idx - vis.size + 2).coerceAtLeast(0))
+        }
+    }
+    fun dragData(e: FileEntry): DragAndDropTransferData {
+        val items = if (e.path in tab.selected) tab.selectedEntries() else listOf(e)
+        val uris = items.filter { !it.isDirectory }.mapNotNull { host.contentUri(tab.fsId, it) }
+        val clip = if (uris.isNotEmpty()) {
+            ClipData(ClipDescription(items.first().name, arrayOf("*/*")), ClipData.Item(uris[0])).also { c -> uris.drop(1).forEach { c.addItem(ClipData.Item(it)) } }
+        } else ClipData.newPlainText(items.first().name, items.joinToString("\n") { it.path })
+        val flags = if (uris.isNotEmpty()) android.view.View.DRAG_FLAG_GLOBAL or android.view.View.DRAG_FLAG_GLOBAL_URI_READ else 0
+        return DragAndDropTransferData(clip, DragPayload(pane.index, tab.fsId, items), flags)
+    }
+    Box(
+        Modifier.fillMaxSize()
+            // Right-click on empty space: the pane's "more" menu (rows consume their own right-clicks).
+            .pointerInput(pane.index) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val ev = awaitPointerEvent(PointerEventPass.Main)
+                        if (ev.type == PointerEventType.Press && ev.buttons.isSecondaryPressed && ev.changes.none { it.isConsumed }) {
+                            ev.changes.forEach { it.consume() }
+                            host.onPaneContextMenu(pane)
+                        }
+                    }
+                }
+            },
+    ) {
+        if (grid) {
+            LazyVerticalGrid(state = gridState, columns = GridCells.Adaptive(spec.gridCell), modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(4.dp)) {
                 if (tab.path != "/") item(key = "..") {
                     ParentRow { host.navigateTo(pane, com.ghostpanter.files.core.VPath.parent(tab.path)) }
                 }
                 items(entries.size, key = { entries[it].path }) { i ->
                     val e = entries[i]
+                    val sel = e.path in tab.selected
                     FileRow(
-                        e = e, selecting = tab.selecting, selected = e.path in tab.selected,
+                        e = e, selecting = tab.selecting, selected = sel,
                         highlighted = e.path == tab.highlight, wide = false,
                         onClick = { host.onEntryClick(pane, e) },
                         onLongClick = { host.onEntryLongPress(pane, e) },
                         onSwipe = { host.onEntrySwipe(pane, e) },
-                        thumb = { c -> host.thumbnail(tab.fsId, e, 192, c) },
-                        iconSize = 56.dp,
+                        thumb = { c -> host.thumbnail(tab.fsId, e, spec.gridThumbPx, c) },
+                        iconSize = spec.gridIcon, showThumbs = showThumbs, spec = spec,
+                        dragData = if (dragAndDrop) ({ dragData(e) }) else null,
+                        touchDrag = dragAndDrop && tab.selecting && sel,
                     )
                 }
             }
@@ -262,16 +379,20 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
             }
             items(entries.size, key = { entries[it].path }) { i ->
                 val e = entries[i]
+                val sel = e.path in tab.selected
                 FileRow(
                     e = e,
                     selecting = tab.selecting,
-                    selected = e.path in tab.selected,
+                    selected = sel,
                     highlighted = e.path == tab.highlight,
                     wide = wide,
                     onClick = { host.onEntryClick(pane, e) },
                     onLongClick = { host.onEntryLongPress(pane, e) },
                     onSwipe = { host.onEntrySwipe(pane, e) },
-                    thumb = { c -> host.thumbnail(tab.fsId, e, 96, c) },
+                    thumb = { c -> host.thumbnail(tab.fsId, e, spec.thumbPx, c) },
+                    iconSize = spec.icon, showThumbs = showThumbs, spec = spec,
+                    dragData = if (dragAndDrop) ({ dragData(e) }) else null,
+                    touchDrag = dragAndDrop && tab.selecting && sel,
                 )
             }
         }
@@ -316,6 +437,11 @@ fun FileRow(
     onSwipe: () -> Unit,
     thumb: ((cancelled: () -> Boolean) -> android.graphics.Bitmap?)? = null,
     iconSize: Dp = 28.dp,
+    showThumbs: Boolean = true,
+    spec: DensitySpec = densitySpec("normal"),
+    /** Tablet frame: drag source (mouse drag; touch long-press-drag on selected rows). */
+    dragData: (() -> DragAndDropTransferData?)? = null,
+    touchDrag: Boolean = false,
 ) {
     val bg = when {
         selected -> MaterialTheme.colorScheme.primaryContainer
@@ -323,27 +449,59 @@ fun FileRow(
         else -> Color.Transparent
     }
     val swipePx = with(LocalDensity.current) { 40.dp.toPx() }
+    val shadow = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+    val latestLong by rememberUpdatedState(onLongClick)
+    val latestDrag by rememberUpdatedState(dragData)
     Row(
         Modifier.fillMaxWidth().background(bg)
-            // MT: a horizontal swipe on a row toggles its selection (enters multi-select).
+            // Mouse right-click: same as long-press (context menu).
             .pointerInput(e.path) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val ev = awaitPointerEvent(PointerEventPass.Initial)
+                        if (ev.type == PointerEventType.Press && ev.buttons.isSecondaryPressed) {
+                            ev.changes.forEach { it.consume() }
+                            latestLong()
+                        }
+                    }
+                }
+            }
+            // MT: a horizontal swipe on a row toggles its selection (enters multi-select).
+            .then(if (touchDrag) Modifier else Modifier.pointerInput(e.path, dragData != null) {
                 var acc = 0f
                 var fired = false
+                var mouse = false
                 detectHorizontalDragGestures(
                     onDragStart = { acc = 0f; fired = false },
                     onHorizontalDrag = { change, d ->
-                        acc += d
-                        if (!fired && kotlin.math.abs(acc) > swipePx) { fired = true; onSwipe() }
-                        change.consume()
+                        mouse = change.type == PointerType.Mouse && dragData != null
+                        if (!mouse) {
+                            acc += d
+                            if (!fired && kotlin.math.abs(acc) > swipePx) { fired = true; onSwipe() }
+                            change.consume()
+                        }
                     },
                 )
-            }
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(start = 6.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            })
+            .combinedClickable(onClick = onClick, onLongClick = if (touchDrag) null else onLongClick)
+            .then(if (dragData == null) Modifier else Modifier.dragAndDropSource(drawDragDecoration = { drawRect(shadow) }) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    if (down.type == PointerType.Mouse) {
+                        if (!currentEvent.buttons.isPrimaryPressed) return@awaitEachGesture
+                        val moved = awaitTouchSlopOrCancellation(down.id) { c, _ -> c.consume() }
+                        if (moved != null) latestDrag?.invoke()?.let { startTransfer(it) }
+                    } else if (touchDrag) {
+                        val lp = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
+                        val moved = awaitTouchSlopOrCancellation(lp.id) { c, _ -> c.consume() }
+                        if (moved != null) latestDrag?.invoke()?.let { startTransfer(it) } else latestLong()
+                    }
+                }
+            })
+            .padding(start = 6.dp, end = 4.dp, top = spec.rowPad, bottom = spec.rowPad),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val (icon, tint) = iconFor(e)
-        val showThumbs = GhostApp.graph.settings.showThumbnails
         var thumbBmp by remember(e.path, e.lastModified, showThumbs) { mutableStateOf<android.graphics.Bitmap?>(null) }
         LaunchedEffect(e.path, e.lastModified, showThumbs) {
             if (!showThumbs || e.isDirectory || thumb == null) { thumbBmp = null; return@LaunchedEffect }
@@ -354,23 +512,23 @@ fun FileRow(
         }
         Box(Modifier.size(iconSize)) {
             val tb = thumbBmp
-            if (tb != null) Image(tb.asImageBitmap(), null, Modifier.size(iconSize).clip(RoundedCornerShape(3.dp)))
+            if (tb != null) Image(tb.asImageBitmap(), null, Modifier.size(iconSize).clip(RoundedCornerShape(3.dp)), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
             else Icon(icon, null, tint = tint, modifier = Modifier.size(iconSize))
             if (e.isLink) Icon(Icons.Filled.Link, null, Modifier.size(12.dp).align(Alignment.BottomEnd), tint = MaterialTheme.colorScheme.tertiary)
         }
         Spacer(Modifier.width(6.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                e.name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, lineHeight = 15.sp,
+                e.name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = spec.nameSp.sp, lineHeight = (spec.nameSp + 2).sp,
                 color = if (e.isHidden) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f) else MaterialTheme.colorScheme.onSurface,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(formatTimeShort(e.lastModified), fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                Text(formatTimeShort(e.lastModified), fontSize = spec.metaSp.sp, color = MaterialTheme.colorScheme.outline, maxLines = 1)
                 Spacer(Modifier.weight(1f))
                 if (wide) e.permissions?.takeIf { it.isNotEmpty() }?.let {
-                    Text(it, fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(end = 6.dp), maxLines = 1)
+                    Text(it, fontSize = spec.metaSp.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(end = 6.dp), maxLines = 1)
                 }
-                if (!e.isDirectory) Text(formatSize(e.size), fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                if (!e.isDirectory) Text(formatSize(e.size), fontSize = spec.metaSp.sp, color = MaterialTheme.colorScheme.outline, maxLines = 1)
             }
         }
         if (selecting) {

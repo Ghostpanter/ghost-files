@@ -1,6 +1,8 @@
 package com.ghostpanter.files.ui
 
 import android.app.Application
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -147,7 +149,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
             tab.forward.clear()
         }
         tab.multiSelect = false
-        tab.scroll[tab.fsId + tab.path] = tab.listState.firstVisibleItemIndex to tab.listState.firstVisibleItemScrollOffset
+        tab.scroll[tab.fsId + tab.path] = if (g.settings.gridView) tab.gridState.firstVisibleItemIndex to tab.gridState.firstVisibleItemScrollOffset
+            else tab.listState.firstVisibleItemIndex to tab.listState.firstVisibleItemScrollOffset
         val oldPath = tab.path
         tab.fsId = resolved
         tab.path = norm
@@ -156,6 +159,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
         tab.highlight = if (VPath.parent(oldPath) == tab.path) oldPath else null
         val saved = tab.scroll[resolved + tab.path]
         tab.listState = LazyListState(saved?.first ?: 0, saved?.second ?: 0)
+        tab.gridState = androidx.compose.foundation.lazy.grid.LazyGridState(saved?.first ?: 0, saved?.second ?: 0)
         refresh(tab)
         saveTabs()
     }
@@ -310,6 +314,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     override fun onEntryClick(pane: PaneState, e: FileEntry) {
         activePane = pane.index
         val tab = pane.tab
+        if (!e.isDirectory) tab.highlight = e.path
         if (tab.selecting) toggle(tab, e) else openEntry(tab, e)
     }
 
@@ -336,6 +341,74 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     override fun selectTab(pane: PaneState, i: Int) { pane.activeTab = i; activePane = pane.index; saveTabs() }
 
     override fun reload(tab: TabState) = refresh(tab)
+
+    override fun openEntry(pane: PaneState, e: FileEntry) { activePane = pane.index; openEntry(pane.tab, e) }
+
+    override fun onPaneContextMenu(pane: PaneState) { activePane = pane.index; menu = buildMoreMenu(pane) }
+
+    override fun onDropEntries(fromPane: Int, entries: List<FileEntry>, toPane: PaneState) {
+        if (fromPane == toPane.index || entries.isEmpty()) return
+        val src = pane(fromPane)
+        activePane = toPane.index
+        menu = ActionMenu(
+            t("拖放 ${entries.size} 项", "Drop ${entries.size} item(s)"),
+            fsm.label(toPane.tab.fsId) + "  " + toPane.tab.path,
+            listOf(
+                MenuAction(t("复制到此处", "Copy here"), androidx.compose.material.icons.Icons.Filled.FileCopy) {
+                    menu = null; transferToOther(src, TransferOp.COPY, entries)
+                },
+                MenuAction(t("移动到此处", "Move here"), androidx.compose.material.icons.Icons.AutoMirrored.Filled.DriveFileMove) {
+                    menu = null; transferToOther(src, TransferOp.MOVE, entries)
+                },
+            ),
+        )
+    }
+
+    override fun onDropUris(toPane: PaneState, uris: List<android.net.Uri>) {
+        val tab = toPane.tab
+        if (uris.isEmpty()) return
+        val app = getApplication<Application>()
+        runBusy(t("正在导入 ${uris.size} 项…", "Importing ${uris.size} item(s)…"), listOf(tab)) {
+            val fs = fsm.get(tab.fsId)
+            val existing = runCatching { fs.list(tab.path).map { it.name }.toMutableSet() }.getOrDefault(mutableSetOf())
+            for (u in uris) {
+                if (busyJob?.isActive == false) throw CancellationException()
+                val raw = runCatching {
+                    app.contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) c.getString(0) else null
+                    }
+                }.getOrNull() ?: u.lastPathSegment?.substringAfterLast('/') ?: "dropped"
+                val base = raw.replace('/', '_').ifBlank { "dropped" }
+                var name = base; var n = 1
+                while (name in existing) { val dot = base.lastIndexOf('.'); name = if (dot > 0) base.substring(0, dot) + " ($n)" + base.substring(dot) else "$base ($n)"; n++ }
+                existing += name
+                busy = t("导入 ", "Importing ") + name
+                app.contentResolver.openInputStream(u)!!.use { input ->
+                    fs.openWrite(VPath.join(tab.path, name)).use { out -> input.copyTo(out, 256 * 1024) }
+                }
+            }
+            toast(t("已导入 ${uris.size} 项", "Imported ${uris.size} item(s)"))
+        }
+    }
+
+    override fun contentUri(fsId: String, e: FileEntry): android.net.Uri? = runCatching {
+        val f = fsm.localFile(fsId, e.path)?.takeIf { it.isFile && it.canRead() } ?: return null
+        val app = getApplication<Application>()
+        androidx.core.content.FileProvider.getUriForFile(app, app.packageName + ".files", f)
+    }.getOrNull()
+
+    override fun textPreview(fsId: String, e: FileEntry): String? {
+        if (e.isDirectory || e.size > 8L * 1024 * 1024) return null
+        if (e.extension !in TEXT_EXT && e.extension !in PREVIEW_MD) return null
+        return runCatching {
+            fsm.get(fsId).openRead(e.path).use { input ->
+                val buf = ByteArray(6 * 1024)
+                var n = 0
+                while (n < buf.size) { val r = input.read(buf, n, buf.size - n); if (r < 0) break; n += r }
+                String(buf, 0, n, Charsets.UTF_8).trimEnd('\uFFFD')
+            }
+        }.getOrNull()
+    }
 
     fun newTab(p: PaneState) {
         val cur = p.tab

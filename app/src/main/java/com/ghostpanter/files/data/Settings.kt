@@ -13,6 +13,11 @@ interface ViewPrefs {
     val foldersFirst: Boolean
     val ascending: Boolean
     val sortBy: SortBy
+    /** Grid instead of list. */
+    val gridView: Boolean get() = false
+    /** "compact" | "normal" | "large" (see [com.ghostpanter.files.ui.DensitySpec]). */
+    val density: String get() = "normal"
+    val thumbnails: Boolean get() = true
 }
 
 class Settings(context: Context) : ViewPrefs {
@@ -84,9 +89,14 @@ class Settings(context: Context) : ViewPrefs {
         get() = _showThumbnails.value
         set(v) { _showThumbnails.value = v; p.edit().putBoolean("show_thumbnails", v).apply() }
 
+    // State-backed so toggling list/grid recomposes the panes at once.
+    private val _viewMode = mutableStateOf(p.getString("view_mode", "LIST") ?: "LIST")
     var viewMode: String
-        get() = p.getString("view_mode", "LIST") ?: "LIST"
-        set(v) { p.edit().putString("view_mode", v).apply() }
+        get() = _viewMode.value
+        set(v) { _viewMode.value = v; p.edit().putString("view_mode", v).apply() }
+    override val gridView: Boolean get() = viewMode == "GRID"
+    override val density: String get() = listDensity
+    override val thumbnails: Boolean get() = showThumbnails
 
     /** system | light | dark — state so theme recomposes when toggled. */
     private val _themeMode = mutableStateOf(p.getString("theme_mode", "system") ?: "system")
@@ -110,4 +120,36 @@ class Settings(context: Context) : ViewPrefs {
     var oledBlack: Boolean
         get() = _oledBlack.value
         set(v) { _oledBlack.value = v; p.edit().putBoolean("oled_black", v).apply() }
+
+    // ---------------------------------------------------------------- tablet / layout
+    private fun str(key: String, def: String) = mutableStateOf(p.getString(key, def) ?: def)
+
+    /** "auto" | "phone" | "tablet" — like scrcpy-android's layout switch. */
+    private val _layoutMode = str("layout_mode", "auto")
+    var layoutMode: String
+        get() = _layoutMode.value
+        set(v) { _layoutMode.value = v; p.edit().putString("layout_mode", v).apply() }
+
+    /** File list density: "compact" | "normal" (phone default, unchanged) | "large". */
+    private val _density = str("list_density", "normal")
+    var listDensity: String
+        get() = _density.value
+        set(v) { _density.value = v; p.edit().putString("list_density", v).apply() }
+
+    /** Tablet: persistent side panel (bookmarks / storages / servers) expanded next to the rail. */
+    private val _sidePanel = bool("tablet_side_panel", true)
+    var tabletSidePanel: Boolean
+        get() = _sidePanel.value
+        set(v) { _sidePanel.value = v; p.edit().putBoolean("tablet_side_panel", v).apply() }
+
+    /** Tablet: third details/preview panel on very wide windows. */
+    private val _previewPanel = bool("tablet_preview_panel", true)
+    var tabletPreviewPanel: Boolean
+        get() = _previewPanel.value
+        set(v) { _previewPanel.value = v; p.edit().putBoolean("tablet_preview_panel", v).apply() }
+
+    private val _previewRatio = mutableStateOf(p.getFloat("preview_width_dp", 300f))
+    var previewWidthDp: Float
+        get() = _previewRatio.value
+        set(v) { _previewRatio.value = v; p.edit().putFloat("preview_width_dp", v).apply() }
 }

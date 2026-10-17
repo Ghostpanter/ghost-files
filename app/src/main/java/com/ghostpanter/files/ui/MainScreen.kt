@@ -16,7 +16,13 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,46 +57,17 @@ sealed interface DialogState {
 
 @Composable
 fun MainScreen(vm: MainViewModel, activity: MainActivity) {
-    val drawer = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
+    val settings = vm.g.settings
+    val layout = rememberWindowLayout(settings.layoutMode, settings.tabletSidePanel)
     var editingServer by remember { mutableStateOf<ServerConfig?>(null) }
     var serverEditorOpen by remember { mutableStateOf(false) }
+    val editServer: (ServerConfig?) -> Unit = { editingServer = it; serverEditorOpen = true }
 
-    ModalNavigationDrawer(
-        drawerState = drawer,
-        // Only close-by-swipe: an edge swipe must not steal the MT "swipe a row to select" gesture.
-        gesturesEnabled = drawer.isOpen,
-        drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.widthIn(max = 320.dp), drawerShape = androidx.compose.ui.graphics.RectangleShape) {
-                DrawerContent(vm, activity, close = { scope.launch { drawer.close() } }, editServer = {
-                    editingServer = it; serverEditorOpen = true
-                })
-            }
-        },
-    ) {
-        when (val s = vm.screen) {
-            Screen.Main -> MainContent(vm, activity, openDrawer = { scope.launch { drawer.open() } })
-            Screen.Transfers -> TransfersScreen(vm)
-            Screen.Trash -> TrashScreen(vm)
-            is Screen.Editor -> EditorScreen(vm, s)
-            is Screen.Image -> ImageScreen(vm, s)
-            is Screen.Apk -> ApkScreen(vm, activity, s)
-            is Screen.Search -> SearchScreen(vm, s)
-            Screen.LanScan -> LanScanScreen(vm, onEditServer = { editingServer = it; serverEditorOpen = true })
-            Screen.Servers -> ServersScreen(vm)
-            is Screen.Hex -> HexScreen(vm, s)
-            Screen.Apps -> AppsScreen(vm)
-            is Screen.Player -> if (s.audioOnly) PlayerScreen(vm, s) else VlcPlayerScreen(vm, s)
-            is Screen.ContentSearch -> ContentSearchScreen(vm, s)
-            is Screen.Compare -> CompareScreen(vm, s)
-            is Screen.Preview -> PreviewScreen(vm, s)
-            Screen.Terminal -> TerminalScreen(vm)
-            is Screen.MusicTag -> MusicTagScreen(vm, s)
-        }
+    CompositionLocalProvider(LocalDensitySpec provides densitySpec(settings.listDensity)) {
+        if (layout.tablet) TabletShell(vm, activity, layout, editServer) else PhoneShell(vm, activity, editServer)
     }
 
     if (vm.screen != Screen.Main) BackHandler { vm.screen = Screen.Main }
-    BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
 
     vm.dialog?.let { d -> EntryDialogs(vm, d) { vm.dialog = null } }
     vm.menu?.let { m -> ActionMenuDialog(m) { vm.menu = null } }
@@ -107,46 +84,169 @@ fun MainScreen(vm: MainViewModel, activity: MainActivity) {
     if (serverEditorOpen) ServerEditor(vm, editingServer) { serverEditorOpen = false }
 }
 
+/** Phone (compact) layout: modal drawer + MT frame with bottom toolbar. Unchanged from 0.6.8. */
 @Composable
-private fun MainContent(vm: MainViewModel, activity: MainActivity, openDrawer: () -> Unit) {
+private fun PhoneShell(vm: MainViewModel, activity: MainActivity, editServer: (ServerConfig?) -> Unit) {
+    val drawer = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    ModalNavigationDrawer(
+        drawerState = drawer,
+        // Only close-by-swipe: an edge swipe must not steal the MT "swipe a row to select" gesture.
+        gesturesEnabled = drawer.isOpen,
+        drawerContent = {
+            ModalDrawerSheet(modifier = Modifier.widthIn(max = 320.dp), drawerShape = androidx.compose.ui.graphics.RectangleShape) {
+                DrawerContent(vm, activity, close = { scope.launch { drawer.close() } }, editServer = { editServer(it); scope.launch { drawer.close() } })
+            }
+        },
+    ) {
+        ScreenHost(vm, activity, tablet = null, openDrawer = { scope.launch { drawer.open() } }, editServer = editServer)
+    }
+    BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
+}
+
+/**
+ * Tablet / foldable / landscape layout: navigation rail (room for the phase-2 「投屏/设备」 entry),
+ * drawer content as a persistent side panel on wide windows (modal drawer otherwise), and the
+ * selected destination on the right.
+ */
+@Composable
+private fun TabletShell(vm: MainViewModel, activity: MainActivity, layout: WindowLayout, editServer: (ServerConfig?) -> Unit) {
+    val settings = vm.g.settings
+    val drawer = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    val jobs by vm.g.transfers.jobs.collectAsState()
+    val activeJobs = jobs.count { !it.state.finished }
+    val panelShown = layout.permanentPanel && settings.tabletSidePanel
+    LaunchedEffect(layout.permanentPanel) { if (layout.permanentPanel) drawer.close() }
+    ModalNavigationDrawer(
+        drawerState = drawer,
+        gesturesEnabled = drawer.isOpen,
+        drawerContent = {
+            ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp), drawerShape = androidx.compose.ui.graphics.RectangleShape) {
+                DrawerContent(vm, activity, close = { scope.launch { drawer.close() } }, editServer = { editServer(it); scope.launch { drawer.close() } })
+            }
+        },
+    ) {
+        Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+            if (!vm.screen.immersive()) {
+                GhostNavRail(
+                    current = vm.screen, activeJobs = activeJobs, panelOpen = panelShown || drawer.isOpen,
+                    onMenu = {
+                        if (layout.permanentPanel) settings.tabletSidePanel = !settings.tabletSidePanel
+                        else scope.launch { if (drawer.isOpen) drawer.close() else drawer.open() }
+                    },
+                    onPick = { vm.screen = it },
+                )
+                if (panelShown) {
+                    Surface(Modifier.width(SIDE_PANEL_WIDTH_DP.dp).fillMaxHeight(), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                        Box(Modifier.statusBarsPadding().navigationBarsPadding()) {
+                            DrawerContent(vm, activity, close = {}, editServer = editServer)
+                        }
+                    }
+                    VerticalDivider()
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                ScreenHost(vm, activity, tablet = layout, openDrawer = { scope.launch { drawer.open() } }, editServer = editServer)
+            }
+        }
+    }
+    BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
+}
+
+@Composable
+private fun ScreenHost(vm: MainViewModel, activity: MainActivity, tablet: WindowLayout?, openDrawer: () -> Unit, editServer: (ServerConfig?) -> Unit) {
+    when (val s = vm.screen) {
+        Screen.Main -> MainContent(vm, activity, openDrawer = openDrawer, tablet = tablet)
+        Screen.Transfers -> TransfersScreen(vm)
+        Screen.Trash -> TrashScreen(vm)
+        is Screen.Editor -> EditorScreen(vm, s)
+        is Screen.Image -> ImageScreen(vm, s)
+        is Screen.Apk -> ApkScreen(vm, activity, s)
+        is Screen.Search -> SearchScreen(vm, s)
+        Screen.LanScan -> LanScanScreen(vm, onEditServer = editServer)
+        Screen.Servers -> ServersScreen(vm)
+        is Screen.Hex -> HexScreen(vm, s)
+        Screen.Apps -> AppsScreen(vm)
+        is Screen.Player -> if (s.audioOnly) PlayerScreen(vm, s) else VlcPlayerScreen(vm, s)
+        is Screen.ContentSearch -> ContentSearchScreen(vm, s)
+        is Screen.Compare -> CompareScreen(vm, s)
+        is Screen.Preview -> PreviewScreen(vm, s)
+        Screen.Terminal -> TerminalScreen(vm)
+        is Screen.MusicTag -> MusicTagScreen(vm, s)
+    }
+}
+
+@Composable
+private fun MainContent(vm: MainViewModel, activity: MainActivity, openDrawer: () -> Unit, tablet: WindowLayout?) {
     val jobs by vm.g.transfers.jobs.collectAsState()
     val activeJobs = jobs.count { !it.state.finished }
     val pane = vm.pane(vm.activePane)
     val tab = pane.tab
     var ratio by remember { mutableFloatStateOf(vm.g.settings.paneRatio) }
+    val focus = remember { FocusRequester() }
 
     BackHandler(enabled = vm.screen == Screen.Main) {
         if (tab.selecting) vm.clearSelection(tab) else if (!vm.back(tab)) activity.moveTaskToBack(true)
     }
+    // Hardware keyboard: keep the frame focused so shortcuts work (not while a text field has focus).
+    LaunchedEffect(vm.screen, vm.dialog, vm.menu, vm.pendingTransfer, PaneUi.rootFocusRequest) {
+        if (vm.screen == Screen.Main && !PaneUi.textFocused) runCatching { focus.requestFocus() }
+    }
 
-    MainFrame(
-        host = vm,
-        activeJobs = activeJobs,
-        ratio = ratio,
-        onRatio = { ratio = it },
-        onRatioDone = { vm.g.settings.paneRatio = ratio },
-        canForward = tab.forward.isNotEmpty(),
-        onDrawer = openDrawer,
-        onSearch = { vm.screen = Screen.Search(tab.fsId, tab.path) },
-        onTransfers = { vm.screen = Screen.Transfers },
-        onSwap = { vm.swapPanes() },
-        onTool = { tool -> onTool(vm, pane, tool) },
-        onToolLong = { tool ->
-            when (tool) {
-                Tool.UP -> vm.pathJump = pane
-                Tool.SYNC -> { vm.syncOther(vm.other(pane)) }
-                else -> {}
+    val onToolLong: (Tool) -> Unit = { tool ->
+        when (tool) {
+            Tool.UP -> vm.pathJump = pane
+            Tool.SYNC -> { vm.syncOther(vm.other(pane)) }
+            else -> {}
+        }
+    }
+    val banner: (@Composable () -> Unit)? = if (!activity.hasStorageAccess()) ({
+        Surface(color = MaterialTheme.colorScheme.errorContainer) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(t("需要“所有文件访问权限”才能浏览存储", "All-files access is required"), Modifier.weight(1f), fontSize = 12.sp)
+                TextButton(onClick = { activity.requestStorageAccess() }) { Text(t("去授权", "Grant")) }
             }
-        },
-        banner = if (!activity.hasStorageAccess()) ({
-            Surface(color = MaterialTheme.colorScheme.errorContainer) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(t("需要“所有文件访问权限”才能浏览存储", "All-files access is required"), Modifier.weight(1f), fontSize = 12.sp)
-                    TextButton(onClick = { activity.requestStorageAccess() }) { Text(t("去授权", "Grant")) }
-                }
-            }
-        }) else null,
-    )
+        }
+    }) else null
+
+    Box(Modifier.fillMaxSize().focusRequester(focus).focusable().onPreviewKeyEvent { handleShortcut(vm, it) }) {
+        if (tablet != null) {
+            val settings = vm.g.settings
+            var previewW by remember { mutableFloatStateOf(settings.previewWidthDp) }
+            TabletMainFrame(
+                host = vm,
+                ratio = ratio,
+                onRatio = { ratio = it },
+                onRatioDone = { vm.g.settings.paneRatio = ratio },
+                canForward = tab.forward.isNotEmpty(),
+                hasClip = vm.clip != null,
+                showPreview = tablet.previewAllowed && settings.tabletPreviewPanel,
+                previewWidth = previewW,
+                onPreviewWidth = { previewW = it },
+                onPreviewWidthDone = { settings.previewWidthDp = previewW },
+                onSearch = { vm.screen = Screen.Search(tab.fsId, tab.path) },
+                onSwap = { vm.swapPanes() },
+                onTool = { tool -> onTool(vm, pane, tool) },
+                onToolLong = onToolLong,
+                banner = banner,
+            )
+        } else MainFrame(
+            host = vm,
+            activeJobs = activeJobs,
+            ratio = ratio,
+            onRatio = { ratio = it },
+            onRatioDone = { vm.g.settings.paneRatio = ratio },
+            canForward = tab.forward.isNotEmpty(),
+            onDrawer = openDrawer,
+            onSearch = { vm.screen = Screen.Search(tab.fsId, tab.path) },
+            onTransfers = { vm.screen = Screen.Transfers },
+            onSwap = { vm.swapPanes() },
+            onTool = { tool -> onTool(vm, pane, tool) },
+            onToolLong = onToolLong,
+            banner = banner,
+        )
+    }
 }
 
 private fun onTool(vm: MainViewModel, pane: PaneState, tool: Tool) {
@@ -378,4 +478,119 @@ fun SortDialog(vm: MainViewModel, onDismiss: () -> Unit) {
             }
         },
     )
+}
+
+/**
+ * Tablet main frame: no bottom bar. The toolbar actions (acting on the focused pane) sit in one
+ * top bar; every pane has its own path header; optional details panel on the right.
+ * Stateless like [MainFrame] so screenshot tests can render it.
+ */
+@Composable
+fun TabletMainFrame(
+    host: PaneHost,
+    ratio: Float,
+    onRatio: (Float) -> Unit,
+    onRatioDone: () -> Unit,
+    canForward: Boolean,
+    hasClip: Boolean,
+    showPreview: Boolean,
+    previewWidth: Float,
+    onPreviewWidth: (Float) -> Unit,
+    onPreviewWidthDone: () -> Unit,
+    onSearch: () -> Unit,
+    onSwap: () -> Unit,
+    onTool: (Tool) -> Unit,
+    onToolLong: (Tool) -> Unit,
+    banner: (@Composable () -> Unit)? = null,
+) {
+    val tab = host.panes[host.activePane].tab
+    val canBack = tab.history.isNotEmpty() || tab.path != "/"
+    Column(Modifier.fillMaxSize()) {
+        Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+            Row(
+                Modifier.fillMaxWidth().statusBarsPadding().height(48.dp).padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Which pane the toolbar acts on.
+                Text(
+                    if (host.activePane == 0) t("左", "L") else t("右", "R"), fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.padding(start = 6.dp, end = 4.dp)
+                        .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.RoundedCornerShape(3.dp))
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                )
+                if (tab.selecting) {
+                    Text(
+                        t("已选 ${tab.selected.size} 项", "${tab.selected.size} selected"),
+                        fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, modifier = Modifier.padding(horizontal = 6.dp),
+                    )
+                    Spacer(Modifier.weight(1f))
+                    BarTool(Icons.Filled.SelectAll, t("全选 (Ctrl+A)", "Select all (Ctrl+A)")) { onTool(Tool.SELECT_ALL) }
+                    BarTool(Icons.Filled.Flip, t("反选", "Invert")) { onTool(Tool.INVERT) }
+                    BarTool(Icons.Filled.Category, t("类选", "Same type")) { onTool(Tool.SELECT_TYPE) }
+                    BarDivider()
+                    BarTool(Icons.Filled.FileCopy, t("复制到对面", "Copy to other pane")) { onTool(Tool.COPY_OTHER) }
+                    BarTool(Icons.AutoMirrored.Filled.DriveFileMove, t("移动到对面", "Move to other pane")) { onTool(Tool.MOVE_OTHER) }
+                    BarTool(Icons.Filled.Delete, t("删除 (Delete)", "Delete (Del)")) { onTool(Tool.DELETE) }
+                    BarTool(Icons.Filled.MoreVert, t("更多", "More")) { onTool(Tool.SEL_MORE) }
+                    BarTool(Icons.Filled.Close, t("取消选择 (Esc)", "Done (Esc)")) { onTool(Tool.DONE) }
+                } else {
+                    BarTool(Icons.AutoMirrored.Filled.ArrowBack, t("后退 (Alt+←)", "Back (Alt+←)"), enabled = canBack) { onTool(Tool.BACK) }
+                    BarTool(Icons.AutoMirrored.Filled.ArrowForward, t("前进 (Alt+→)", "Forward (Alt+→)"), enabled = canForward) { onTool(Tool.FORWARD) }
+                    BarTool(Icons.Filled.ArrowUpward, t("上级 (Backspace，长按跳转)", "Up (Backspace, hold: go to)"), onLong = { onToolLong(Tool.UP) }) { onTool(Tool.UP) }
+                    BarTool(Icons.Filled.Refresh, t("刷新 (F5)", "Refresh (F5)")) { onTool(Tool.REFRESH) }
+                    BarDivider()
+                    BarTool(Icons.Filled.Add, t("新建", "New")) { onTool(Tool.NEW) }
+                    BarTool(Icons.Filled.Checklist, t("多选", "Select")) { onTool(Tool.MULTI) }
+                    if (hasClip) BarTool(Icons.Filled.ContentPaste, t("粘贴 (Ctrl+V)", "Paste (Ctrl+V)")) { onTool(Tool.PASTE) }
+                    BarTool(Icons.Filled.SyncAlt, t("同步到对面（长按反向）", "Sync other pane (hold: reverse)"), onLong = { onToolLong(Tool.SYNC) }) { onTool(Tool.SYNC) }
+                    BarTool(Icons.Filled.SwapHoriz, t("交换窗口", "Swap panes")) { onSwap() }
+                    Spacer(Modifier.weight(1f))
+                    val filterOn = PaneUi.filterOpen || tab.filter.isNotEmpty()
+                    BarTool(Icons.Filled.FilterList, t("筛选 (Ctrl+F)", "Filter (Ctrl+F)"), tint = if (filterOn) MaterialTheme.colorScheme.primary else null) {
+                        val open = !filterOn
+                        PaneUi.filterOpen = open
+                        if (!open) host.panes.forEach { p -> p.tab.filter = "" } else PaneUi.filterFocusRequest++
+                    }
+                    BarTool(Icons.Filled.Search, t("搜索", "Search")) { onSearch() }
+                    BarTool(Icons.Filled.MoreVert, t("更多", "More")) { onTool(Tool.MORE) }
+                }
+            }
+        }
+        banner?.invoke()
+        Row(Modifier.weight(1f).fillMaxWidth().navigationBarsPadding()) {
+            DualPane(host, ratio, onRatio, onRatioDone, Modifier.weight(1f), perPaneHeader = true, dragAndDrop = true)
+            if (showPreview) {
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                SplitHandle(
+                    onDelta = { d -> onPreviewWidth((previewWidth - with(density) { d.toDp().value }).coerceIn(220f, 520f)) },
+                    onDone = onPreviewWidthDone,
+                    onReset = { onPreviewWidth(300f); onPreviewWidthDone() },
+                    width = 8.dp,
+                )
+                DetailsPanel(host, Modifier.width(previewWidth.dp))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+private fun BarTool(icon: ImageVector, label: String, enabled: Boolean = true, tint: androidx.compose.ui.graphics.Color? = null, onLong: (() -> Unit)? = null, onClick: () -> Unit) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(label) } },
+        state = rememberTooltipState(),
+    ) {
+        val color = tint ?: if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+        Box(
+            Modifier.size(44.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                .combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onLong),
+            contentAlignment = Alignment.Center,
+        ) { Icon(icon, label, Modifier.size(22.dp), tint = color) }
+    }
+}
+
+@Composable
+private fun BarDivider() {
+    VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
 }

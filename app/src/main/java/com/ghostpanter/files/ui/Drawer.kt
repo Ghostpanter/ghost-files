@@ -196,6 +196,19 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
             (ctx as? android.app.Activity)?.recreate()
         }
         Toggle(t("OLED 纯黑（深色背景 #000000）", "OLED black (#000000)"), settings.oledBlack) { settings.oledBlack = it }
+        ChipPicker(
+            t("布局模式", "Layout mode"),
+            listOf("auto" to t("自动", "Auto"), "phone" to t("手机", "Phone"), "tablet" to t("平板", "Tablet")),
+            settings.layoutMode,
+            hint = t("自动：宽度 ≥ 600dp（平板、折叠屏展开、横屏）用平板布局", "Auto: tablet layout when width ≥ 600dp (tablets, unfolded foldables, landscape)"),
+        ) { settings.layoutMode = it }
+        ChipPicker(
+            t("列表密度", "List density"),
+            listOf("compact" to t("紧凑", "Compact"), "normal" to t("标准", "Normal"), "large" to t("宽松", "Large")),
+            settings.listDensity,
+        ) { settings.listDensity = it }
+        Toggle(t("网格视图", "Grid view"), settings.gridView) { settings.viewMode = if (it) "GRID" else "LIST" }
+        Toggle(t("平板：右侧详情/预览面板（超宽屏）", "Tablet: details / preview panel (very wide screens)"), settings.tabletPreviewPanel) { settings.tabletPreviewPanel = it }
         Item(Icons.Filled.Upload, t("导出配置 / 书签 / 服务器", "Export settings / bookmarks / servers")) {
             val dest = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
             dest?.mkdirs()
@@ -273,5 +286,19 @@ private fun LanguagePicker(current: String, onPick: (String) -> Unit) {
                 FilterChip(selected = current == v, onClick = { if (current != v) onPick(v) }, label = { Text(label, fontSize = 12.sp) }, modifier = Modifier.padding(end = 6.dp))
             }
         }
+    }
+}
+
+
+@Composable
+private fun ChipPicker(title: String, opts: List<Pair<String, String>>, current: String, hint: String? = null, onPick: (String) -> Unit) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Text(title, fontSize = 14.sp)
+        Row {
+            opts.forEach { (v, label) ->
+                FilterChip(selected = current == v, onClick = { if (current != v) onPick(v) }, label = { Text(label, fontSize = 12.sp) }, modifier = Modifier.padding(end = 6.dp))
+            }
+        }
+        hint?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline) }
     }
 }

@@ -27,6 +27,9 @@ class TabState(fsId: String, path: String) {
     val forward = ArrayDeque<Pair<String, String>>()
     val scroll = HashMap<String, Pair<Int, Int>>()
     var listState by mutableStateOf(LazyListState())
+    var gridState by mutableStateOf(androidx.compose.foundation.lazy.grid.LazyGridState())
+    /** Bumped by keyboard navigation: the file list scrolls [highlight] into view. */
+    var scrollRequest by mutableIntStateOf(0)
     var loadJob: Job? = null
 
     val title: String get() = VPath.name(path).ifEmpty { "/" }
@@ -56,7 +59,22 @@ interface PaneHost {
     fun reload(tab: TabState)
     /** Thumbnail for [e] on [fsId] (blocking; call off the main thread). */
     fun thumbnail(fsId: String, e: FileEntry, sizePx: Int = 96, cancelled: () -> Boolean = { false }): android.graphics.Bitmap? = null
+    /** Right-click / secondary click on empty pane area. */
+    fun onPaneContextMenu(pane: PaneState) {}
+    /** Entries dragged from pane [fromPane] were dropped on [toPane]. */
+    fun onDropEntries(fromPane: Int, entries: List<FileEntry>, toPane: PaneState) {}
+    /** content:// URIs dropped from another app onto [toPane]. */
+    fun onDropUris(toPane: PaneState, uris: List<android.net.Uri>) {}
+    /** Small UTF-8 text preview for the details panel (blocking; off main thread). */
+    fun textPreview(fsId: String, e: FileEntry): String? = null
+    /** Opens [e] (also for folders), ignoring multi-select. */
+    fun openEntry(pane: PaneState, e: FileEntry) {}
+    /** content:// URI for dragging [e] into other apps (local files only). */
+    fun contentUri(fsId: String, e: FileEntry): android.net.Uri? = null
 }
+
+/** Local drag-and-drop payload (dual-pane drag between panes). */
+data class DragPayload(val fromPane: Int, val fsId: String, val entries: List<FileEntry>)
 
 /** One row of an MT-style action list (long-press menu, "more" menu). */
 data class MenuAction(val label: String, val icon: ImageVector, val hint: String? = null, val enabled: Boolean = true, val run: () -> Unit)
