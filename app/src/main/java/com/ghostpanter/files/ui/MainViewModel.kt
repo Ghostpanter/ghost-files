@@ -180,16 +180,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                     fsm.get(fsId).list(path) { chunk ->
                         // Incremental display for huge directories.
                         acc.addAll(chunk)
-                        val snapshot = ArrayList(acc)
-                        if (first || snapshot.size % 2000 < chunk.size) {
+                        if (first || acc.size % 2000 < chunk.size) {
                             first = false
+                            val snapshot = ArrayList(acc)  // copy only when publishing (was O(n²) for huge dirs)
                             viewModelScope.launch { if (tab.path == path && tab.loading) tab.entries = snapshot }
                         }
                     }
                 }
                 if (tab.path == path && tab.fsId == fsId) {
                     tab.entries = list
-                    tab.selected = tab.selected.filter { s -> list.any { it.path == s } }.toSet()
+                    tab.selected = if (tab.selected.isEmpty()) tab.selected else list.mapTo(HashSet()) { it.path }.let { paths -> tab.selected.filter { it in paths }.toSet() }
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -210,7 +210,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                             if (tab.path == path) {
                                 tab.entries = list
                                 tab.error = null
-                                tab.selected = tab.selected.filter { s -> list.any { it.path == s } }.toSet()
+                                tab.selected = if (tab.selected.isEmpty()) tab.selected else list.mapTo(HashSet()) { it.path }.let { paths -> tab.selected.filter { it in paths }.toSet() }
                             }
                             return@launch
                         } catch (e2: Exception) {
@@ -287,6 +287,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     // ---------------------------------------------------------------- PaneHost
 
     override fun fsLabel(fsId: String) = fsm.label(fsId)
+
+    override fun thumbnail(fsId: String, e: FileEntry): android.graphics.Bitmap? {
+        val fs = runCatching { fsm.get(fsId) }.getOrNull() ?: return null
+        val local = if (fsId == LocalFs.ID) java.io.File(e.path).takeIf { it.isFile && it.canRead() } else null
+        val apkIcon: (() -> android.graphics.Bitmap?)? = if (local != null && e.extension.equals("apk", true)) ({
+            val pm = getApplication<Application>().packageManager
+            pm.getPackageArchiveInfo(local.path, 0)?.applicationInfo?.let { ai ->
+                ai.sourceDir = local.path; ai.publicSourceDir = local.path
+                val d = ai.loadIcon(pm)
+                val b = android.graphics.Bitmap.createBitmap(96, 96, android.graphics.Bitmap.Config.ARGB_8888)
+                val c = android.graphics.Canvas(b); d.setBounds(0, 0, 96, 96); d.draw(c); b
+            }
+        }) else null
+        return Thumbnails.load(fsId, e, fs, local, apkIcon, 96)
+    }
 
     override fun onEntryClick(pane: PaneState, e: FileEntry) {
         activePane = pane.index

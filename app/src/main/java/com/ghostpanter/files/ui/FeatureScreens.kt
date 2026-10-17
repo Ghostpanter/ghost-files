@@ -140,7 +140,7 @@ fun CompareScreen(vm: MainViewModel, s: Screen.Compare) {
                     le.isDirectory && re.isDirectory -> Compare.compareTrees(lfs, s.leftPath, rfs, s.rightPath, hashFiles, { false }) { progress = it }
                     !le.isDirectory && !re.isDirectory -> {
                         val row = Compare.compareFiles(lfs, s.leftPath, rfs, s.rightPath)
-                        if (row.kind == Compare.Kind.DIFFERENT && VPath.extension(le.name) in TEXT_EXT) {
+                        if (row.kind == Compare.Kind.DIFFERENT && VPath.extension(le.name) in TEXT_EXT && le.size < (2L shl 20) && re.size < (2L shl 20)) {
                             val lt = lfs.openRead(s.leftPath).use { it.readBytes().toString(Charsets.UTF_8) }
                             val rt = rfs.openRead(s.rightPath).use { it.readBytes().toString(Charsets.UTF_8) }
                             textDiff = Compare.textDiff(lt, rt)
@@ -227,38 +227,132 @@ fun QrImage(text: String, size: Int = 512, modifier: Modifier = Modifier) {
 
 object Thumbnails {
     private val cache = object : LinkedHashMap<String, Bitmap>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) = size > 80
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) = size > 120
+    }
+    /** Keys known to have no thumbnail (unsupported/too big/failed) so rows don't retry on every scroll. */
+    private val misses = java.util.Collections.synchronizedSet(HashSet<String>())
+    /** Bound concurrent decodes/streams so a fast scroll over a shell/remote dir doesn't spawn dozens of readers. */
+    private val gate = java.util.concurrent.Semaphore(3)
+
+    private const val MAX_IMAGE_BYTES = 32L shl 20
+    private const val MAX_VIDEO_BYTES_NEAR = 512L shl 20   // shell / SAF: copy of the file stays on-device
+    private const val MAX_IMAGE_BYTES_REMOTE = 12L shl 20
+
+    fun cached(fsId: String, entry: FileEntry, size: Int = 96): Bitmap? =
+        synchronized(cache) { cache[key(fsId, entry, size)] }
+
+    private fun key(fsId: String, e: FileEntry, size: Int) = "$fsId:${e.path}:${e.lastModified}:${e.size}:$size"
+
+    fun load(fsId: String, entry: FileEntry, localFile: File?, apkIcon: (() -> Bitmap?)? = null, size: Int = 96): Bitmap? =
+        load(fsId, entry, null, localFile, apkIcon, size)
+
+    /**
+     * Thumbnail for [entry] on any backend. LocalFs files decode in place; other backends (Shizuku/Root shell,
+     * SAF, network) stream through [fs] into a temp file under the app cache, then decode. Results are kept in
+     * memory and as small JPEGs in cache/thumbs keyed by fs+path+mtime+size.
+     */
+    fun load(fsId: String, entry: FileEntry, fs: com.ghostpanter.files.core.VirtualFs?, localFile: File?, apkIcon: (() -> Bitmap?)? = null, size: Int = 96): Bitmap? {
+        if (entry.isDirectory) return null
+        val key = key(fsId, entry, size)
+        synchronized(cache) { cache[key] }?.let { return it }
+        if (key in misses) return null
+        val ext = entry.extension.lowercase()
+        val isImg = ext in IMAGE_EXT
+        val isVid = ext in VIDEO_EXT
+        if (!isImg && !isVid && ext != "apk") return null
+        val diskDir = File(com.ghostpanter.files.GhostApp.instance.cacheDir, "thumbs").apply { mkdirs() }
+        val diskFile = File(diskDir, sha1(key) + ".jpg")
+        if (diskFile.length() > 0) {
+            BitmapFactory.decodeFile(diskFile.path)?.let { b -> synchronized(cache) { cache[key] = b }; return b }
+        }
+        gate.acquire()
+        val bmp = try {
+            when {
+                localFile != null && localFile.isFile && localFile.canRead() -> when {
+                    isImg -> decodeImage(localFile, size)
+                    isVid -> decodeVideo(localFile, size)
+                    else -> apkIcon?.invoke()
+                }
+                ext == "apk" -> apkIcon?.invoke()
+                fs != null -> viaTemp(fsId, fs, entry, isImg, size)
+                else -> null
+            }
+        } catch (_: Throwable) { null } finally { gate.release() }
+        if (bmp == null) { misses += key; return null }
+        synchronized(cache) { cache[key] = bmp }
+        if (fsId != "local") runCatching {
+            diskFile.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+        }
+        return bmp
     }
 
-    fun load(fsId: String, entry: FileEntry, localFile: File?, apkIcon: (() -> Bitmap?)? = null, size: Int = 96): Bitmap? {
-        val key = "$fsId:${entry.path}:${entry.lastModified}:$size"
-        synchronized(cache) { cache[key] }?.let { return it }
-        val ext = entry.extension.lowercase()
-        val bmp = when {
-            ext in IMAGE_EXT && localFile != null && localFile.canRead() -> decodeImage(localFile, size)
-            ext in VIDEO_EXT && localFile != null && localFile.canRead() -> decodeVideo(localFile, size)
-            ext == "apk" -> apkIcon?.invoke()
-            else -> null
-        } ?: return null
-        synchronized(cache) { cache[key] = bmp }
-        return bmp
+    private fun viaTemp(fsId: String, fs: com.ghostpanter.files.core.VirtualFs, e: FileEntry, isImg: Boolean, size: Int): Bitmap? {
+        val remote = fsId.startsWith("net:")
+        val limit = when {
+            isImg && remote -> MAX_IMAGE_BYTES_REMOTE
+            isImg -> MAX_IMAGE_BYTES
+            remote -> return null // a whole remote video per row is too expensive
+            else -> MAX_VIDEO_BYTES_NEAR
+        }
+        if (e.size > limit) return null
+        val tmpDir = File(com.ghostpanter.files.GhostApp.instance.cacheDir, "thumb-tmp").apply { mkdirs() }
+        val tmp = File.createTempFile("t", "." + e.extension.lowercase().ifEmpty { "bin" }, tmpDir)
+        return try {
+            fs.openRead(e.path).use { input ->
+                tmp.outputStream().use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val n = input.read(buf); if (n < 0) break
+                        total += n
+                        if (total > limit) return null
+                        out.write(buf, 0, n)
+                    }
+                }
+            }
+            if (isImg) decodeImage(tmp, size) else decodeVideo(tmp, size)
+        } finally { tmp.delete() }
+    }
+
+    private fun sha1(s: String): String =
+        java.security.MessageDigest.getInstance("SHA-1").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+
+    /** Trim the disk thumb cache (called at startup). */
+    fun trimDisk(maxBytes: Long = 64L shl 20) {
+        try {
+            File(com.ghostpanter.files.GhostApp.instance.cacheDir, "thumb-tmp").deleteRecursively()
+            val files: List<File> = File(com.ghostpanter.files.GhostApp.instance.cacheDir, "thumbs").listFiles()?.sortedBy { it.lastModified() } ?: return
+            var total = 0L
+            for (f in files) total += f.length()
+            for (f in files) { if (total <= maxBytes) break; total -= f.length(); f.delete() }
+        } catch (_: Throwable) {}
     }
 
     private fun decodeImage(f: File, size: Int): Bitmap? {
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(f.path, o)
+        if (o.outWidth <= 0 || o.outHeight <= 0) return null
         var sample = 1
         while (o.outWidth / sample > size * 2 || o.outHeight / sample > size * 2) sample *= 2
-        return BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })
+        val b = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+        return centerCrop(b, size)
     }
 
-    private fun decodeVideo(f: File, size: Int): Bitmap? = runCatching {
+    private fun decodeVideo(f: File, size: Int): Bitmap? {
         val r = MediaMetadataRetriever()
-        r.setDataSource(f.path)
-        val frame = r.frameAtTime
-        r.release()
-        frame?.let { Bitmap.createScaledBitmap(it, size, size, true) }
-    }.getOrNull()
+        return try {
+            java.io.FileInputStream(f).use { r.setDataSource(it.fd) }
+            val frame = if (android.os.Build.VERSION.SDK_INT >= 27) r.getScaledFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, size * 2, size * 2) else r.frameAtTime
+            frame?.let { centerCrop(it, size) }
+        } catch (_: Throwable) { null } finally { runCatching { r.release() } }
+    }
+
+    /** Square center crop (the old code stretched non-square frames). */
+    private fun centerCrop(b: Bitmap, size: Int): Bitmap {
+        val side = minOf(b.width, b.height)
+        val sq = Bitmap.createBitmap(b, (b.width - side) / 2, (b.height - side) / 2, side, side)
+        return if (side <= size) sq else Bitmap.createScaledBitmap(sq, size, size, true)
+    }
 }
 
 fun highlightCode(text: String, ext: String): androidx.compose.ui.text.AnnotatedString {

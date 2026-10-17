@@ -251,6 +251,7 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
                         onClick = { host.onEntryClick(pane, e) },
                         onLongClick = { host.onEntryLongPress(pane, e) },
                         onSwipe = { host.onEntrySwipe(pane, e) },
+                        thumb = { host.thumbnail(tab.fsId, e) },
                     )
                 }
             }
@@ -269,6 +270,7 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
                     onClick = { host.onEntryClick(pane, e) },
                     onLongClick = { host.onEntryLongPress(pane, e) },
                     onSwipe = { host.onEntrySwipe(pane, e) },
+                    thumb = { host.thumbnail(tab.fsId, e) },
                 )
             }
         }
@@ -311,6 +313,7 @@ fun FileRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onSwipe: () -> Unit,
+    thumb: (() -> android.graphics.Bitmap?)? = null,
 ) {
     val bg = when {
         selected -> MaterialTheme.colorScheme.primaryContainer
@@ -339,16 +342,13 @@ fun FileRow(
     ) {
         val (icon, tint) = iconFor(e)
         val showThumbs = GhostApp.graph.settings.showThumbnails
-        var thumb by remember(e.path, showThumbs) { mutableStateOf<android.graphics.Bitmap?>(null) }
-        LaunchedEffect(e.path, showThumbs) {
-            if (!showThumbs || e.isDirectory) { thumb = null; return@LaunchedEffect }
-            thumb = withContext(Dispatchers.IO) {
-                val local = File(e.path).takeIf { it.isFile && it.canRead() }
-                Thumbnails.load("local", e, local, size = 96)
-            }
+        var thumbBmp by remember(e.path, e.lastModified, showThumbs) { mutableStateOf<android.graphics.Bitmap?>(null) }
+        LaunchedEffect(e.path, e.lastModified, showThumbs) {
+            if (!showThumbs || e.isDirectory || thumb == null) { thumbBmp = null; return@LaunchedEffect }
+            thumbBmp = withContext(Dispatchers.IO) { runCatching { thumb() }.getOrNull() }
         }
         Box(Modifier.size(28.dp)) {
-            val tb = thumb
+            val tb = thumbBmp
             if (tb != null) Image(tb.asImageBitmap(), null, Modifier.size(28.dp).clip(RoundedCornerShape(3.dp)))
             else Icon(icon, null, tint = tint, modifier = Modifier.size(28.dp))
             if (e.isLink) Icon(Icons.Filled.Link, null, Modifier.size(12.dp).align(Alignment.BottomEnd), tint = MaterialTheme.colorScheme.tertiary)
