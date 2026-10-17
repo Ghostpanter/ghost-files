@@ -75,7 +75,7 @@ fun ServersScreen(vm: MainViewModel) {
         ) {
             Text(
                 t(
-                    "开启后，局域网内其他设备可通过下列地址连接本机并读写共享目录。FTP 明文不安全，请优先用 SFTP / WebDAV(HTTPS) / FTPS。本机 SMB 为 SMB2（2.1）、默认端口 4455（免 Root，无需开 SMB1）；连 NAS/电脑请用侧栏「添加服务器」。",
+                    t("开启后，局域网内其他设备可通过下列地址连接本机并读写共享目录。FTP 明文不安全，请优先用 SFTP / WebDAV(HTTPS) / FTPS。本机 SMB 为 SMB2（2.1）、默认端口 4455（免 Root，无需开 SMB1）；连 NAS/电脑请用侧栏「添加服务器」。", "When on, other LAN devices can connect to this phone at the addresses below and read/write the shared folder. Plain FTP is insecure; prefer SFTP / WebDAV(HTTPS) / FTPS. Local SMB is SMB2 (2.1) on port 4455 by default (no root, no SMB1). To connect to a NAS/PC use “Add server” in the drawer."),
                     "When enabled, other LAN devices can read/write this phone. Prefer SFTP / WebDAV(HTTPS) / FTPS. Hosted SMB is SMB2 (2.1) on port 4455 (no Root, no SMB1). To open a NAS/PC share, use drawer → Add server.",
                 ),
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.outline,
@@ -219,7 +219,7 @@ private fun ServiceCard(
             if (kind == HostedKind.SMB) {
                 Text(
                     t(
-                        "连接：smbclient //${ip ?: "IP"}/share -p ${cfg.effectivePort} -U ${cfg.username}（SMB2）。Win11 24H2+：New-SmbMapping -RemotePath \\\\${ip ?: "IP"}\\share -TcpPort ${cfg.effectivePort} -UserName ${cfg.username}。免 Root；资源管理器默认只认 445。",
+                        t("连接", "Connect") + ": smbclient //${ip ?: "IP"}/share -p ${cfg.effectivePort} -U ${cfg.username}（SMB2）。Win11 24H2+: New-SmbMapping -RemotePath \\\\${ip ?: "IP"}\\share -TcpPort ${cfg.effectivePort} -UserName ${cfg.username}" + t("。免 Root；资源管理器默认只认 445。", ". No root needed; Explorer only uses port 445."),
                         "Connect: smbclient //${ip ?: "IP"}/share -p ${cfg.effectivePort} -U ${cfg.username} (SMB2). Win11 24H2+: New-SmbMapping -TcpPort ${cfg.effectivePort}. No Root; Explorer still expects 445.",
                     ),
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,

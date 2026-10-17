@@ -152,7 +152,7 @@ private fun EpubView(file: File) {
                         .toList()
                     val entry = candidates.firstOrNull { it.contains("chapter", true) || it.contains("text", true) }
                         ?: candidates.firstOrNull()
-                        ?: error("EPUB 内无 HTML")
+                        ?: error(t("EPUB 内无 HTML", "No HTML in EPUB"))
                     val body = z.getInputStream(z.getEntry(entry)).bufferedReader().readText()
                     html = """<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <style>body{font-family:serif;padding:16px;line-height:1.6;background:#111;color:#eee}a{color:#7AD9FB}</style></head>

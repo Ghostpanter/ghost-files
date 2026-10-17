@@ -418,6 +418,8 @@ fun ImageScreen(vm: MainViewModel, s: Screen.Image) {
         withContext(Dispatchers.IO) {
             runCatching {
                 val fs = vm.fsm.get(s.fsId)
+                val sz = runCatching { fs.stat(path)?.size }.getOrNull() ?: -1L
+                if (sz > 96L shl 20) error(t("图片过大（>96MB），无法预览", "Image too large (>96 MB) to preview"))
                 val bytes = fs.openRead(path).use { it.readBytes() }
                 val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
