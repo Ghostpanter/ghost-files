@@ -1,5 +1,7 @@
 package com.ghostpanter.files.lan
 
+import com.ghostpanter.files.t
+
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.LinkAddress
@@ -60,11 +62,11 @@ class LanScanner(private val context: Context, private val scope: CoroutineScope
         if (job?.isActive == true) return
         val net = localIpv4()
         if (net == null) {
-            _state.value = ScanState(error = "未连接到局域网（需要 Wi-Fi 或以太网）")
+            _state.value = ScanState(error = t("未连接到局域网（需要 Wi-Fi 或以太网）", "Not on a LAN (Wi-Fi or Ethernet needed)"))
             return
         }
         val (ip, prefix) = net
-        _state.value = ScanState(running = true, phase = "正在扫描…", network = "$ip/$prefix", hosts = results.snapshot())
+        _state.value = ScanState(running = true, phase = t("正在扫描…", "Scanning…"), network = "$ip/$prefix", hosts = results.snapshot())
         job = scope.launch(Dispatchers.IO) {
             val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
             val lock = runCatching { wifi.createMulticastLock("ghost-lan-scan").apply { setReferenceCounted(false); acquire() } }.getOrNull()
@@ -82,9 +84,9 @@ class LanScanner(private val context: Context, private val scope: CoroutineScope
                     }
                     launch { sweep(hosts) }
                 }
-                _state.update { it.copy(running = false, phase = "扫描完成", progress = 1f) }
+                _state.update { it.copy(running = false, phase = t("扫描完成", "Scan finished"), progress = 1f) }
             } catch (e: kotlinx.coroutines.CancellationException) {
-                _state.update { it.copy(running = false, phase = "已停止") }
+                _state.update { it.copy(running = false, phase = t("已停止", "Stopped")) }
                 throw e
             } catch (e: Exception) {
                 _state.update { it.copy(running = false, error = e.message ?: e.javaClass.simpleName) }
@@ -94,7 +96,7 @@ class LanScanner(private val context: Context, private val scope: CoroutineScope
         }
     }
 
-    fun stop() { job?.cancel(); _state.update { it.copy(running = false, phase = "已停止") } }
+    fun stop() { job?.cancel(); _state.update { it.copy(running = false, phase = t("已停止", "Stopped")) } }
 
     fun clear() { stop(); _state.value = ScanState() }
 

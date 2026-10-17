@@ -49,6 +49,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun attachBaseContext(newBase: android.content.Context) {
+        // Apply the in-app language to Android resources too (app_name, system dialogs we inflate).
+        val pref = newBase.getSharedPreferences("settings", MODE_PRIVATE).getString("language", "system")
+        val ctx = if (pref == "zh" || pref == "en") {
+            val loc = if (pref == "en") java.util.Locale.ENGLISH else java.util.Locale.SIMPLIFIED_CHINESE
+            val cfg = android.content.res.Configuration(newBase.resources.configuration).apply { setLocale(loc) }
+            newBase.createConfigurationContext(cfg)
+        } else newBase
+        super.attachBaseContext(ctx)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)

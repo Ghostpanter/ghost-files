@@ -101,7 +101,7 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
                 } else {
                     vm.toast(
                         t(
-                            "打开 / 需要 Root。请在 Magisk/KernelSU 中允许本应用。",
+                            t("打开 / 需要 Root。请在 Magisk/KernelSU 中允许本应用。", "Opening / needs root. Allow this app in Magisk/KernelSU."),
                             "Opening / needs Root. Allow this app in Magisk/KernelSU.",
                         ),
                     )
@@ -129,7 +129,7 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
                 } else {
                     vm.toast(
                         t(
-                            "未获得 Root。请在 Magisk/KernelSU 中允许本应用后重试。",
+                            t("未获得 Root。请在 Magisk/KernelSU 中允许本应用后重试。", "Root not granted. Allow this app in Magisk/KernelSU and retry."),
                             "Root not available. Allow this app in Magisk/KernelSU, then retry.",
                         ),
                     )
@@ -179,7 +179,7 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
             }
         }
         Item(Icons.Filled.Radar, t("扫描局域网（自动发现共享）", "Scan LAN for shares")) { vm.screen = Screen.LanScan; close() }
-        Item(Icons.Filled.CloudUpload, t("本机服务（FTP / WebDAV / SFTP）", "Hosted services (FTP / WebDAV / SFTP)")) { vm.screen = Screen.Servers; close() }
+        Item(Icons.Filled.CloudUpload, t("本机服务（FTP / WebDAV / SFTP / SMB）", "Hosted services (FTP / WebDAV / SFTP / SMB)")) { vm.screen = Screen.Servers; close() }
         Item(Icons.Filled.Add, t("手动添加服务器（SMB/FTP/SFTP/WebDAV）", "Add server")) { editServer(null); close() }
 
         Section(t("工具", "Tools"))
@@ -190,6 +190,11 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         Section(t("设置", "Settings"))
         Toggle(t("显示隐藏文件", "Show hidden files"), settings.showHidden) { settings.showHidden = it }
         Toggle(t("列表缩略图", "List thumbnails"), settings.showThumbnails) { settings.showThumbnails = it }
+        LanguagePicker(settings.language) { v ->
+            settings.language = v
+            close()
+            (ctx as? android.app.Activity)?.recreate()
+        }
         Toggle(t("OLED 纯黑（深色背景 #000000）", "OLED black (#000000)"), settings.oledBlack) { settings.oledBlack = it }
         Item(Icons.Filled.Upload, t("导出配置 / 书签 / 服务器", "Export settings / bookmarks / servers")) {
             val dest = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
@@ -254,5 +259,19 @@ private fun Toggle(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().clickable { onChange(!value) }.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), fontSize = 14.sp)
         Switch(value, onChange)
+    }
+}
+
+
+@Composable
+private fun LanguagePicker(current: String, onPick: (String) -> Unit) {
+    val opts = listOf("system" to t("跟随系统", "Follow system"), "zh" to "简体中文", "en" to "English")
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Text(t("语言 / Language", "Language / 语言"), fontSize = 14.sp)
+        Row {
+            opts.forEach { (v, label) ->
+                FilterChip(selected = current == v, onClick = { if (current != v) onPick(v) }, label = { Text(label, fontSize = 12.sp) }, modifier = Modifier.padding(end = 6.dp))
+            }
+        }
     }
 }

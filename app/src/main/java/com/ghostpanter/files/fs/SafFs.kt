@@ -1,5 +1,7 @@
 package com.ghostpanter.files.fs
 
+import com.ghostpanter.files.t
+
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -38,7 +40,7 @@ class SafFs(private val context: Context, private val tree: Uri, override val id
             while (c.moveToNext()) {
                 out.add(Row(c.getString(0), c.getString(1) ?: "?", c.getString(2) ?: "", if (c.isNull(3)) 0 else c.getLong(3), if (c.isNull(4)) 0 else c.getLong(4)))
             }
-        } ?: throw FsException("无法读取 SAF 目录（授权可能已失效）")
+        } ?: throw FsException(t("无法读取 SAF 目录（授权可能已失效）", "Cannot read SAF folder (permission may have expired)"))
         return out
     }
 
@@ -59,7 +61,7 @@ class SafFs(private val context: Context, private val tree: Uri, override val id
 
     override fun list(path: String, onChunk: ((List<FileEntry>) -> Unit)?): List<FileEntry> {
         val dir = VPath.normalize(path)
-        val id = resolve(dir) ?: throw FsException("目录不存在: $dir")
+        val id = resolve(dir) ?: throw FsException(t("目录不存在: $dir", "Directory not found: $dir"))
         val rows = children(id)
         rows.forEach { idCache[VPath.join(dir, it.name)] = it.docId }
         return rows.map { toEntry(dir, it) }.also { onChunk?.invoke(it) }
@@ -76,25 +78,25 @@ class SafFs(private val context: Context, private val tree: Uri, override val id
     }
 
     override fun openRead(path: String, offset: Long): InputStream {
-        val id = resolve(path) ?: throw FsException("不存在: $path")
-        val input = cr.openInputStream(docUri(id)) ?: throw FsException("无法打开: $path")
+        val id = resolve(path) ?: throw FsException(t("不存在: $path", "Not found: $path"))
+        val input = cr.openInputStream(docUri(id)) ?: throw FsException(t("无法打开: $path", "Cannot open: $path"))
         var left = offset
         while (left > 0) { val n = input.skip(left); if (n <= 0) break; left -= n }
         return input
     }
 
     override fun openWrite(path: String, offset: Long, sizeHint: Long): OutputStream {
-        if (offset > 0) throw FsException("SAF 不支持续传写入")
+        if (offset > 0) throw FsException(t("SAF 不支持续传写入", "SAF does not support resumed writes"))
         val p = VPath.normalize(path)
         val existing = resolve(p)
         val uri = if (existing != null) docUri(existing) else {
-            val parent = resolve(VPath.parent(p)) ?: throw FsException("父目录不存在")
+            val parent = resolve(VPath.parent(p)) ?: throw FsException(t("父目录不存在", "Parent directory not found"))
             val created = DocumentsContract.createDocument(cr, docUri(parent), "application/octet-stream", VPath.name(p))
-                ?: throw FsException("无法创建: $p")
+                ?: throw FsException(t("无法创建: $p", "Cannot create: $p"))
             idCache[p] = DocumentsContract.getDocumentId(created)
             created
         }
-        return cr.openOutputStream(uri, "wt") ?: throw FsException("无法写入: $p")
+        return cr.openOutputStream(uri, "wt") ?: throw FsException(t("无法写入: $p", "Cannot write: $p"))
     }
 
     override fun mkdirs(path: String) {
@@ -104,7 +106,7 @@ class SafFs(private val context: Context, private val tree: Uri, override val id
             if (resolve(next) == null) {
                 val parentId = resolve(cur)!!
                 val created = DocumentsContract.createDocument(cr, docUri(parentId), Document.MIME_TYPE_DIR, part)
-                    ?: throw FsException("无法创建目录: $next")
+                    ?: throw FsException(t("无法创建目录: $next", "Cannot create directory: $next"))
                 idCache[next] = DocumentsContract.getDocumentId(created)
             }
             cur = next
@@ -113,18 +115,18 @@ class SafFs(private val context: Context, private val tree: Uri, override val id
 
     override fun delete(path: String, recursive: Boolean) {
         val id = resolve(path) ?: return
-        if (!DocumentsContract.deleteDocument(cr, docUri(id))) throw FsException("删除失败: $path")
+        if (!DocumentsContract.deleteDocument(cr, docUri(id))) throw FsException(t("删除失败: $path", "Delete failed: $path"))
         idCache.keys.filter { VPath.isSameOrDescendant(VPath.normalize(path), it) }.forEach { idCache.remove(it) }
     }
 
     override fun rename(from: String, to: String) {
-        val id = resolve(from) ?: throw FsException("不存在: $from")
+        val id = resolve(from) ?: throw FsException(t("不存在: $from", "Not found: $from"))
         if (VPath.parent(from) == VPath.parent(to)) {
-            DocumentsContract.renameDocument(cr, docUri(id), VPath.name(to)) ?: throw FsException("重命名失败")
+            DocumentsContract.renameDocument(cr, docUri(id), VPath.name(to)) ?: throw FsException(t("重命名失败", "Rename failed"))
         } else {
             val src = resolve(VPath.parent(from))!!
-            val dst = resolve(VPath.parent(to)) ?: throw FsException("目标目录不存在")
-            val moved = DocumentsContract.moveDocument(cr, docUri(id), docUri(src), docUri(dst)) ?: throw FsException("移动失败")
+            val dst = resolve(VPath.parent(to)) ?: throw FsException(t("目标目录不存在", "Target directory not found"))
+            val moved = DocumentsContract.moveDocument(cr, docUri(id), docUri(src), docUri(dst)) ?: throw FsException(t("移动失败", "Move failed"))
             if (VPath.name(from) != VPath.name(to)) DocumentsContract.renameDocument(cr, moved, VPath.name(to))
         }
         idCache.keys.filter { VPath.isSameOrDescendant(VPath.normalize(from), it) }.forEach { idCache.remove(it) }
