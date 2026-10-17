@@ -289,9 +289,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
 
     override fun fsLabel(fsId: String) = fsm.label(fsId)
 
-    override fun thumbnail(fsId: String, e: FileEntry, sizePx: Int): android.graphics.Bitmap? {
+    override fun thumbnail(fsId: String, e: FileEntry, sizePx: Int, cancelled: () -> Boolean): android.graphics.Bitmap? {
         val fs = runCatching { fsm.get(fsId) }.getOrNull() ?: return null
-        val local = if (fsId == LocalFs.ID) java.io.File(e.path).takeIf { it.isFile && it.canRead() } else null
+        // Root / Shizuku browse real paths: if the app itself can read the file (e.g. /storage/emulated/0/...),
+        // decode it directly instead of going through su.
+        val realPath = fsId == LocalFs.ID || fsId == FsManager.ROOT || fsId == FsManager.SHIZUKU
+        val local = if (realPath) java.io.File(e.path).takeIf { it.isFile && it.canRead() } else null
         val apkIcon: (() -> android.graphics.Bitmap?)? = if (local != null && e.extension.equals("apk", true)) ({
             val pm = getApplication<Application>().packageManager
             pm.getPackageArchiveInfo(local.path, 0)?.applicationInfo?.let { ai ->
@@ -301,7 +304,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                 val c = android.graphics.Canvas(b); d.setBounds(0, 0, 96, 96); d.draw(c); b
             }
         }) else null
-        return Thumbnails.load(fsId, e, fs, local, apkIcon, sizePx)
+        return Thumbnails.load(fsId, e, fs, local, apkIcon, sizePx, cancelled)
     }
 
     override fun onEntryClick(pane: PaneState, e: FileEntry) {

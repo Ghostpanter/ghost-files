@@ -251,7 +251,7 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
                         onClick = { host.onEntryClick(pane, e) },
                         onLongClick = { host.onEntryLongPress(pane, e) },
                         onSwipe = { host.onEntrySwipe(pane, e) },
-                        thumb = { host.thumbnail(tab.fsId, e, 192) },
+                        thumb = { c -> host.thumbnail(tab.fsId, e, 192, c) },
                         iconSize = 56.dp,
                     )
                 }
@@ -271,7 +271,7 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
                     onClick = { host.onEntryClick(pane, e) },
                     onLongClick = { host.onEntryLongPress(pane, e) },
                     onSwipe = { host.onEntrySwipe(pane, e) },
-                    thumb = { host.thumbnail(tab.fsId, e) },
+                    thumb = { c -> host.thumbnail(tab.fsId, e, 96, c) },
                 )
             }
         }
@@ -314,7 +314,7 @@ fun FileRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onSwipe: () -> Unit,
-    thumb: (() -> android.graphics.Bitmap?)? = null,
+    thumb: ((cancelled: () -> Boolean) -> android.graphics.Bitmap?)? = null,
     iconSize: Dp = 28.dp,
 ) {
     val bg = when {
@@ -347,7 +347,10 @@ fun FileRow(
         var thumbBmp by remember(e.path, e.lastModified, showThumbs) { mutableStateOf<android.graphics.Bitmap?>(null) }
         LaunchedEffect(e.path, e.lastModified, showThumbs) {
             if (!showThumbs || e.isDirectory || thumb == null) { thumbBmp = null; return@LaunchedEffect }
-            thumbBmp = withContext(Dispatchers.IO) { runCatching { thumb() }.getOrNull() }
+            thumbBmp = withContext(Dispatchers.IO) {
+                val job = coroutineContext[kotlinx.coroutines.Job]
+                runCatching { thumb { job?.isActive == false } }.getOrNull()
+            }
         }
         Box(Modifier.size(iconSize)) {
             val tb = thumbBmp

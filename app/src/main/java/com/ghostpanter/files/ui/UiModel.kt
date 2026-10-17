@@ -55,7 +55,7 @@ interface PaneHost {
     fun closeTab(pane: PaneState, i: Int)
     fun reload(tab: TabState)
     /** Thumbnail for [e] on [fsId] (blocking; call off the main thread). */
-    fun thumbnail(fsId: String, e: FileEntry, sizePx: Int = 96): android.graphics.Bitmap? = null
+    fun thumbnail(fsId: String, e: FileEntry, sizePx: Int = 96, cancelled: () -> Boolean = { false }): android.graphics.Bitmap? = null
 }
 
 /** One row of an MT-style action list (long-press menu, "more" menu). */

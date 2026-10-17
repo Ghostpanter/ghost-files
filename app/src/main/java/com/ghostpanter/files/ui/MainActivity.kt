@@ -73,6 +73,21 @@ class MainActivity : ComponentActivity() {
         if (com.ghostpanter.files.BuildConfig.DEBUG) intent?.getStringExtra("debug_fs")?.let { fs ->
             vm.openFs(fs, intent.getStringExtra("debug_path") ?: "/")
         }
+        if (com.ghostpanter.files.BuildConfig.DEBUG) intent?.getStringExtra("debug_bench")?.let { list ->
+            val fsId = intent.getStringExtra("debug_fs") ?: "local"
+            Thread {
+                for (path in list.split(',')) {
+                    val e = runCatching { vm.fsm.get(fsId).stat(path) }.getOrNull()
+                    if (e == null) { android.util.Log.i("GFBench", "missing $path"); continue }
+                    Thumbnails.clearAll()
+                    val t0 = System.nanoTime()
+                    val b = runCatching { vm.thumbnail(fsId, e, 96) }.getOrNull()
+                    val ms = (System.nanoTime() - t0) / 1_000_000
+                    android.util.Log.i("GFBench", "fs=$fsId size=${e.size} ok=${b != null} ms=$ms $path")
+                }
+                android.util.Log.i("GFBench", "BENCH_DONE")
+            }.start()
+        }
         setContent {
             GhostThemeFromSettings(vm.g.settings.themeMode, vm.g.settings.oledBlack) { MainScreen(vm, this) }
         }

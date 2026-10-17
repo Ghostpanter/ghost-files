@@ -235,11 +235,16 @@ object Thumbnails {
 
     /** Forget failed thumbnails (manual refresh, Root/Shizuku reconnect). */
     fun clearMisses() = misses.clear()
+
+    /** Debug benchmark helper: forget every cached thumbnail (memory + disk). */
+    fun clearAll() {
+        misses.clear(); synchronized(cache) { cache.clear() }
+        File(com.ghostpanter.files.GhostApp.instance.cacheDir, "thumbs").deleteRecursively()
+    }
     /** Bound concurrent decodes/streams so a fast scroll over a shell/remote dir doesn't spawn dozens of readers. */
     private val gate = java.util.concurrent.Semaphore(3)
 
     private const val MAX_IMAGE_BYTES = 32L shl 20
-    private const val MAX_VIDEO_BYTES_NEAR = 512L shl 20   // shell / SAF: copy of the file stays on-device
     private const val MAX_IMAGE_BYTES_REMOTE = 12L shl 20
 
     fun cached(fsId: String, entry: FileEntry, size: Int = 96): Bitmap? =
@@ -250,12 +255,24 @@ object Thumbnails {
     fun load(fsId: String, entry: FileEntry, localFile: File?, apkIcon: (() -> Bitmap?)? = null, size: Int = 96): Bitmap? =
         load(fsId, entry, null, localFile, apkIcon, size)
 
+    /** Per-video budget: a slow backend gives up instead of holding a decode slot forever. */
+    private const val VIDEO_TIMEOUT_MS = 10_000L
+    private val videoPool = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "thumb-video").apply { isDaemon = true } }
+
     /**
-     * Thumbnail for [entry] on any backend. LocalFs files decode in place; other backends (Shizuku/Root shell,
-     * SAF, network) stream through [fs] into a temp file under the app cache, then decode. Results are kept in
-     * memory and as small JPEGs in cache/thumbs keyed by fs+path+mtime+size.
+     * Thumbnail for [entry] on any backend.
+     * - Any path that java.io.File can read (LocalFs, and Root/Shizuku browsing of /storage/...) decodes in place.
+     * - Videos elsewhere are probed with random-access reads ([VirtualFs.readAt]: `dd skip=` on Root/Shizuku,
+     *   a seekable fd on SAF, ranged reads on SMB/SFTP/WebDAV/FTP) — the file is never copied, so size doesn't matter
+     *   and MP4s with the moov box at the end work.
+     * - Images elsewhere (small) are copied to a temp file.
+     * Results live in memory and as small JPEGs in cache/thumbs keyed by fs+path+mtime+size.
+     * [cancelled] lets off-screen rows drop out of the queue before (or while) doing I/O.
      */
-    fun load(fsId: String, entry: FileEntry, fs: com.ghostpanter.files.core.VirtualFs?, localFile: File?, apkIcon: (() -> Bitmap?)? = null, size: Int = 96): Bitmap? {
+    fun load(
+        fsId: String, entry: FileEntry, fs: com.ghostpanter.files.core.VirtualFs?, localFile: File?,
+        apkIcon: (() -> Bitmap?)? = null, size: Int = 96, cancelled: () -> Boolean = { false },
+    ): Bitmap? {
         if (entry.isDirectory) return null
         val key = key(fsId, entry, size)
         synchronized(cache) { cache[key] }?.let { return it }
@@ -269,35 +286,94 @@ object Thumbnails {
         if (diskFile.length() > 0) {
             BitmapFactory.decodeFile(diskFile.path)?.let { b -> synchronized(cache) { cache[key] = b }; return b }
         }
-        gate.acquire()
+        // Wait for a slot, but leave the queue as soon as the row scrolls away.
+        while (!gate.tryAcquire(40, java.util.concurrent.TimeUnit.MILLISECONDS)) if (cancelled()) return null
+        if (cancelled()) { gate.release(); return null }
         val bmp = try {
             when {
                 localFile != null && localFile.isFile && localFile.canRead() -> when {
                     isImg -> decodeImage(localFile, size)
-                    isVid -> decodeVideo(localFile, size)
+                    isVid -> decodeVideo(size, cancelled) { r -> java.io.FileInputStream(localFile).use { r.setDataSource(it.fd) } }
                     else -> apkIcon?.invoke()
                 }
                 ext == "apk" -> apkIcon?.invoke()
-                fs != null -> viaTemp(fsId, fs, entry, isImg, size)
-                else -> null
+                fs == null -> null
+                isVid -> {
+                    val saf = fs as? com.ghostpanter.files.fs.SafFs
+                    val pfd = saf?.openFd(entry.path)
+                    if (pfd != null) pfd.use { p -> decodeVideo(size, cancelled) { r -> r.setDataSource(p.fileDescriptor) } }
+                    else {
+                        val src = FsMediaDataSource(fs, entry.path, entry.size, cancelled)
+                        decodeVideo(size, cancelled) { r -> r.setDataSource(src) }
+                    }
+                }
+                else -> viaTemp(fsId, fs, entry, size)
             }
         } catch (t: Throwable) { android.util.Log.w("GFThumb", "thumb failed $fsId ${entry.path}", t); null } finally { gate.release() }
-        if (bmp == null) { misses[key] = System.currentTimeMillis(); return null }
+        if (bmp == null) {
+            // A cancelled (scrolled-away) attempt is not a failure: retry when the row comes back.
+            if (!cancelled()) misses[key] = System.currentTimeMillis()
+            return null
+        }
         synchronized(cache) { cache[key] = bmp }
-        if (fsId != "local") runCatching {
+        if (fsId != "local" || isVid) runCatching {
             diskFile.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
         }
         return bmp
     }
 
-    private fun viaTemp(fsId: String, fs: com.ghostpanter.files.core.VirtualFs, e: FileEntry, isImg: Boolean, size: Int): Bitmap? {
-        val remote = fsId.startsWith("net:")
-        val limit = when {
-            isImg && remote -> MAX_IMAGE_BYTES_REMOTE
-            isImg -> MAX_IMAGE_BYTES
-            remote -> return null // a whole remote video per row is too expensive
-            else -> MAX_VIDEO_BYTES_NEAR
+    /**
+     * [MediaDataSource] over [VirtualFs.readAt] with a small block cache (MP4 parsers re-read the same areas).
+     * Aborts (returns EOF) once [cancelled] fires or the per-video deadline passes.
+     */
+    private class FsMediaDataSource(
+        private val fs: com.ghostpanter.files.core.VirtualFs, private val path: String, private val length: Long,
+        private val cancelled: () -> Boolean,
+    ) : android.media.MediaDataSource() {
+        @Volatile var aborted = false
+        private val deadline = System.currentTimeMillis() + VIDEO_TIMEOUT_MS
+        private val blockSize = 256 * 1024
+        private val blocks = object : LinkedHashMap<Long, ByteArray>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, ByteArray>?) = size > 24
         }
+
+        override fun getSize(): Long = length
+
+        override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
+            if (aborted || cancelled() || System.currentTimeMillis() > deadline) { aborted = true; return -1 }
+            if (position >= length || size <= 0) return -1
+            var done = 0
+            var pos = position
+            while (done < size && pos < length) {
+                val idx = pos / blockSize
+                val block = synchronized(blocks) { blocks[idx] } ?: run {
+                    val start = idx * blockSize
+                    val want = minOf(blockSize.toLong(), length - start).toInt()
+                    val b = ByteArray(want)
+                    var got = 0
+                    while (got < want) {
+                        val n = fs.readAt(path, start + got, b, got, want - got)
+                        if (n <= 0) break
+                        got += n
+                    }
+                    val blk = if (got == want) b else b.copyOf(got)
+                    synchronized(blocks) { blocks[idx] = blk }
+                    blk
+                }
+                val inBlock = (pos - idx * blockSize).toInt()
+                if (inBlock >= block.size) break
+                val n = minOf(size - done, block.size - inBlock)
+                System.arraycopy(block, inBlock, buffer, offset + done, n)
+                done += n; pos += n
+            }
+            return if (done == 0) -1 else done
+        }
+
+        override fun close() { synchronized(blocks) { blocks.clear() } }
+    }
+
+    private fun viaTemp(fsId: String, fs: com.ghostpanter.files.core.VirtualFs, e: FileEntry, size: Int): Bitmap? {
+        val limit = if (fsId.startsWith("net:")) MAX_IMAGE_BYTES_REMOTE else MAX_IMAGE_BYTES
         if (e.size > limit) return null
         val tmpDir = File(com.ghostpanter.files.GhostApp.instance.cacheDir, "thumb-tmp").apply { mkdirs() }
         val tmp = File.createTempFile("thumb", "." + e.extension.lowercase().ifEmpty { "bin" }, tmpDir)
@@ -314,7 +390,7 @@ object Thumbnails {
                     }
                 }
             }
-            if (isImg) decodeImage(tmp, size) else decodeVideo(tmp, size)
+            decodeImage(tmp, size)
         } finally { tmp.delete() }
     }
 
@@ -342,12 +418,34 @@ object Thumbnails {
         return centerCrop(b, size)
     }
 
-    private fun decodeVideo(f: File, size: Int): Bitmap? {
+    /**
+     * First usable frame: embedded cover art if present, else the sync frame near 1 s, decoded straight to
+     * thumbnail size. Runs on a worker with a hard [VIDEO_TIMEOUT_MS] budget.
+     */
+    private fun decodeVideo(size: Int, cancelled: () -> Boolean, setSource: (MediaMetadataRetriever) -> Unit): Bitmap? {
+        val task = videoPool.submit<Bitmap?> { grabFrame(size, cancelled, setSource) }
+        return try { task.get(VIDEO_TIMEOUT_MS + 2_000, java.util.concurrent.TimeUnit.MILLISECONDS) }
+        catch (_: java.util.concurrent.TimeoutException) { task.cancel(true); null }
+    }
+
+    private fun grabFrame(size: Int, cancelled: () -> Boolean, setSource: (MediaMetadataRetriever) -> Unit): Bitmap? {
         val r = MediaMetadataRetriever()
         return try {
-            java.io.FileInputStream(f).use { r.setDataSource(it.fd) }
-            val frame = if (android.os.Build.VERSION.SDK_INT >= 27) r.getScaledFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, size * 2, size * 2) else r.frameAtTime
-            frame?.let { centerCrop(it, size) }
+            setSource(r)
+            if (cancelled()) return null
+            r.embeddedPicture?.let { pic ->
+                val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(pic, 0, pic.size, o)
+                var sample = 1
+                while (o.outWidth / sample > size * 2 || o.outHeight / sample > size * 2) sample *= 2
+                BitmapFactory.decodeByteArray(pic, 0, pic.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            }?.let { return centerCrop(it, size) }
+            val dur = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val atUs = if (dur in 1..2000) 0L else 1_000_000L
+            val frame = if (android.os.Build.VERSION.SDK_INT >= 27)
+                r.getScaledFrameAtTime(atUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, size * 2, size * 2)
+            else r.getFrameAtTime(atUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            (frame ?: r.getFrameAtTime(-1))?.let { centerCrop(it, size) }
         } catch (_: Throwable) { null } finally { runCatching { r.release() } }
     }
 

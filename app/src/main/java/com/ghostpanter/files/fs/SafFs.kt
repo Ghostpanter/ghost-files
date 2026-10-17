@@ -85,6 +85,15 @@ class SafFs(private val context: Context, private val tree: Uri, override val id
         return input
     }
 
+    /** Seekable descriptor for media probing (MediaMetadataRetriever / libVLC): no copy, real random access. */
+    fun openFd(path: String): android.os.ParcelFileDescriptor? =
+        resolve(path)?.let { id -> runCatching { cr.openFileDescriptor(docUri(id), "r") }.getOrNull() }
+
+    override fun readAt(path: String, offset: Long, buf: ByteArray, off: Int, len: Int): Int {
+        val pfd = openFd(path) ?: return super.readAt(path, offset, buf, off, len)
+        return pfd.use { java.io.FileInputStream(it.fileDescriptor).channel.use { ch -> ch.read(java.nio.ByteBuffer.wrap(buf, off, len), offset) } }
+    }
+
     override fun openWrite(path: String, offset: Long, sizeHint: Long): OutputStream {
         if (offset > 0) throw FsException(t("SAF 不支持续传写入", "SAF does not support resumed writes"))
         val p = VPath.normalize(path)
