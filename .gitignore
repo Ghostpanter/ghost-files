@@ -12,3 +12,4 @@ key.properties
 *.iml
 .DS_Store
 env.sh
+.kotlin/

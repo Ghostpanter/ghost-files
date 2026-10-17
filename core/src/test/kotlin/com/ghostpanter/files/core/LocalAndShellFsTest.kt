@@ -51,6 +51,26 @@ class LocalAndShellFsTest {
         FsContract.run(fs, tempDir().path)
     }
 
+    @Test fun shellReadAtRandomAccess() {
+        val d = tempDir()
+        val data = ByteArray(1_000_003) { (it * 7 + it / 9973).toByte() }
+        val f = File(d, "big.mp4"); f.writeBytes(data)
+        for (runner in listOf(sh, ShellRunner { s -> ProcessBuilder("sh", "-c", s).redirectErrorStream(true).start() })) {
+            for (persistent in listOf(true, false)) {
+                val fs = ShellFs("shell", "sh", runner, persistent = persistent)
+                for ((o, l) in listOf(0L to 10, 4095L to 2, 123_457L to 300_000, 999_990L to 64, 1_000_002L to 10)) {
+                    val buf = ByteArray(l)
+                    val n = fs.readAt(f.path, o, buf, 0, l)
+                    val want = minOf(l.toLong(), data.size - o).toInt()
+                    assertEquals("o=$o p=$persistent", want, n)
+                    assertTrue(buf.copyOf(n).contentEquals(data.copyOfRange(o.toInt(), o.toInt() + n)))
+                }
+                assertEquals(-1, fs.readAt(f.path, 2_000_000, ByteArray(8), 0, 8))
+                fs.close()
+            }
+        }
+    }
+
     @Test fun shellListsHiddenFilesLinksAndPerms() {
         val d = tempDir()
         File(d, ".hidden").writeText("x")

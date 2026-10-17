@@ -93,6 +93,17 @@ interface VirtualFs : Closeable {
     fun exists(path: String): Boolean = stat(path) != null
 
     /**
+     * Random-access read used for media probing (video thumbnails, moov-at-end MP4): reads up to [len] bytes at
+     * [offset] into [buf]. Returns the number of bytes read, or -1 at EOF. Default: a fresh [openRead] at offset.
+     */
+    fun readAt(path: String, offset: Long, buf: ByteArray, off: Int, len: Int): Int =
+        openRead(path, offset).use { input ->
+            var n = 0
+            while (n < len) { val r = input.read(buf, off + n, len - n); if (r < 0) break; n += r }
+            if (n == 0 && len > 0) -1 else n
+        }
+
+    /**
      * How long a single blocking call may legitimately take before the transfer watchdog treats
      * the stream as dead (0 = use the engine default). Lets backends with long per-request
      * timeouts (SMB) avoid being cut off mid-request.

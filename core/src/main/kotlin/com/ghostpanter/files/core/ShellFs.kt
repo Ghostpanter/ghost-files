@@ -126,6 +126,33 @@ class ShellFs(
         }
     }
 
+    /**
+     * Ranged read with `dd` (seeks with skip=, never streams the file prefix). Over the persistent session the
+     * bytes come back base64-encoded (that channel is line/text based); otherwise a one-shot binary `dd` process.
+     */
+    override fun readAt(path: String, offset: Long, buf: ByteArray, off: Int, len: Int): Int {
+        if (len <= 0) return 0
+        val bs = 4096L
+        val first = offset / bs
+        val last = (offset + len - 1) / bs
+        val dd = "dd if=${q(path)} bs=$bs skip=$first count=${last - first + 1} 2>/dev/null"
+        val raw: ByteArray = session?.let { sh ->
+            try {
+                val r = sh.exec("$dd | base64", timeoutSec)
+                if (r.ok) java.util.Base64.getMimeDecoder().decode(r.stdout) else null
+            } catch (_: PersistentShell.Unavailable) { null } catch (_: IllegalArgumentException) { null }
+        } ?: run {
+            val proc = runner.start("exec $dd")
+            proc.outputStream.close()
+            try { proc.inputStream.readBytes() } finally { proc.destroy() }
+        }
+        val skip = (offset - first * bs).toInt()
+        if (raw.size <= skip) return -1
+        val n = minOf(len, raw.size - skip)
+        System.arraycopy(raw, skip, buf, off, n)
+        return n
+    }
+
     override fun openWrite(path: String, offset: Long, sizeHint: Long): OutputStream {
         val p = q(path)
         val script = "mkdir -p -- ${q(VPath.parent(path))} 2>/dev/null\n" +
