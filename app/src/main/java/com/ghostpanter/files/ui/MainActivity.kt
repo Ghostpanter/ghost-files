@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
         }
         if (com.ghostpanter.files.BuildConfig.DEBUG) intent?.getStringExtra("debug_bench")?.let { list ->
             val fsId = intent.getStringExtra("debug_fs") ?: "local"
+            intent.getLongExtra("debug_timeout_ms", 0L).takeIf { it > 0 }?.let { Thumbnails.VIDEO_TIMEOUT_MS = it }
             Thread {
                 for (path in list.split(',')) {
                     val e = runCatching { vm.fsm.get(fsId).stat(path) }.getOrNull()

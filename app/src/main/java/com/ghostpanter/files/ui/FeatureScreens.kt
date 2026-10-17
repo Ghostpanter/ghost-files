@@ -256,7 +256,8 @@ object Thumbnails {
         load(fsId, entry, null, localFile, apkIcon, size)
 
     /** Per-video budget: a slow backend gives up instead of holding a decode slot forever. */
-    private const val VIDEO_TIMEOUT_MS = 10_000L
+    /** Debug benches on a slow emulator raise this; release keeps the default. */
+    @Volatile var VIDEO_TIMEOUT_MS = 10_000L
     private val videoPool = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "thumb-video").apply { isDaemon = true } }
 
     /**
@@ -367,7 +368,7 @@ object Thumbnails {
                     while (got < want) {
                         val n = fs.readAt(path, start + got, b, got, want - got)
                         if (n <= 0) break
-                        got += n
+                        got += n; fetched += n; fetches++
                     }
                     // Only complete blocks are cached: a short read (transient error) must not turn into a
                     // permanent early EOF for the rest of this probe.
@@ -383,7 +384,13 @@ object Thumbnails {
             return if (done == 0) -1 else done
         }
 
-        override fun close() { synchronized(blocks) { blocks.clear() } }
+        @Volatile private var fetched = 0L
+        @Volatile private var fetches = 0
+
+        override fun close() {
+            if (com.ghostpanter.files.BuildConfig.DEBUG) android.util.Log.i("GFThumb", "probe $path len=$length fetches=$fetches bytes=$fetched")
+            synchronized(blocks) { blocks.clear() }
+        }
     }
 
     private fun viaTemp(fsId: String, fs: com.ghostpanter.files.core.VirtualFs, e: FileEntry, size: Int): Bitmap? {
