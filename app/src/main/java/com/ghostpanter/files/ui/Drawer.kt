@@ -200,7 +200,7 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
             t("布局模式", "Layout mode"),
             listOf("auto" to t("自动", "Auto"), "phone" to t("手机", "Phone"), "tablet" to t("平板", "Tablet")),
             settings.layoutMode,
-            hint = t("自动：宽度 ≥ 600dp（平板、折叠屏展开、横屏）用平板布局", "Auto: tablet layout when width ≥ 600dp (tablets, unfolded foldables, landscape)"),
+            hint = t("自动：平板和展开的折叠屏（宽 ≥ 600dp 且高 ≥ 480dp）用平板布局，手机横竖屏都保持原样", "Auto: tablet layout on tablets and unfolded foldables (width ≥ 600dp, height ≥ 480dp); phones keep the phone layout in both orientations"),
         ) { settings.layoutMode = it }
         ChipPicker(
             t("列表密度", "List density"),

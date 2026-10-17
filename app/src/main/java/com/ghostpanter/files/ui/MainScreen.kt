@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -519,12 +520,14 @@ fun TabletMainFrame(
                         .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.RoundedCornerShape(3.dp))
                         .padding(horizontal = 5.dp, vertical = 1.dp),
                 )
-                if (tab.selecting) {
+                // Narrow windows (forced tablet mode on a phone, split screen): the left tool group
+                // scrolls horizontally so the right-hand group (More / Done) never gets pushed off.
+                val toolScroll = rememberScrollState()
+                if (tab.selecting) Row(Modifier.weight(1f).horizontalScroll(toolScroll), verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         t("已选 ${tab.selected.size} 项", "${tab.selected.size} selected"),
                         fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, modifier = Modifier.padding(horizontal = 6.dp),
                     )
-                    Spacer(Modifier.weight(1f))
                     BarTool(Icons.Filled.SelectAll, t("全选 (Ctrl+A)", "Select all (Ctrl+A)")) { onTool(Tool.SELECT_ALL) }
                     BarTool(Icons.Filled.Flip, t("反选", "Invert")) { onTool(Tool.INVERT) }
                     BarTool(Icons.Filled.Category, t("类选", "Same type")) { onTool(Tool.SELECT_TYPE) }
@@ -532,9 +535,7 @@ fun TabletMainFrame(
                     BarTool(Icons.Filled.FileCopy, t("复制到对面", "Copy to other pane")) { onTool(Tool.COPY_OTHER) }
                     BarTool(Icons.AutoMirrored.Filled.DriveFileMove, t("移动到对面", "Move to other pane")) { onTool(Tool.MOVE_OTHER) }
                     BarTool(Icons.Filled.Delete, t("删除 (Delete)", "Delete (Del)")) { onTool(Tool.DELETE) }
-                    BarTool(Icons.Filled.MoreVert, t("更多", "More")) { onTool(Tool.SEL_MORE) }
-                    BarTool(Icons.Filled.Close, t("取消选择 (Esc)", "Done (Esc)")) { onTool(Tool.DONE) }
-                } else {
+                } else Row(Modifier.weight(1f).horizontalScroll(toolScroll), verticalAlignment = Alignment.CenterVertically) {
                     BarTool(Icons.AutoMirrored.Filled.ArrowBack, t("后退 (Alt+←)", "Back (Alt+←)"), enabled = canBack) { onTool(Tool.BACK) }
                     BarTool(Icons.AutoMirrored.Filled.ArrowForward, t("前进 (Alt+→)", "Forward (Alt+→)"), enabled = canForward) { onTool(Tool.FORWARD) }
                     BarTool(Icons.Filled.ArrowUpward, t("上级 (Backspace，长按跳转)", "Up (Backspace, hold: go to)"), onLong = { onToolLong(Tool.UP) }) { onTool(Tool.UP) }
@@ -545,7 +546,11 @@ fun TabletMainFrame(
                     if (hasClip) BarTool(Icons.Filled.ContentPaste, t("粘贴 (Ctrl+V)", "Paste (Ctrl+V)")) { onTool(Tool.PASTE) }
                     BarTool(Icons.Filled.SyncAlt, t("同步到对面（长按反向）", "Sync other pane (hold: reverse)"), onLong = { onToolLong(Tool.SYNC) }) { onTool(Tool.SYNC) }
                     BarTool(Icons.Filled.SwapHoriz, t("交换窗口", "Swap panes")) { onSwap() }
-                    Spacer(Modifier.weight(1f))
+                }
+                if (tab.selecting) {
+                    BarTool(Icons.Filled.MoreVert, t("更多", "More")) { onTool(Tool.SEL_MORE) }
+                    BarTool(Icons.Filled.Close, t("取消选择 (Esc)", "Done (Esc)")) { onTool(Tool.DONE) }
+                } else {
                     val filterOn = PaneUi.filterOpen || tab.filter.isNotEmpty()
                     BarTool(Icons.Filled.FilterList, t("筛选 (Ctrl+F)", "Filter (Ctrl+F)"), tint = if (filterOn) MaterialTheme.colorScheme.primary else null) {
                         val open = !filterOn

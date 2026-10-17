@@ -105,12 +105,15 @@ class UiScreenshotTest(private val name: String, private val device: DeviceConfi
 
     @Composable
     private fun TabletFrame(h: FakeHost, dark: Boolean) = GhostTheme(dark = dark) {
+        // Same decision as the app: phone_portrait renders "forced tablet" mode (no details panel there).
+        val cfg = androidx.compose.ui.platform.LocalConfiguration.current
+        val layout = resolveLayout("tablet", cfg.screenWidthDp, cfg.screenHeightDp, panelOpen = false)
         androidx.compose.foundation.layout.Row {
             GhostNavRail(current = Screen.Main, activeJobs = 2, panelOpen = false, onMenu = {}, onPick = {})
             androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.weight(1f)) {
                 TabletMainFrame(
                     host = h, ratio = 0.5f, onRatio = {}, onRatioDone = {}, canForward = false, hasClip = true,
-                    showPreview = true, previewWidth = 300f, onPreviewWidth = {}, onPreviewWidthDone = {},
+                    showPreview = layout.previewAllowed, previewWidth = 300f, onPreviewWidth = {}, onPreviewWidthDone = {},
                     onSearch = {}, onSwap = {}, onTool = {}, onToolLong = {},
                 )
             }

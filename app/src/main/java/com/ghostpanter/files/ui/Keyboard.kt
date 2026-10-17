@@ -24,7 +24,7 @@ import com.ghostpanter.files.t
  */
 fun handleShortcut(vm: MainViewModel, ev: KeyEvent): Boolean {
     if (ev.type != KeyEventType.KeyDown) return false
-    if (vm.screen != Screen.Main || vm.dialog != null || vm.menu != null || vm.pendingTransfer != null || vm.busy != null) return false
+    if (vm.screen != Screen.Main || vm.dialog != null || vm.menu != null || vm.pendingTransfer != null || vm.busy != null || vm.pathJump != null) return false
     val pane = vm.pane(vm.activePane)
     val tab = pane.tab
     val ctrl = ev.isCtrlPressed || ev.isMetaPressed

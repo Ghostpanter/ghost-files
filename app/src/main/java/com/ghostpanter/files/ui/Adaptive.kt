@@ -60,8 +60,9 @@ const val SIDE_PANEL_WIDTH_DP = 264
 
 /**
  * Pure decision function (unit-tested). [mode] is Settings.layoutMode: "auto" | "phone" | "tablet".
- * Auto: compact width (< 600dp, i.e. phones in portrait) keeps the phone layout unchanged; medium and
- * expanded widths (tablets, unfolded foldables, landscape phones) get the tablet frame.
+ * Auto: phones keep the phone layout unchanged in both orientations: compact width (< 600dp) or a
+ * short window (< 480dp high, i.e. a landscape phone). Tablets and unfolded foldables (width >= 600dp
+ * and height >= 480dp) get the tablet frame. "tablet" forces it anyway.
  */
 fun resolveLayout(mode: String, widthDp: Int, heightDp: Int, panelOpen: Boolean = true): WindowLayout {
     val wc = when {
@@ -72,7 +73,7 @@ fun resolveLayout(mode: String, widthDp: Int, heightDp: Int, panelOpen: Boolean 
     val tablet = when (mode) {
         "phone" -> false
         "tablet" -> true
-        else -> wc != WidthClass.COMPACT
+        else -> wc != WidthClass.COMPACT && heightDp >= 480
     }
     // Persistent panel needs real width and some height (not a landscape phone).
     val permanent = tablet && widthDp >= 1000 && heightDp >= 480
@@ -122,8 +123,13 @@ fun railDestinations(): List<RailDest> = listOf(
     RailDest(t("终端", "Terminal"), Icons.Filled.Terminal, Screen.Terminal) { it == Screen.Terminal },
 )
 
-/** Full-screen viewers hide the rail (player / image viewer look right in landscape). */
-fun Screen.immersive(): Boolean = this is Screen.Player || this is Screen.Image
+/**
+ * Full-screen viewers hide the rail (player / image viewer look right in landscape). Editors hide it
+ * too: switching destinations from the rail / side panel would drop unsaved edits without the
+ * editor's "discard changes?" prompt, so they are left only via their own back button.
+ */
+fun Screen.immersive(): Boolean = this is Screen.Player || this is Screen.Image ||
+    this is Screen.Editor || this is Screen.Hex || this is Screen.MusicTag
 
 @Composable
 fun GhostNavRail(
@@ -202,8 +208,15 @@ fun DetailsPanel(host: PaneHost, modifier: Modifier = Modifier) {
                 if (tab.selected.size > 1) InfoLine(t("已选", "Selected"), "${tab.selected.size}")
                 Spacer(Modifier.height(12.dp))
                 Text(t("点选文件或用方向键查看预览", "Click a file or use arrow keys to preview"), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                return@Column
-            }
+            } else EntryDetails(host, pane, tab, e)
+        }
+    }
+}
+
+/** Preview + info of one entry; [key] on the entry so state never leaks between files. */
+@Composable
+private fun EntryDetails(host: PaneHost, pane: PaneState, tab: TabState, e: FileEntry) {
+    key(tab.fsId, e.path) { Column {
             var thumb by remember(e.path, e.lastModified) { mutableStateOf<android.graphics.Bitmap?>(null) }
             var text by remember(e.path, e.lastModified) { mutableStateOf<String?>(null) }
             LaunchedEffect(tab.fsId, e.path, e.lastModified) {

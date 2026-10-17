@@ -12,9 +12,25 @@ class LayoutResolveTest {
         assertFalse(l.tablet); assertFalse(l.permanentPanel); assertFalse(l.previewAllowed)
     }
 
-    @Test fun landscapePhoneGetsRailButNoPanel() {
+    @Test fun landscapePhoneStaysPhone() {
         val l = resolveLayout("auto", 891, 411)
-        assertTrue(l.tablet); assertFalse(l.permanentPanel); assertFalse(l.previewAllowed)
+        assertEquals(WidthClass.EXPANDED, l.widthClass)
+        assertFalse(l.tablet); assertFalse(l.permanentPanel); assertFalse(l.previewAllowed)
+        // Forced tablet still works in landscape (rail, no persistent panel: too short).
+        val forced = resolveLayout("tablet", 891, 411)
+        assertTrue(forced.tablet); assertFalse(forced.permanentPanel); assertFalse(forced.previewAllowed)
+    }
+
+    @Test fun smallTabletLandscape() {
+        val l = resolveLayout("auto", 960, 600)
+        assertTrue(l.tablet); assertFalse(l.permanentPanel)
+    }
+
+    @Test fun editorsHideRail() {
+        assertTrue(Screen.Editor("local", "/a.txt").immersive())
+        assertTrue(Screen.Hex("local", "/a.bin").immersive())
+        assertFalse(Screen.Main.immersive())
+        assertFalse(Screen.Transfers.immersive())
     }
 
     @Test fun pixelTabletLandscape() {
