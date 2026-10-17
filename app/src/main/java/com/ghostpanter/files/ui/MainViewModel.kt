@@ -92,6 +92,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     var pathJump by mutableStateOf<PaneState?>(null)
     var clip by mutableStateOf<Clip?>(null)
     var screen by mutableStateOf<Screen>(Screen.Main)
+    /** True while the tablet frame is shown (set by MainScreen). */
+    var tabletUi = false
     var pendingTransfer by mutableStateOf<PendingTransfer?>(null)
     var busy by mutableStateOf<String?>(null)
     private var busyJob: Job? = null
@@ -314,7 +316,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     override fun onEntryClick(pane: PaneState, e: FileEntry) {
         activePane = pane.index
         val tab = pane.tab
-        if (!e.isDirectory) tab.highlight = e.path
+        // Tablet: the clicked file becomes the cursor (details panel / keyboard). Phones unchanged.
+        if (tabletUi && !e.isDirectory) tab.highlight = e.path
         if (tab.selecting) toggle(tab, e) else openEntry(tab, e)
     }
 

@@ -62,6 +62,7 @@ fun MainScreen(vm: MainViewModel, activity: MainActivity) {
     var editingServer by remember { mutableStateOf<ServerConfig?>(null) }
     var serverEditorOpen by remember { mutableStateOf(false) }
     val editServer: (ServerConfig?) -> Unit = { editingServer = it; serverEditorOpen = true }
+    SideEffect { vm.tabletUi = layout.tablet }
 
     CompositionLocalProvider(LocalDensitySpec provides densitySpec(settings.listDensity)) {
         if (layout.tablet) TabletShell(vm, activity, layout, editServer) else PhoneShell(vm, activity, editServer)
@@ -505,7 +506,7 @@ fun TabletMainFrame(
 ) {
     val tab = host.panes[host.activePane].tab
     val canBack = tab.history.isNotEmpty() || tab.path != "/"
-    Column(Modifier.fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) { Column(Modifier.fillMaxSize()) {
         Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
             Row(
                 Modifier.fillMaxWidth().statusBarsPadding().height(48.dp).padding(horizontal = 4.dp),
@@ -549,7 +550,7 @@ fun TabletMainFrame(
                     BarTool(Icons.Filled.FilterList, t("筛选 (Ctrl+F)", "Filter (Ctrl+F)"), tint = if (filterOn) MaterialTheme.colorScheme.primary else null) {
                         val open = !filterOn
                         PaneUi.filterOpen = open
-                        if (!open) host.panes.forEach { p -> p.tab.filter = "" } else PaneUi.filterFocusRequest++
+                        if (!open) host.panes.forEach { p -> p.tab.filter = "" } else PaneUi.filterFocusPending = true
                     }
                     BarTool(Icons.Filled.Search, t("搜索", "Search")) { onSearch() }
                     BarTool(Icons.Filled.MoreVert, t("更多", "More")) { onTool(Tool.MORE) }
@@ -570,7 +571,7 @@ fun TabletMainFrame(
                 DetailsPanel(host, Modifier.width(previewWidth.dp))
             }
         }
-    }
+    } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)

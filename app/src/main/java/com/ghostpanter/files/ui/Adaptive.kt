@@ -91,8 +91,9 @@ fun rememberWindowLayout(mode: String, panelOpen: Boolean): WindowLayout {
 
 /** List/grid sizes per density option. "normal" equals the pre-0.6.9 phone values. */
 data class DensitySpec(val icon: Dp, val nameSp: Int, val metaSp: Int, val rowPad: Dp, val gridCell: Dp, val gridIcon: Dp) {
-    val thumbPx: Int get() = (icon.value * 3.5f).toInt().coerceAtLeast(96)
-    val gridThumbPx: Int get() = (gridIcon.value * 3.5f).toInt().coerceAtLeast(192)
+    // "normal" keeps the 0.6.8 sizes (96 / 192 px) so cached thumbnails stay valid.
+    val thumbPx: Int get() = if (icon <= 28.dp) 96 else (icon.value * 3.5f).toInt()
+    val gridThumbPx: Int get() = if (gridIcon <= 56.dp) 192 else (gridIcon.value * 3.5f).toInt()
 }
 
 fun densitySpec(key: String): DensitySpec = when (key) {

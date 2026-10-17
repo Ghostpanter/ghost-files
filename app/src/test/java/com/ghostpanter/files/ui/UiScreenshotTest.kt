@@ -103,6 +103,26 @@ class UiScreenshotTest(private val name: String, private val device: DeviceConfi
         )
     }
 
+    @Composable
+    private fun TabletFrame(h: FakeHost, dark: Boolean) = GhostTheme(dark = dark) {
+        androidx.compose.foundation.layout.Row {
+            GhostNavRail(current = Screen.Main, activeJobs = 2, panelOpen = false, onMenu = {}, onPick = {})
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.weight(1f)) {
+                TabletMainFrame(
+                    host = h, ratio = 0.5f, onRatio = {}, onRatioDone = {}, canForward = false, hasClip = true,
+                    showPreview = true, previewWidth = 300f, onPreviewWidth = {}, onPreviewWidthDone = {},
+                    onSearch = {}, onSwap = {}, onTool = {}, onToolLong = {},
+                )
+            }
+        }
+    }
+
+    @Test fun tabletFrame() {
+        val h = host(selecting = false)
+        h.panes[0].tab.highlight = "/storage/emulated/0/会议纪要.txt"
+        paparazzi.snapshot { TabletFrame(h, device.nightMode == NightMode.NIGHT) }
+    }
+
     @Test fun browse() {
         val h = host(selecting = false)
         paparazzi.snapshot { Frame(h, device.nightMode == NightMode.NIGHT) }

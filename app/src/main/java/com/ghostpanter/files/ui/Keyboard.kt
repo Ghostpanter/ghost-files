@@ -81,7 +81,7 @@ fun handleShortcut(vm: MainViewModel, ev: KeyEvent): Boolean {
         ctrl && ev.key == Key.V -> if (vm.clip == null) vm.toast(t("剪贴板为空", "Clipboard is empty")) else vm.paste(tab)
         ev.key == Key.Delete -> targets().takeIf { it.isNotEmpty() }?.let { vm.dialog = DialogState.Delete(pane.index, it) }
         ev.key == Key.F2 -> targets().singleOrNull()?.let { vm.dialog = DialogState.Rename(pane.index, it) }
-        ctrl && ev.key == Key.F -> { PaneUi.filterOpen = true; PaneUi.filterFocusRequest++ }
+        ctrl && ev.key == Key.F -> { PaneUi.filterOpen = true; PaneUi.filterFocusPending = true }
         ev.key == Key.F5 || (ctrl && ev.key == Key.R) -> vm.refresh(tab)
         ctrl && ev.key == Key.N -> vm.dialog = DialogState.Create(pane.index, !shift)
         ctrl && ev.key == Key.T -> vm.newTab(pane)

@@ -199,8 +199,8 @@ object PaneUi {
     var filterOpen by mutableStateOf(false)
     /** A text field inside the frame has focus: keyboard shortcuts must not steal its keys. */
     var textFocused by mutableStateOf(false)
-    /** Bumped by Ctrl+F: the focused pane's filter field requests focus. */
-    var filterFocusRequest by mutableIntStateOf(0)
+    /** Set by Ctrl+F / the tablet filter button: the focused pane's filter field takes focus once. */
+    var filterFocusPending by mutableStateOf(false)
     /** Bumped when the frame should take keyboard focus back (e.g. after Esc in the filter). */
     var rootFocusRequest by mutableIntStateOf(0)
 }
@@ -264,8 +264,8 @@ fun PathCrumbs(host: PaneHost, pane: PaneState, showSide: Boolean, modifier: Mod
 @Composable
 private fun BasicFilterField(tab: TabState, active: Boolean) {
     val focus = remember { FocusRequester() }
-    LaunchedEffect(PaneUi.filterFocusRequest) {
-        if (PaneUi.filterFocusRequest > 0 && active) runCatching { focus.requestFocus() }
+    LaunchedEffect(PaneUi.filterFocusPending, active) {
+        if (PaneUi.filterFocusPending && active) { PaneUi.filterFocusPending = false; runCatching { focus.requestFocus() } }
     }
     DisposableEffect(Unit) { onDispose { PaneUi.textFocused = false } }
     Surface(color = MaterialTheme.colorScheme.surface) {
