@@ -14,6 +14,8 @@ class GhostApp : Application() {
         instance = this
         installSecurityProviders()
         graph = AppGraph(this)
+        com.ghostpanter.files.core.Lang.apply(graph.settings.language)
+        Thread { com.ghostpanter.files.ui.Thumbnails.trimDisk() }.start()
     }
 
     private fun installSecurityProviders() {

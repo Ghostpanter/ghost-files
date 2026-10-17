@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.transfer
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.Capability
 import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.core.FsException
@@ -83,8 +85,8 @@ class TransferEngine(
     ): Long {
         require(sources.isNotEmpty()) { "no sources" }
         val id = nextId.getAndIncrement()
-        val title = (if (op == TransferOp.COPY) "复制 " else "移动 ") +
-            (if (sources.size == 1) VPath.name(sources[0].path) else "${VPath.name(sources[0].path)} 等 ${sources.size} 项")
+        val title = (if (op == TransferOp.COPY) tr("复制 ", "Copy ") else tr("移动 ", "Move ")) +
+            (if (sources.size == 1) VPath.name(sources[0].path) else tr("${VPath.name(sources[0].path)} 等 ${sources.size} 项", "${VPath.name(sources[0].path)} and ${sources.size - 1} more"))
         val r = Runner(JobSnapshot(id, op, title, sources, dest, policy, JobState.QUEUED), ignoreMissingSources)
         runners[id] = r
         _jobs.update { it + r.snap }
@@ -279,16 +281,16 @@ class TransferEngine(
                 val kept = snap.keptSources
                 when {
                     failures.isEmpty() -> finish(JobState.COMPLETED, null)
-                    failures.size == kept -> finish(JobState.FAILED, "$kept 个文件已复制到目标，但源文件删除失败（未丢失数据）")
-                    kept > 0 -> finish(JobState.FAILED, "${failures.size - kept} 个文件失败；另有 $kept 个已复制但源文件未删除")
-                    else -> finish(JobState.FAILED, "${failures.size} 个文件失败")
+                    failures.size == kept -> finish(JobState.FAILED, tr("$kept 个文件已复制到目标，但源文件删除失败（未丢失数据）", "$kept file(s) copied but source not deleted (no data lost)"))
+                    kept > 0 -> finish(JobState.FAILED, tr("${failures.size - kept} 个文件失败；另有 $kept 个已复制但源文件未删除", "${failures.size - kept} file(s) failed; $kept copied but source not deleted"))
+                    else -> finish(JobState.FAILED, tr("${failures.size} 个文件失败", "${failures.size} file(s) failed"))
                 }
             } catch (e: CancellationException) {
                 finish(JobState.CANCELLED, null)
             } catch (e: Exception) {
                 if (cancelled) finish(JobState.CANCELLED, null)
                 else {
-                    recordError("任务失败", e, msg(e))
+                    recordError(tr("任务失败", "Job failed"), e, msg(e))
                     finish(JobState.FAILED, msg(e))
                 }
             } finally {
@@ -307,12 +309,12 @@ class TransferEngine(
                 val srcFs = fs(src.fsId)
                 val entry = withRetry("读取 ${src.path}") { srcFs.stat(src.path) }
                 if (entry == null) {
-                    if (!ignoreMissing) failures.add("${src.path}: 不存在")
+                    if (!ignoreMissing) failures.add(tr("${src.path}: 不存在", "${src.path}: not found"))
                     continue
                 }
                 val sameFs = srcFs.id == dstFs.id
                 if (sameFs && entry.isDirectory && VPath.isSameOrDescendant(entry.path, dest.path)) {
-                    failures.add("${src.path}: 不能复制/移动到自身或其子目录")
+                    failures.add(tr("${src.path}: 不能复制/移动到自身或其子目录", "${src.path}: cannot copy/move into itself"))
                     continue
                 }
                 var target = VPath.join(dest.path, entry.name)
@@ -366,7 +368,7 @@ class TransferEngine(
                 val candidate = VPath.join(parent, VPath.numbered(name, n))
                 if (runCatching { fs.stat(candidate) }.getOrNull() == null) return candidate
             }
-            throw FsException("无法生成不重名的文件名: $path")
+            throw FsException(tr("无法生成不重名的文件名: $path", "Cannot find a free file name: $path"))
         }
 
         private fun isFatal(e: Throwable): Boolean {
@@ -406,7 +408,7 @@ class TransferEngine(
             var resume = false
             val existing = withRetry("读取 $target") { dstFs.stat(target) }
             if (existing != null) {
-                if (existing.isDirectory) throw FsException("目标是同名目录")
+                if (existing.isDirectory) throw FsException(tr("目标是同名目录", "Target is a directory with the same name"))
                 when (snap.policy) {
                     ConflictPolicy.SKIP -> { markDone(src, skipped = true); return }
                     ConflictPolicy.RENAME -> target = uniqueName(dstFs, target)
@@ -501,8 +503,8 @@ class TransferEngine(
                 throw e
             } catch (e: Exception) {
                 val why = msg(e)
-                recordError("删除源文件 ${src.path}", e, "已复制，但删除源文件失败：$why")
-                failures.add("${src.path}: 已复制，但删除源文件失败：$why")
+                recordError("删除源文件 ${src.path}", e, tr("已复制，但删除源文件失败：$why", "Copied, but deleting source failed: $why"))
+                failures.add(tr("${src.path}: 已复制，但删除源文件失败：$why", "${src.path}: copied, but deleting source failed: $why"))
                 update { it.copy(keptSources = it.keptSources + 1, failures = failures.toList()) }
             }
         }
@@ -576,7 +578,7 @@ class TransferEngine(
                         if (actual != null && actual != src.size) {
                             // The source may have changed while copying: accept it if the source now matches.
                             val now = runCatching { srcFs.stat(src.path)?.size }.getOrNull()
-                            if (now != actual) throw FsException("大小校验失败: 期望 ${src.size}，实际 $actual")
+                            if (now != actual) throw FsException(tr("大小校验失败: 期望 ${src.size}，实际 $actual", "Size check failed: expected ${src.size}, got $actual"))
                         }
                     }
                 }

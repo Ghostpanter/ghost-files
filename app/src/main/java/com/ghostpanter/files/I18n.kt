@@ -1,10 +1,10 @@
 package com.ghostpanter.files
 
-import java.util.Locale
+import com.ghostpanter.files.core.Lang
 
-/** Chinese by default; English when the system language is English. */
+/** UI language: follows Settings → 语言 (system / 简体中文 / English); see [Lang]. */
 object I18n {
-    val isEn: Boolean = Locale.getDefault().language == "en"
+    val isEn: Boolean get() = Lang.en
 }
 
-fun t(zh: String, en: String): String = if (I18n.isEn) en else zh
+fun t(zh: String, en: String): String = if (Lang.en) en else zh

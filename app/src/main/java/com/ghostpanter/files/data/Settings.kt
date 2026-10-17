@@ -95,6 +95,12 @@ class Settings(context: Context) : ViewPrefs {
         set(v) { _themeMode.value = v; p.edit().putString("theme_mode", v).apply() }
 
     /** When true and dark theme is active, use pure black (#000000) surfaces for OLED. Default off. */
+    private val _language = mutableStateOf(p.getString("language", "system") ?: "system")
+    /** "system" | "zh" | "en". */
+    var language: String
+        get() = _language.value
+        set(v) { _language.value = v; p.edit().putString("language", v).apply(); com.ghostpanter.files.core.Lang.apply(v) }
+
     private val _oledBlack = bool("oled_black", false)
     var oledBlack: Boolean
         get() = _oledBlack.value
