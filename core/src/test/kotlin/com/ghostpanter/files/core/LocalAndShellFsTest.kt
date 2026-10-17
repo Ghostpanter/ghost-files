@@ -66,6 +66,11 @@ class LocalAndShellFsTest {
                     assertTrue(buf.copyOf(n).contentEquals(data.copyOfRange(o.toInt(), o.toInt() + n)))
                 }
                 assertEquals(-1, fs.readAt(f.path, 2_000_000, ByteArray(8), 0, 8))
+                assertEquals(-1, fs.readAt(f.path, -5, ByteArray(8), 0, 8))
+                assertEquals(0, fs.readAt(f.path, 0, ByteArray(8), 0, 0))
+                assertEquals(-1, fs.readAt(f.path + ".missing", 0, ByteArray(8), 0, 8))
+                val mid = ByteArray(20); assertEquals(8, fs.readAt(f.path, 4092, mid, 6, 8))
+                assertTrue(mid.copyOfRange(6, 14).contentEquals(data.copyOfRange(4092, 4100)))
                 fs.close()
             }
         }

@@ -131,20 +131,32 @@ class ShellFs(
      * bytes come back base64-encoded (that channel is line/text based); otherwise a one-shot binary `dd` process.
      */
     override fun readAt(path: String, offset: Long, buf: ByteArray, off: Int, len: Int): Int {
-        if (len <= 0) return 0
+        if (len == 0) return 0
+        require(len > 0 && off >= 0 && off + len <= buf.size) { "bad range off=$off len=$len size=${buf.size}" }
+        if (offset < 0) return -1
         val bs = 4096L
         val first = offset / bs
         val last = (offset + len - 1) / bs
-        val dd = "dd if=${q(path)} bs=$bs skip=$first count=${last - first + 1} 2>/dev/null"
+        val count = last - first + 1
+        val dd = "dd if=${q(path)} bs=$bs skip=$first count=$count 2>/dev/null"
         val raw: ByteArray = session?.let { sh ->
             try {
                 val r = sh.exec("$dd | base64", timeoutSec)
-                if (r.ok) java.util.Base64.getMimeDecoder().decode(r.stdout) else null
-            } catch (_: PersistentShell.Unavailable) { null } catch (_: IllegalArgumentException) { null }
+                // The session may merge stderr into stdout: only accept pure base64 (the MIME decoder would
+                // silently skip stray text and hand back corrupted bytes).
+                val text = r.stdout.filterNot { it == '\n' || it == '\r' }
+                if (r.ok && B64.matches(text)) java.util.Base64.getDecoder().decode(text) else null
+            } catch (_: PersistentShell.Unavailable) { null } catch (_: IllegalArgumentException) { null } catch (_: FsException) { null }
         } ?: run {
             val proc = runner.start("exec $dd")
             proc.outputStream.close()
-            try { proc.inputStream.readBytes() } finally { proc.destroy() }
+            val out = java.io.ByteArrayOutputStream()
+            val reader = thread(isDaemon = true, name = "shell-readAt") { runCatching { proc.inputStream.copyTo(out) } }
+            try {
+                if (!proc.waitFor(timeoutSec, TimeUnit.SECONDS)) throw FsException(tr("读取超时", "Read timed out"))
+                reader.join(2000)
+            } finally { proc.destroy() }
+            out.toByteArray()
         }
         val skip = (offset - first * bs).toInt()
         if (raw.size <= skip) return -1
@@ -255,6 +267,8 @@ class ShellFs(
  * with stdin from /dev/null and is followed by a random end marker on stdout and stderr. A timeout or broken pipe
  * kills the shell; the next call respawns it. Callers fall back to one-shot processes on [Unavailable].
  */
+private val B64 = Regex("[A-Za-z0-9+/]*={0,2}")
+
 internal class PersistentShell(private val runner: ShellRunner) : java.io.Closeable {
     class Unavailable(cause: Throwable?) : Exception(cause)
 

@@ -303,8 +303,11 @@ object Thumbnails {
                     val pfd = saf?.openFd(entry.path)
                     if (pfd != null) pfd.use { p -> decodeVideo(size, cancelled) { r -> r.setDataSource(p.fileDescriptor) } }
                     else {
-                        val src = FsMediaDataSource(fs, entry.path, entry.size, cancelled)
+                        val len = entry.size.takeIf { it > 0 } ?: runCatching { fs.stat(entry.path)?.size }.getOrNull() ?: 0L
+                        if (len <= 0) null else {
+                        val src = FsMediaDataSource(fs, entry.path, len, cancelled)
                         decodeVideo(size, cancelled) { r -> r.setDataSource(src) }
+                        }
                     }
                 }
                 else -> viaTemp(fsId, fs, entry, size)
@@ -340,11 +343,21 @@ object Thumbnails {
         override fun getSize(): Long = length
 
         override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
+            if (size == 0) return 0
+            if (position < 0 || size < 0 || offset < 0 || offset + size > buffer.size) return -1
             if (aborted || cancelled() || System.currentTimeMillis() > deadline) { aborted = true; return -1 }
-            if (position >= length || size <= 0) return -1
+            if (position >= length) return -1
+            // Exceptions must not escape into the native extractor: treat them as EOF for this probe.
+            return try { readCached(position, buffer, offset, size) } catch (t: Throwable) {
+                android.util.Log.w("GFThumb", "readAt failed $path @$position", t); aborted = true; -1
+            }
+        }
+
+        private fun readCached(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
             var done = 0
             var pos = position
             while (done < size && pos < length) {
+                if (cancelled()) { aborted = true; break }
                 val idx = pos / blockSize
                 val block = synchronized(blocks) { blocks[idx] } ?: run {
                     val start = idx * blockSize
@@ -356,15 +369,16 @@ object Thumbnails {
                         if (n <= 0) break
                         got += n
                     }
-                    val blk = if (got == want) b else b.copyOf(got)
-                    synchronized(blocks) { blocks[idx] = blk }
-                    blk
+                    // Only complete blocks are cached: a short read (transient error) must not turn into a
+                    // permanent early EOF for the rest of this probe.
+                    if (got == want) { synchronized(blocks) { blocks[idx] = b }; b } else b.copyOf(got)
                 }
                 val inBlock = (pos - idx * blockSize).toInt()
                 if (inBlock >= block.size) break
                 val n = minOf(size - done, block.size - inBlock)
                 System.arraycopy(block, inBlock, buffer, offset + done, n)
                 done += n; pos += n
+                if (block.size < minOf(blockSize.toLong(), length - idx * blockSize)) break // short (uncached) read: stop here
             }
             return if (done == 0) -1 else done
         }
