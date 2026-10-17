@@ -69,3 +69,7 @@
 -dontwarn com.github.luben.zstd.**
 -dontwarn net.jpountz.**
 -dontwarn androidx.media3.**
+
+# libVLC: JNI calls back into these classes by name
+-keep class org.videolan.libvlc.** { *; }
+-dontwarn org.videolan.**

@@ -70,6 +70,9 @@ class MainActivity : ComponentActivity() {
             intent?.action == "com.ghostpanter.files.action.SHOW_TRANSFERS" -> vm.screen = Screen.Transfers
             intent?.action == "com.ghostpanter.files.action.SCAN_LAN" -> vm.screen = Screen.LanScan
         }
+        if (com.ghostpanter.files.BuildConfig.DEBUG) intent?.getStringExtra("debug_fs")?.let { fs ->
+            vm.openFs(fs, intent.getStringExtra("debug_path") ?: "/")
+        }
         setContent {
             GhostThemeFromSettings(vm.g.settings.themeMode, vm.g.settings.oledBlack) { MainScreen(vm, this) }
         }

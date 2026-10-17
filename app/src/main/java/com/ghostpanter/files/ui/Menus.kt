@@ -45,7 +45,8 @@ fun MainViewModel.buildEntryMenu(pane: PaneState, targets: List<FileEntry>): Act
         add(t("十六进制编辑", "Hex editor"), Icons.Filled.DataObject) { screen = Screen.Hex(tab.fsId, single.path) }
         add(t("校验值（MD5/SHA）", "Checksums"), Icons.Filled.Fingerprint) { dialog = DialogState.Hash(pane.index, single) }
         if (single.extension in VIDEO_EXT || single.extension in AUDIO_EXT) {
-            add(t("播放", "Play"), Icons.Filled.PlayArrow) { openEntry(tab, single) }
+            add(if (single.extension in VIDEO_EXT) t("内置 VLC 播放", "Play in built-in VLC") else t("播放", "Play"), Icons.Filled.PlayArrow) { openEntry(tab, single) }
+            add(t("其他应用打开", "Open in another app"), Icons.AutoMirrored.Filled.OpenInNew) { openEntry(tab, single, chooser = true) }
         }
         if (Archives.kindOf(single.name) == Archives.Kind.ZIP) {
             add(t("ZIP 内增删…", "Edit ZIP…"), Icons.Filled.Edit) { dialog = DialogState.ZipEdit(pane.index, single) }

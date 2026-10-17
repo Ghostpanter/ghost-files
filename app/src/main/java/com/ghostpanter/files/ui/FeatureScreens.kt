@@ -281,7 +281,7 @@ object Thumbnails {
                 fs != null -> viaTemp(fsId, fs, entry, isImg, size)
                 else -> null
             }
-        } catch (_: Throwable) { null } finally { gate.release() }
+        } catch (t: Throwable) { android.util.Log.w("GFThumb", "thumb failed $fsId ${entry.path}", t); null } finally { gate.release() }
         if (bmp == null) { misses[key] = System.currentTimeMillis(); return null }
         synchronized(cache) { cache[key] = bmp }
         if (fsId != "local") runCatching {
@@ -300,7 +300,7 @@ object Thumbnails {
         }
         if (e.size > limit) return null
         val tmpDir = File(com.ghostpanter.files.GhostApp.instance.cacheDir, "thumb-tmp").apply { mkdirs() }
-        val tmp = File.createTempFile("t", "." + e.extension.lowercase().ifEmpty { "bin" }, tmpDir)
+        val tmp = File.createTempFile("thumb", "." + e.extension.lowercase().ifEmpty { "bin" }, tmpDir)
         return try {
             fs.openRead(e.path).use { input ->
                 tmp.outputStream().use { out ->

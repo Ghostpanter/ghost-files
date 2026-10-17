@@ -80,7 +80,7 @@ fun MainScreen(vm: MainViewModel, activity: MainActivity) {
             Screen.Servers -> ServersScreen(vm)
             is Screen.Hex -> HexScreen(vm, s)
             Screen.Apps -> AppsScreen(vm)
-            is Screen.Player -> PlayerScreen(vm, s)
+            is Screen.Player -> if (s.audioOnly) PlayerScreen(vm, s) else VlcPlayerScreen(vm, s)
             is Screen.ContentSearch -> ContentSearchScreen(vm, s)
             is Screen.Compare -> CompareScreen(vm, s)
             is Screen.Preview -> PreviewScreen(vm, s)

@@ -726,6 +726,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
 
     var pendingExtract by mutableStateOf<Pair<TabState, FileEntry>?>(null)
 
+    /** Loopback HTTP proxy that lets libVLC stream (and seek) files from any backend. */
+    val streamProxy: com.ghostpanter.files.core.server.FsStreamProxy by lazy { com.ghostpanter.files.core.server.FsStreamProxy() }
+
+    override fun onCleared() { super.onCleared(); runCatching { streamProxy.close() } }
+
+    /** "其他应用打开" from the built-in player. */
+    fun openWithOtherApp(fsId: String, path: String) {
+        val tab = TabState(fsId, VPath.parent(path))
+        val e = runCatching { fsm.get(fsId).stat(path) }.getOrNull() ?: return
+        withFile(tab, e) { f -> _events.tryEmit(UiEvent.OpenFile(f, mimeOf(e.name), true)) }
+    }
+
     private fun withFile(tab: TabState, e: FileEntry, then: (File) -> Unit) {
         busyJob?.cancel()
         busy = t("准备文件…", "Preparing…")

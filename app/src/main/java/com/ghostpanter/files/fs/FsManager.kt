@@ -25,6 +25,10 @@ class FsManager(
     val root: ShellFs by lazy { ShellFs(ROOT, "Root", RootRunner, "/") }
     val shizuku: ShellFs by lazy { ShellFs(SHIZUKU, "Shizuku", ShizukuRunner, "$storageRoot/Android/data") }
 
+    private val debugSh: ShellFs by lazy {
+        ShellFs(DEBUG_SH, "DebugSh", { script -> ProcessBuilder("sh", "-c", script).redirectErrorStream(true).start() }, "/")
+    }
+
     private val remotes = ConcurrentHashMap<String, VirtualFs>()
     private val safs = ConcurrentHashMap<String, SafFs>()
 
@@ -32,6 +36,9 @@ class FsManager(
         id == LocalFs.ID -> local
         id == ROOT -> root
         id == SHIZUKU -> shizuku
+        // Debug builds only: ShellFs over the app's own `sh` with merged stderr (same shape as RootRunner),
+        // so the Root/Shizuku code paths can be exercised on an emulator without su.
+        id == DEBUG_SH && com.ghostpanter.files.BuildConfig.DEBUG -> debugSh
         id.startsWith("net:") -> remotes.getOrPut(id) {
             val cfg = servers.get(id.removePrefix("net:")) ?: throw FsException(t("服务器配置已删除", "Server was removed"))
             RemoteFsFactory.create(cfg, hostKeys)
@@ -97,6 +104,7 @@ class FsManager(
     companion object {
         const val ROOT = "root"
         const val SHIZUKU = "shizuku"
+        const val DEBUG_SH = "debugsh"
 
         fun looksLikePermissionDenied(msg: String?): Boolean {
             if (msg.isNullOrBlank()) return false

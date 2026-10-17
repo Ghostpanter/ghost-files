@@ -34,6 +34,23 @@ class LocalAndShellFsTest {
         fs.close()
     }
 
+    /** RootRunner merges stderr into stdout (redirectErrorStream); the persistent session must still work. */
+    @Test fun persistentShellWithMergedStderr() {
+        var spawns = 0
+        val merged = ShellRunner { script -> spawns++; ProcessBuilder("sh", "-c", script).redirectErrorStream(true).start() }
+        val fs = ShellFs("root", "sh", merged)
+        repeat(5) { i ->
+            val r = fs.exec("echo out$i; exit ${i % 2}")
+            assertEquals("out$i\n", r.stdout)
+            assertEquals(i % 2, r.code)
+        }
+        assertEquals(1, spawns)
+        val d = tempDir(); File(d, "a.jpg").writeBytes(ByteArray(5000) { it.toByte() })
+        assertEquals(1, fs.list(d.path).size)
+        assertTrue(fs.openRead(VPath.join(d.path, "a.jpg")).use { it.readBytes() }.contentEquals(ByteArray(5000) { it.toByte() }))
+        FsContract.run(fs, tempDir().path)
+    }
+
     @Test fun shellListsHiddenFilesLinksAndPerms() {
         val d = tempDir()
         File(d, ".hidden").writeText("x")

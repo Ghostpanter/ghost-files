@@ -255,10 +255,12 @@ internal class PersistentShell(private val runner: ShellRunner) : java.io.Closea
         try {
             val p = ensure()
             val out = stdout!!; val err = stderr!!
-            val cmd = "(\n$script\n) </dev/null\nprintf '\\n%s %d\\n' '$mark' \$?\nprintf '\\n%s\\n' '$mark' >&2\n"
+            // stderr marker first: when the runner merges stderr into stdout (RootRunner uses redirectErrorStream),
+            // it then shows up on stdout *before* the stdout marker and is skipped there.
+            val cmd = "(\n$script\n) </dev/null\nrc=\$?\nprintf '\\n%s\\n' '${mark}E' >&2\nprintf '\\n%s %d\\n' '$mark' \$rc\n"
             p.outputStream.write(cmd.toByteArray(Charsets.UTF_8)); p.outputStream.flush()
-            val outF = pool.submit(java.util.concurrent.Callable { readUntil(out, mark) })
-            val errF = pool.submit(java.util.concurrent.Callable { readUntil(err, mark) })
+            val outF = pool.submit(java.util.concurrent.Callable { readUntil(out, mark, skip = mark + "E") })
+            val errF = pool.submit(java.util.concurrent.Callable { readUntil(err, mark + "E", eofOk = true) })
             val (o, codeStr) = outF.get(timeoutSec, java.util.concurrent.TimeUnit.SECONDS)
             val (e, _) = errF.get(5, java.util.concurrent.TimeUnit.SECONDS)
             failures = 0
@@ -275,11 +277,16 @@ internal class PersistentShell(private val runner: ShellRunner) : java.io.Closea
     }
 
     /** Returns (text before the marker, rest of the marker line). Strips the newline we print before it. */
-    private fun readUntil(r: java.io.BufferedReader, mark: String): Pair<String, String> {
+    private fun readUntil(r: java.io.BufferedReader, mark: String, skip: String? = null, eofOk: Boolean = false): Pair<String, String> {
         val sb = StringBuilder()
         while (true) {
-            val line = r.readLine() ?: throw java.io.EOFException("shell closed")
-            if (line.startsWith(mark)) {
+            val line = r.readLine() ?: if (eofOk) return "" to "" else throw java.io.EOFException("shell closed")
+            if (skip != null && line == skip) {
+                // drop the blank line printed before the merged stderr marker
+                if (sb.isNotEmpty() && sb[sb.length - 1] == '\n') sb.setLength(sb.length - 1)
+                continue
+            }
+            if (line.startsWith(mark) && (skip == null || line != skip)) {
                 if (sb.isNotEmpty() && sb[sb.length - 1] == '\n') sb.setLength(sb.length - 1)
                 return sb.toString() to line.removePrefix(mark)
             }

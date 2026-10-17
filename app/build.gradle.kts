@@ -16,8 +16,8 @@ android {
         applicationId = "com.ghostpanter.files"
         minSdk = 28
         targetSdk = 34
-        versionCode = 16
-        versionName = "0.6.7"
+        versionCode = 17
+        versionName = "0.6.8"
         // Universal APK: every ABI shipped by conscrypt-android.
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
@@ -69,7 +69,7 @@ android {
 
     packaging {
         // ColorOS installers reject extractNativeLibs=false: compress + extract on install.
-        jniLibs { useLegacyPackaging = true }
+        jniLibs { useLegacyPackaging = true; pickFirsts += "**/libc++_shared.so" }
         resources {
             excludes += listOf(
                 "com/sun/jna/**",
@@ -116,6 +116,8 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
+    // Built-in video player (16 KB page-aligned .so since 3.6)
+    implementation("org.videolan.android:libvlc-all:3.7.2")
     // QR for HTTP remote URL
     implementation("com.google.zxing:core:3.5.3")
 

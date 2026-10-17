@@ -26,7 +26,7 @@ val TEXT_EXT = setOf(
     "sql", "bat", "lua", "rc", "smali", "list", "srt", "ass", "nfo", "env", "gitignore",
 )
 val IMAGE_EXT = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif")
-val VIDEO_EXT = setOf("mp4", "mkv", "avi", "mov", "webm", "3gp", "flv", "ts", "m4v", "wmv")
+val VIDEO_EXT = setOf("mp4", "mkv", "avi", "mov", "webm", "3gp", "flv", "ts", "m4v", "wmv", "rmvb", "rm", "mpg", "mpeg", "vob", "m2ts", "mts", "ogv", "asf", "divx", "f4v")
 val AUDIO_EXT = setOf("mp3", "flac", "wav", "aac", "ogg", "m4a", "opus", "wma", "ape")
 val FONT_EXT = setOf("ttf", "otf", "ttc", "otc", "woff")
 val PREVIEW_MD = setOf("md", "markdown")

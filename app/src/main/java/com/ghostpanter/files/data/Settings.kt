@@ -101,6 +101,11 @@ class Settings(context: Context) : ViewPrefs {
         get() = _language.value
         set(v) { _language.value = v; p.edit().putString("language", v).apply(); com.ghostpanter.files.core.Lang.apply(v) }
 
+    private val _vlcHw = bool("vlc_hw_decode", true)
+    var vlcHwDecode: Boolean
+        get() = _vlcHw.value
+        set(v) { _vlcHw.value = v; p.edit().putBoolean("vlc_hw_decode", v).apply() }
+
     private val _oledBlack = bool("oled_black", false)
     var oledBlack: Boolean
         get() = _oledBlack.value
