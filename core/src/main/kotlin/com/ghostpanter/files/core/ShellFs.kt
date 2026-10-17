@@ -51,7 +51,7 @@ class ShellFs(
         }
         if (!p.waitFor(timeout, TimeUnit.SECONDS)) {
             p.destroyForcibly()
-            throw FsException("命令超时 (${timeout}s)")
+            throw FsException(tr("命令超时 (${timeout}s)", "Command timed out (${timeout}s)"))
         }
         outThread.join(2000)
         errThread.join(2000)
@@ -60,7 +60,7 @@ class ShellFs(
 
     private fun run(script: String, what: String): ShellResult {
         val r = exec(script)
-        if (!r.ok) throw FsException("$what 失败: ${r.stderr.trim().ifEmpty { "exit ${r.code}" }}")
+        if (!r.ok) throw FsException(tr("$what 失败", "$what failed") + ": ${r.stderr.trim().ifEmpty { "exit ${r.code}" }}")
         return r
     }
 
@@ -72,7 +72,7 @@ class ShellFs(
             "find -L . -mindepth 1 -maxdepth 1 -type d 2>/dev/null\n" +
             "exit 0"
         val r = exec(script)
-        if (r.code == 2) throw FsException("无法进入目录: $dir ${r.stderr.trim()}")
+        if (r.code == 2) throw FsException(tr("无法进入目录: $dir ${r.stderr.trim()}", "Cannot open directory (permission denied?): $dir ${r.stderr.trim()}"))
         val result = parseListing(dir, r.stdout)
         onChunk?.invoke(result)
         return result
@@ -102,7 +102,7 @@ class ShellFs(
                 checked = true
                 proc.waitFor(10, TimeUnit.SECONDS)
                 val code = runCatching { proc.exitValue() }.getOrDefault(-1)
-                if (code != 0) throw FsException("读取失败: ${err.toString().trim().ifEmpty { "exit $code" }}")
+                if (code != 0) throw FsException(tr("读取失败", "Read failed") + ": ${err.toString().trim().ifEmpty { "exit $code" }}")
             }
             override fun read(): Int { val b = super.read(); if (b < 0) checkEof(); return b }
             override fun read(b: ByteArray, off: Int, len: Int): Int {
@@ -124,7 +124,7 @@ class ShellFs(
             private var closed = false
             override fun write(b: ByteArray, off: Int, len: Int) {
                 try { out.write(b, off, len) } catch (e: IOException) {
-                    throw FsException("写入失败: ${err.toString().trim().ifEmpty { e.message ?: "" }}", e)
+                    throw FsException(tr("写入失败", "Write failed") + ": ${err.toString().trim().ifEmpty { e.message ?: "" }}", e)
                 }
             }
             override fun close() {
@@ -133,35 +133,35 @@ class ShellFs(
                 runCatching { out.flush() }
                 runCatching { out.close() }
                 if (!proc.waitFor(timeoutSec, TimeUnit.SECONDS)) {
-                    proc.destroyForcibly(); throw FsException("写入超时")
+                    proc.destroyForcibly(); throw FsException(tr("写入超时", "Write timed out"))
                 }
-                if (proc.exitValue() != 0) throw FsException("写入失败: ${err.toString().trim().ifEmpty { "exit ${proc.exitValue()}" }}")
+                if (proc.exitValue() != 0) throw FsException(tr("写入失败", "Write failed") + ": ${err.toString().trim().ifEmpty { "exit ${proc.exitValue()}" }}")
             }
         }
     }
 
-    override fun mkdirs(path: String) { run("mkdir -p -- ${q(path)}", "创建目录") }
+    override fun mkdirs(path: String) { run("mkdir -p -- ${q(path)}", tr("创建目录", "mkdir")) }
 
     override fun delete(path: String, recursive: Boolean) {
         val p = q(path)
-        run(if (recursive) "rm -rf -- $p" else "if [ -d $p ] && [ ! -L $p ]; then rmdir -- $p; else rm -f -- $p; fi", "删除")
+        run(if (recursive) "rm -rf -- $p" else "if [ -d $p ] && [ ! -L $p ]; then rmdir -- $p; else rm -f -- $p; fi", tr("删除", "delete"))
     }
 
     override fun rename(from: String, to: String) {
-        run("[ -e ${q(to)} ] && { echo '目标已存在' >&2; exit 17; }\nmv -- ${q(from)} ${q(to)}", "移动")
+        run("[ -e ${q(to)} ] && { echo '目标已存在' >&2; exit 17; }\nmv -- ${q(from)} ${q(to)}", tr("移动", "move"))
     }
 
     override fun serverCopy(from: String, to: String): Boolean =
         exec("cp -a -- ${q(from)} ${q(to)} 2>/dev/null || cp -r -- ${q(from)} ${q(to)}").ok
 
     override fun chmod(path: String, mode: String, recursive: Boolean) {
-        require(mode.matches(Regex("[0-7]{3,4}|[ugoa]*[+-=][rwxXst]+"))) { "非法权限: $mode" }
-        run("chmod ${if (recursive) "-R " else ""}$mode -- ${q(path)}", "修改权限")
+        require(mode.matches(Regex("[0-7]{3,4}|[ugoa]*[+-=][rwxXst]+"))) { tr("非法权限: $mode", "Invalid mode: $mode") }
+        run("chmod ${if (recursive) "-R " else ""}$mode -- ${q(path)}", tr("修改权限", "chmod"))
     }
 
     fun chown(path: String, owner: String, recursive: Boolean = false) {
-        require(owner.matches(Regex("[A-Za-z0-9_.:-]+"))) { "非法所有者: $owner" }
-        run("chown ${if (recursive) "-R " else ""}$owner -- ${q(path)}", "修改所有者")
+        require(owner.matches(Regex("[A-Za-z0-9_.:-]+"))) { tr("非法所有者: $owner", "Invalid owner: $owner") }
+        run("chown ${if (recursive) "-R " else ""}$owner -- ${q(path)}", tr("修改所有者", "chown"))
     }
 
     override fun setLastModified(path: String, millis: Long) {

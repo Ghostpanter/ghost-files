@@ -52,9 +52,9 @@ class LocalFs(
 
     override fun list(path: String, onChunk: ((List<FileEntry>) -> Unit)?): List<FileEntry> {
         val dir = f(path)
-        if (!dir.exists()) throw FsException("目录不存在: $path")
-        if (!dir.isDirectory) throw FsException("不是目录: $path")
-        val files = dir.listFiles() ?: throw FsException("无权限读取: $path")
+        if (!dir.exists()) throw FsException(tr("目录不存在: $path", "Directory not found: $path"))
+        if (!dir.isDirectory) throw FsException(tr("不是目录: $path", "Not a directory: $path"))
+        val files = dir.listFiles() ?: throw FsException(tr("无权限读取: $path", "Permission denied: $path"))
         val out = ArrayList<FileEntry>(files.size)
         val chunk = ArrayList<FileEntry>()
         for (file in files) {
@@ -77,7 +77,7 @@ class LocalFs(
 
     override fun openRead(path: String, offset: Long): InputStream {
         val file = f(path)
-        if (!file.isFile) throw FsException("不是文件或无法读取: $path")
+        if (!file.isFile) throw FsException(tr("不是文件或无法读取: $path", "Not a readable file: $path"))
         val input = FileInputStream(file)
         if (offset > 0) input.channel.position(offset)
         return input
@@ -96,7 +96,7 @@ class LocalFs(
     override fun mkdirs(path: String) {
         val file = f(path)
         if (file.isDirectory) return
-        if (!file.mkdirs() && !file.isDirectory) throw FsException("无法创建目录: $path")
+        if (!file.mkdirs() && !file.isDirectory) throw FsException(tr("无法创建目录: $path", "Cannot create directory: $path"))
     }
 
     override fun delete(path: String, recursive: Boolean) {
@@ -104,27 +104,27 @@ class LocalFs(
         val isLink = runCatching { Files.isSymbolicLink(file.toPath()) }.getOrDefault(false)
         if (!file.exists() && !isLink) return
         val ok = if (recursive && file.isDirectory && !isLink) file.deleteRecursively() else file.delete()
-        if (!ok) throw FsException("删除失败: $path")
+        if (!ok) throw FsException(tr("删除失败: $path", "Delete failed: $path"))
     }
 
     override fun rename(from: String, to: String) {
         val src = f(from)
         val dst = f(to)
-        if (!src.exists()) throw FsException("源不存在: $from")
+        if (!src.exists()) throw FsException(tr("源不存在: $from", "Source not found: $from"))
         // Case-only rename on case-insensitive storage (Android /sdcard): dst "exists" but is src.
         val sameFile = dst.exists() && runCatching { Files.isSameFile(src.toPath(), dst.toPath()) }.getOrDefault(false)
         if (sameFile && src.name != dst.name && src.parentFile == dst.parentFile) {
             val tmp = File(src.parentFile, ".gf-rename-" + System.nanoTime())
             if (src.renameTo(tmp) && tmp.renameTo(dst)) return
             if (tmp.exists()) tmp.renameTo(src)
-            throw FsException("重命名失败: $from -> $to")
+            throw FsException(tr("重命名失败: $from -> $to", "Rename failed: $from -> $to"))
         }
-        if (dst.exists()) throw FsException("目标已存在: $to")
+        if (dst.exists()) throw FsException(tr("目标已存在: $to", "Target exists: $to"))
         if (src.renameTo(dst)) return
         try {
             Files.move(src.toPath(), dst.toPath(), StandardCopyOption.ATOMIC_MOVE)
         } catch (e: Exception) {
-            throw FsException("重命名/移动失败: $from -> $to", e)
+            throw FsException(tr("重命名/移动失败: $from -> $to", "Rename/move failed: $from -> $to"), e)
         }
     }
 

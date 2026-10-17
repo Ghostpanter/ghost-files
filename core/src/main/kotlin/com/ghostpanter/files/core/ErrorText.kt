@@ -23,19 +23,19 @@ object ErrorText {
 
     /** Short Chinese reason for the root cause, followed by the root exception. */
     fun describe(t: Throwable): String {
-        if (t is FsException) return t.message ?: "错误"
+        if (t is FsException) return t.message ?: tr("错误", "Error")
         val all = chain(t)
         val r = all.last()
         val reason = when {
-            all.any { it is SocketTimeoutException || it is TimeoutException } -> "连接超时（服务器长时间无响应）"
-            all.any { it is EOFException } -> "服务器关闭了连接"
-            all.any { it is ConnectException } -> "无法连接服务器"
-            all.any { it is NoRouteToHostException } -> "网络不可达（Wi-Fi 是否断开？）"
-            all.any { it is UnknownHostException } -> "找不到主机"
-            all.any { it is SocketException && (it.message ?: "").contains("reset", true) } -> "连接被重置"
-            all.any { it is SocketException } -> "网络连接中断"
-            all.any { (it.message ?: "").contains("credits", true) } -> "SMB 服务器忙（信用不足）"
-            all.any { (it.message ?: "").contains("already been closed", true) } -> "连接已断开"
+            all.any { it is SocketTimeoutException || it is TimeoutException } -> tr("连接超时（服务器长时间无响应）", "Connection timed out")
+            all.any { it is EOFException } -> tr("服务器关闭了连接", "Server closed the connection")
+            all.any { it is ConnectException } -> tr("无法连接服务器", "Cannot connect to server")
+            all.any { it is NoRouteToHostException } -> tr("网络不可达（Wi-Fi 是否断开？）", "Network unreachable (Wi-Fi off?)")
+            all.any { it is UnknownHostException } -> tr("找不到主机", "Host not found")
+            all.any { it is SocketException && (it.message ?: "").contains("reset", true) } -> tr("连接被重置", "Connection reset")
+            all.any { it is SocketException } -> tr("网络连接中断", "Network connection lost")
+            all.any { (it.message ?: "").contains("credits", true) } -> tr("SMB 服务器忙（信用不足）", "SMB server busy (out of credits)")
+            all.any { (it.message ?: "").contains("already been closed", true) } -> tr("连接已断开", "Connection closed")
             else -> null
         }
         val rootText = r.javaClass.simpleName + (r.message?.takeIf { it.isNotBlank() && it.length < 200 }?.let { ": $it" } ?: "")
