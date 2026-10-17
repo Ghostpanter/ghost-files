@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.VPath
@@ -26,14 +28,14 @@ object VolumeZip {
         cacheDir: File,
         isCancelled: () -> Boolean = { false },
     ): List<String> {
-        if (partSizeBytes < 64 * 1024) throw FsException("分卷大小至少 64KB")
+        if (partSizeBytes < 64 * 1024) throw FsException(tr("分卷大小至少 64KB", "Volume size must be at least 64 KB"))
         cacheDir.mkdirs()
         val work = File(cacheDir, "vol-${System.currentTimeMillis()}")
         work.mkdirs()
         try {
             val locals = ArrayList<File>()
             for (e in sources) {
-                if (isCancelled()) throw FsException("已取消")
+                if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                 val local = File(work, e.name)
                 if (e.isDirectory) {
                     local.mkdirs()
@@ -60,10 +62,10 @@ object VolumeZip {
             val parts = parent.listFiles()?.filter {
                 it.name == outLocal.name || it.name.startsWith("$base.z") || it.name.startsWith(outLocal.name + ".")
             }?.sortedBy { it.name }.orEmpty()
-            if (parts.isEmpty()) throw FsException("分卷 ZIP 未生成文件")
+            if (parts.isEmpty()) throw FsException(tr("分卷 ZIP 未生成文件", "Split ZIP produced no files"))
             val created = ArrayList<String>()
             for (p in parts) {
-                if (isCancelled()) throw FsException("已取消")
+                if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                 val dest = VPath.join(VPath.parent(dstZipPath), p.name)
                 dstFs.openWrite(dest).use { out -> p.inputStream().use { it.copyTo(out) } }
                 created += dest

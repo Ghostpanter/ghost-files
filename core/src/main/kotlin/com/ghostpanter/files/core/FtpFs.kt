@@ -60,14 +60,14 @@ class FtpFs(
         try {
             c.connect(config.host, config.effectivePort)
             c.soTimeout = timeouts.readMs
-            if (!FTPReply.isPositiveCompletion(c.replyCode)) throw FsException("服务器拒绝连接: ${c.replyString.trim()}")
+            if (!FTPReply.isPositiveCompletion(c.replyCode)) throw FsException(tr("服务器拒绝连接: ${c.replyString.trim()}", "Server refused connection: ${c.replyString.trim()}"))
             if (c is FTPSClient) {
                 c.execPBSZ(0)
                 c.execPROT("P")
             }
             val user = if (config.anonymous || config.username.isEmpty()) "anonymous" else config.username
             val pass = if (config.anonymous || config.username.isEmpty()) "ghost@files" else config.password
-            if (!c.login(user, pass)) throw FsException("登录失败: ${c.replyString.trim()}")
+            if (!c.login(user, pass)) throw FsException(tr("登录失败: ${c.replyString.trim()}", "Login failed: ${c.replyString.trim()}"))
             runCatching { c.sendCommand("OPTS UTF8 ON") }
             c.setFileType(FTP.BINARY_FILE_TYPE)
             if (config.passiveMode) c.enterLocalPassiveMode() else c.enterLocalActiveMode()
@@ -76,13 +76,13 @@ class FtpFs(
         } catch (e: Exception) {
             runCatching { c.disconnect() }
             if (e is FsException) throw e
-            throw FsException("连接 FTP 失败: ${e.message}", e)
+            throw FsException(tr("连接 FTP 失败: ${e.message}", "FTP connection failed: ${e.message}"), e)
         }
     }
 
     private fun borrow(): FTPClient {
         if (!permits.tryAcquire(timeouts.readMs.toLong() * 2, TimeUnit.MILLISECONDS)) {
-            throw FsException("FTP 连接池繁忙，请稍后重试")
+            throw FsException(tr("FTP 连接池繁忙，请稍后重试", "FTP connection pool busy, try again later"))
         }
         try {
             while (true) {
@@ -156,7 +156,7 @@ class FtpFs(
         val dir = VPath.normalize(path)
         val files: Array<FTPFile> = if (mlsd == true) c.mlistDir(dir) else c.listFiles(dir)
         if (files.isEmpty() && !FTPReply.isPositiveCompletion(c.replyCode)) {
-            throw FsException("列出 $path 失败: ${c.replyString?.trim()}")
+            throw FsException(tr("列出 $path 失败: ${c.replyString?.trim()}", "List $path failed: ${c.replyString?.trim()}"))
         }
         val out = files.mapNotNull { toEntry(dir, it) }
         onChunk?.invoke(out)
@@ -187,7 +187,7 @@ class FtpFs(
             if (raw == null) {
                 val msg = c.replyString?.trim()
                 release(c, c.isConnected)
-                throw FsException("打开 $path 失败: $msg")
+                throw FsException(tr("打开 $path 失败: $msg", "Open $path failed: $msg"))
             }
             return object : FilterInputStream(raw) {
                 private var eof = false
@@ -212,7 +212,7 @@ class FtpFs(
             throw e
         } catch (e: IOException) {
             release(c, false)
-            throw FsException("打开 $path 失败: ${e.message}", e)
+            throw FsException(tr("打开 $path 失败: ${e.message}", "Open $path failed: ${e.message}"), e)
         }
     }
 
@@ -224,7 +224,7 @@ class FtpFs(
             if (raw == null) {
                 val msg = c.replyString?.trim()
                 release(c, c.isConnected)
-                throw FsException("写入 $path 失败: $msg")
+                throw FsException(tr("写入 $path 失败: $msg", "Write $path failed: $msg"))
             }
             return object : FilterOutputStream(raw) {
                 private var done = false
@@ -236,10 +236,10 @@ class FtpFs(
                     try {
                         out.close()
                         ok = c.completePendingCommand()
-                        if (!ok) throw FsException("写入 $path 未完成: ${c.replyString?.trim()}")
+                        if (!ok) throw FsException(tr("写入 $path 未完成: ${c.replyString?.trim()}", "Write $path incomplete: ${c.replyString?.trim()}"))
                     } catch (e: IOException) {
                         if (e is FsException) throw e
-                        throw FsException("写入 $path 失败: ${e.message}", e)
+                        throw FsException(tr("写入 $path 失败: ${e.message}", "Write $path failed: ${e.message}"), e)
                     } finally {
                         release(c, ok)
                     }
@@ -249,7 +249,7 @@ class FtpFs(
             throw e
         } catch (e: IOException) {
             release(c, false)
-            throw FsException("写入 $path 失败: ${e.message}", e)
+            throw FsException(tr("写入 $path 失败: ${e.message}", "Write $path failed: ${e.message}"), e)
         }
     }
 
@@ -257,7 +257,7 @@ class FtpFs(
         var cur = ""
         for (part in VPath.normalize(path).trim('/').split('/').filter { it.isNotEmpty() }) {
             cur = "$cur/$part"
-            if (!c.changeWorkingDirectory(cur)) check(c, c.makeDirectory(cur), "创建目录 $cur")
+            if (!c.changeWorkingDirectory(cur)) check(c, c.makeDirectory(cur), tr("创建目录 $cur", "Create directory $cur"))
         }
         c.changeWorkingDirectory("/")
         Unit
@@ -266,7 +266,7 @@ class FtpFs(
     override fun delete(path: String, recursive: Boolean) {
         val e = stat(path) ?: return
         if (!e.isDirectory) {
-            withClient("删除 $path") { c -> check(c, c.deleteFile(e.path), "删除 $path") }
+            withClient("删除 $path") { c -> check(c, c.deleteFile(e.path), tr("删除 $path", "Delete $path")) }
             return
         }
         if (recursive) for (child in list(e.path)) delete(child.path, true)
@@ -274,12 +274,12 @@ class FtpFs(
     }
 
     override fun rename(from: String, to: String) = withClient("移动 $from") { c ->
-        check(c, c.rename(VPath.normalize(from), VPath.normalize(to)), "移动 $from")
+        check(c, c.rename(VPath.normalize(from), VPath.normalize(to)), tr("移动 $from", "Move $from"))
     }
 
     override fun chmod(path: String, mode: String, recursive: Boolean) = withClient("修改权限 $path") { c ->
-        require(mode.matches(Regex("[0-7]{3,4}"))) { "FTP 仅支持数字权限" }
-        check(c, c.sendSiteCommand("CHMOD $mode ${VPath.normalize(path)}"), "修改权限")
+        require(mode.matches(Regex("[0-7]{3,4}"))) { tr("FTP 仅支持数字权限", "FTP supports numeric modes only") }
+        check(c, c.sendSiteCommand("CHMOD $mode ${VPath.normalize(path)}"), tr("修改权限", "chmod"))
     }
 
     override fun setLastModified(path: String, millis: Long) {

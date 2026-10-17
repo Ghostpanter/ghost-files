@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.lan
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.NetTimeouts
 import com.ghostpanter.files.core.SmbConnector
@@ -56,18 +58,18 @@ object SmbShares {
             val session = try {
                 c.open(host, port, username, password, domain)
             } catch (e: SmbNoGuestException) {
-                throw SmbAuthRequiredException("服务器不允许匿名/来宾列出共享，请输入用户名和密码")
+                throw SmbAuthRequiredException(tr("服务器不允许匿名/来宾列出共享，请输入用户名和密码", "Server does not allow guest share listing; enter username and password"))
             } catch (e: SMBApiException) {
-                if (isAuthFailure(e)) throw SmbAuthRequiredException("用户名或密码错误")
-                throw FsException("登录失败：${e.status.name}", e)
+                if (isAuthFailure(e)) throw SmbAuthRequiredException(tr("用户名或密码错误", "Wrong username or password"))
+                throw FsException(tr("登录失败：${e.status.name}", "Login failed: ${e.status.name}"), e)
             } catch (e: java.io.IOException) {
-                throw FsException("无法连接 $host:$port（${e.message}）", e)
+                throw FsException(tr("无法连接 $host:$port（${e.message}）", "Cannot connect to $host:$port (${e.message})"), e)
             }
             try {
                 return ShareListing(enumerate(session), c.lastLogin ?: SmbLogin.USER)
             } catch (e: SMBApiException) {
-                if (isAuthFailure(e) && username.isEmpty()) throw SmbAuthRequiredException("来宾无权列出共享，请输入用户名和密码")
-                throw FsException("列出共享失败：${e.status.name}", e)
+                if (isAuthFailure(e) && username.isEmpty()) throw SmbAuthRequiredException(tr("来宾无权列出共享，请输入用户名和密码", "Guest cannot list shares; enter username and password"))
+                throw FsException(tr("列出共享失败：${e.status.name}", "Listing shares failed: ${e.status.name}"), e)
             } finally {
                 runCatching { session.close() }
             }

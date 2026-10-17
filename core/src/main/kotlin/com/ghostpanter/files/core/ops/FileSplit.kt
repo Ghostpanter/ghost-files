@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.VirtualFs
@@ -14,9 +16,9 @@ object FileSplit {
         isCancelled: () -> Boolean = { false },
         onProgress: (Long) -> Unit = {},
     ): List<String> {
-        require(partSize >= 64 * 1024) { "分卷至少 64KB" }
-        val st = fs.stat(path) ?: throw FsException("文件不存在")
-        if (st.isDirectory) throw FsException("不能分割目录")
+        require(partSize >= 64 * 1024) { tr("分卷至少 64KB", "Volume must be at least 64 KB") }
+        val st = fs.stat(path) ?: throw FsException(tr("文件不存在", "File not found"))
+        if (st.isDirectory) throw FsException(tr("不能分割目录", "Cannot split a directory"))
         val parent = VPath.parent(path)
         val base = VPath.name(path)
         val out = ArrayList<String>()
@@ -37,7 +39,7 @@ object FileSplit {
             }
             openPart()
             while (true) {
-                if (isCancelled()) { outStream?.close(); throw FsException("已取消") }
+                if (isCancelled()) { outStream?.close(); throw FsException(tr("已取消", "Cancelled")) }
                 val n = input.read(buf); if (n < 0) break
                 var off = 0
                 while (off < n) {
@@ -63,7 +65,7 @@ object FileSplit {
         onProgress: (Long) -> Unit = {},
     ): Long {
         val name = VPath.name(firstPartPath)
-        val m = Regex("""^(.+)\.(\d{3})$""").matchEntire(name) ?: throw FsException("不是 .001 分卷名")
+        val m = Regex("""^(.+)\.(\d{3})$""").matchEntire(name) ?: throw FsException(tr("不是 .001 分卷名", "Not a .001 volume name"))
         val base = m.groupValues[1]
         val parent = VPath.parent(firstPartPath)
         var idx = m.groupValues[2].toInt()
@@ -75,7 +77,7 @@ object FileSplit {
                 if (fs.stat(part) == null) break
                 fs.openRead(part).use { input ->
                     while (true) {
-                        if (isCancelled()) throw FsException("已取消")
+                        if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                         val n = input.read(buf); if (n < 0) break
                         out.write(buf, 0, n); total += n; onProgress(total)
                     }
@@ -83,7 +85,7 @@ object FileSplit {
                 idx++
             }
         }
-        if (total == 0L) throw FsException("未找到分卷")
+        if (total == 0L) throw FsException(tr("未找到分卷", "No volumes found"))
         return total
     }
 }

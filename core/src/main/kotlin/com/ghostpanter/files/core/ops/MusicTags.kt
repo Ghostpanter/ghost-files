@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FsException
 import java.io.File
 import java.nio.ByteBuffer
@@ -20,14 +22,14 @@ object MusicTags {
     )
 
     fun read(file: File): Tags {
-        if (!file.isFile) throw FsException("文件不存在")
+        if (!file.isFile) throw FsException(tr("文件不存在", "File not found"))
         val v2 = readId3v2(file)
         if (v2 != null && (v2.title.isNotEmpty() || v2.artist.isNotEmpty())) return v2
         return readId3v1(file) ?: Tags()
     }
 
     fun write(file: File, tags: Tags) {
-        if (!file.isFile) throw FsException("文件不存在")
+        if (!file.isFile) throw FsException(tr("文件不存在", "File not found"))
         // Strip existing ID3v1, append new ID3v1 (safe, lossless for audio payload)
         val data = file.readBytes()
         val body = if (data.size >= 128 && data.copyOfRange(data.size - 128, data.size - 125).contentEquals("TAG".toByteArray())) {

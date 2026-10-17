@@ -15,7 +15,7 @@ import java.nio.file.attribute.PosixFilePermission
 /** Plain java.io access with the app's own permissions. */
 class LocalFs(
     override val id: String = ID,
-    override val displayName: String = "本机",
+    override val displayName: String = tr("本机", "Local"),
     override val homePath: String = VPath.ROOT,
 ) : VirtualFs {
 

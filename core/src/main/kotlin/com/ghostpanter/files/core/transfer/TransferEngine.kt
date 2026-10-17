@@ -258,7 +258,7 @@ class TransferEngine(
                     coroutineContext.ensureActive()
                     awaitNotPaused()
                     if (item.src.isDirectory) {
-                        withRetry("创建目录 ${item.dstPath}") { dstFs.mkdirs(item.dstPath) }
+                        withRetry(tr("创建目录 ${item.dstPath}", "Create directory ${item.dstPath}")) { dstFs.mkdirs(item.dstPath) }
                         if (snap.op == TransferOp.MOVE) dirsToRemove.add(item.srcFs to item.src.path)
                     } else {
                         try {
@@ -267,7 +267,7 @@ class TransferEngine(
                             throw e
                         } catch (e: Exception) {
                             failures.add("${item.src.path}: ${msg(e)}")
-                            recordError("文件失败 ${item.src.path}", e, msg(e))
+                            recordError(tr("文件失败 ${item.src.path}", "File failed ${item.src.path}"), e, msg(e))
                             completedBytes += item.src.size
                             update { it.copy(doneBytes = completedBytes, failures = failures.toList()) }
                         }
@@ -307,7 +307,7 @@ class TransferEngine(
             for (src in snap.sources) {
                 coroutineContext.ensureActive()
                 val srcFs = fs(src.fsId)
-                val entry = withRetry("读取 ${src.path}") { srcFs.stat(src.path) }
+                val entry = withRetry(tr("读取 ${src.path}", "Read ${src.path}")) { srcFs.stat(src.path) }
                 if (entry == null) {
                     if (!ignoreMissing) failures.add(tr("${src.path}: 不存在", "${src.path}: not found"))
                     continue
@@ -352,7 +352,7 @@ class TransferEngine(
         private suspend fun walk(fs: VirtualFs, dir: FileEntry, target: String, out: MutableList<Item>) {
             coroutineContext.ensureActive()
             out.add(Item(dir, target, fs))
-            val children = withRetry("列出 ${dir.path}") { fs.list(dir.path) }
+            val children = withRetry(tr("列出 ${dir.path}", "List ${dir.path}")) { fs.list(dir.path) }
             for (c in children) {
                 val t = VPath.join(target, c.name)
                 if (c.isDirectory && !c.isLink) walk(fs, c, t, out)
@@ -373,7 +373,7 @@ class TransferEngine(
 
         private fun isFatal(e: Throwable): Boolean {
             val m = e.message ?: return false
-            return listOf("拒绝访问", "无权限", "认证失败", "用户名或密码错误", "空间不足", "不支持续传", "HTTP 401", "HTTP 403", "HTTP 507")
+            return listOf("拒绝访问", "无权限", "认证失败", "用户名或密码错误", "空间不足", "不支持续传", "Access denied", "permission denied", "Permission denied", "authentication failed", "Wrong username or password", "Disk full", "insufficient storage", "does not support resumed", "HTTP 401", "HTTP 403", "HTTP 507")
                 .any { m.contains(it) }
         }
 
@@ -406,7 +406,7 @@ class TransferEngine(
 
             var target = item.dstPath
             var resume = false
-            val existing = withRetry("读取 $target") { dstFs.stat(target) }
+            val existing = withRetry(tr("读取 $target", "Read $target")) { dstFs.stat(target) }
             if (existing != null) {
                 if (existing.isDirectory) throw FsException(tr("目标是同名目录", "Target is a directory with the same name"))
                 when (snap.policy) {
@@ -475,7 +475,7 @@ class TransferEngine(
                     attempt++
                     if (attempt > config.maxRetries || isFatal(e)) throw e
                     update { it.copy(retries = it.retries + 1) }
-                    recordError("传输 ${src.path}", e, msg(e))
+                    recordError(tr("传输 ${src.path}", "Transfer ${src.path}"), e, msg(e))
                     // Drop a possibly broken connection - but never a shared SMB connection that
                     // browsing / other jobs are using (SmbFs reconnects by itself when needed).
                     for (f in listOf(srcFs, dstFs).distinct()) {
@@ -498,12 +498,12 @@ class TransferEngine(
         private suspend fun deleteSourceAfterCopy(srcFs: VirtualFs, src: FileEntry) {
             if (snap.op != TransferOp.MOVE) return
             try {
-                withRetry("删除源文件 ${src.name}", maxRetries = 2) { srcFs.delete(src.path, false) }
+                withRetry(tr("删除源文件 ${src.name}", "Delete source ${src.name}"), maxRetries = 2) { srcFs.delete(src.path, false) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 val why = msg(e)
-                recordError("删除源文件 ${src.path}", e, tr("已复制，但删除源文件失败：$why", "Copied, but deleting source failed: $why"))
+                recordError(tr("删除源文件 ${src.path}", "Delete source ${src.path}"), e, tr("已复制，但删除源文件失败：$why", "Copied, but deleting source failed: $why"))
                 failures.add(tr("${src.path}: 已复制，但删除源文件失败：$why", "${src.path}: copied, but deleting source failed: $why"))
                 update { it.copy(keptSources = it.keptSources + 1, failures = failures.toList()) }
             }
@@ -549,7 +549,7 @@ class TransferEngine(
                         lastProgress.set(clock())
                         if (cause != null) {
                             update { it.copy(reconnects = it.reconnects + 1) }
-                            recordError("自动重连（第 $n 次）${src.path}", cause, "自动重连：${msg(cause)}")
+                            recordError(tr("自动重连（第 $n 次）${src.path}", "Auto-reconnect (#$n) ${src.path}"), cause, tr("自动重连：${msg(cause)}", "Auto-reconnect: ${msg(cause)}"))
                         }
                     }
                     val buf = ByteArray(config.bufferSize)

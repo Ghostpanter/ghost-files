@@ -7,7 +7,7 @@ package com.ghostpanter.files.core.server
  * Connecting OUT to a NAS/PC is the SMB *client* (drawer → Add server, SMB2/3 via smbj).
  */
 enum class HostedKind(
-    val label: String,
+    open val label: String,
     val defaultPort: Int,
     val scheme: String,
     /** Privileged / unimplemented services that stay disabled in the UI. */
@@ -19,7 +19,9 @@ enum class HostedKind(
     WEBDAVS("WebDAV (HTTPS)", 8443, "https"),
     SFTP("SFTP", 2222, "sftp"),
     SMB("SMB", 4455, "smb"),
-    HTTP("HTTP 远程管理", 8787, "http"),
+    HTTP("HTTP 远程管理", 8787, "http") {
+        override val label: String get() = com.ghostpanter.files.core.tr("HTTP 远程管理", "HTTP remote admin")
+    },
 }
 
 data class HostedServiceConfig(

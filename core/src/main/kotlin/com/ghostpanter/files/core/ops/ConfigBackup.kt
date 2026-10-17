@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -49,7 +51,7 @@ object ConfigBackup {
                 val body = zip.readBytes().toString(Charsets.UTF_8)
                 when (e.name.substringAfterLast('/')) {
                     "manifest.json" -> {
-                        require(body.contains("\"$FORMAT\"") || body.contains(FORMAT)) { "不是 Ghost 文件备份包" }
+                        require(body.contains("\"$FORMAT\"") || body.contains(FORMAT)) { tr("不是 Ghost 文件备份包", "Not a 双栏文件管理器 backup file") }
                         exportedAt = Regex("\"exportedAt\"\\s*:\\s*(\\d+)").find(body)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
                     }
                     "settings.json" -> settings = body

@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.VPath
 import java.io.File
@@ -13,7 +15,7 @@ object ApksOps {
     data class Result(val dir: File, val apks: List<File>, val label: String?)
 
     fun extract(archive: File, destDir: File): Result {
-        if (!archive.isFile) throw FsException("文件不存在")
+        if (!archive.isFile) throw FsException(tr("文件不存在", "File not found"))
         destDir.mkdirs()
         val apks = ArrayList<File>()
         var label: String? = null
@@ -35,7 +37,7 @@ object ApksOps {
                 apks += out
             }
         }
-        if (apks.isEmpty()) throw FsException("压缩包内没有 APK")
+        if (apks.isEmpty()) throw FsException(tr("压缩包内没有 APK", "No APK in archive"))
         return Result(destDir, apks.sortedBy { it.name }, label)
     }
 

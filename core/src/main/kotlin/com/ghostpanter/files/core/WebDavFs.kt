@@ -81,20 +81,20 @@ class WebDavFs(
     private fun call(req: Request): Response = try {
         http.newCall(req).execute()
     } catch (e: IOException) {
-        throw FsException("${req.method} ${VPath.normalize(decode(req.url.encodedPath))} 失败: ${e.message}", e)
+        throw FsException("${req.method} ${VPath.normalize(decode(req.url.encodedPath))} " + tr("失败", "failed") + ": ${e.message}", e)
     }
 
     private fun fail(r: Response, what: String): Nothing {
         val code = r.code
         r.close()
         throw FsException("$what: HTTP $code" + when (code) {
-            401 -> " 认证失败"
-            403 -> " 无权限"
-            404 -> " 不存在"
-            405 -> " 不允许"
-            409 -> " 父目录不存在"
-            412 -> " 目标已存在"
-            507 -> " 空间不足"
+            401 -> tr(" 认证失败", " authentication failed")
+            403 -> tr(" 无权限", " permission denied")
+            404 -> tr(" 不存在", " not found")
+            405 -> tr(" 不允许", " not allowed")
+            409 -> tr(" 父目录不存在", " parent not found")
+            412 -> tr(" 目标已存在", " target exists")
+            507 -> tr(" 空间不足", " insufficient storage")
             else -> ""
         })
     }
@@ -106,7 +106,7 @@ class WebDavFs(
             .build()
         call(req).use { r ->
             if (r.code == 404) return 404 to emptyList()
-            if (r.code != 207 && r.code != 200) fail(r, "列出 $path")
+            if (r.code != 207 && r.code != 200) fail(r, tr("列出 $path", "List $path"))
             val entries = parseMultiStatus(r.body!!.byteStream())
             return r.code to entries
         }
@@ -160,7 +160,7 @@ class WebDavFs(
     override fun list(path: String, onChunk: ((List<FileEntry>) -> Unit)?): List<FileEntry> {
         val dir = VPath.normalize(path)
         val (code, entries) = propfind(dir, 1)
-        if (code == 404) throw FsException("目录不存在: $dir")
+        if (code == 404) throw FsException(tr("目录不存在: $dir", "Directory not found: $dir"))
         val out = entries.filter { it.path != dir }
         onChunk?.invoke(out)
         return out
@@ -178,7 +178,7 @@ class WebDavFs(
         val b = Request.Builder().url(url(path)).get()
         if (offset > 0) b.header("Range", "bytes=$offset-")
         val r = call(b.build())
-        if (!r.isSuccessful) fail(r, "下载 $path")
+        if (!r.isSuccessful) fail(r, tr("下载 $path", "Download $path"))
         val body = r.body!!.byteStream()
         if (offset > 0 && r.code == 200) {
             // Server ignored Range: skip manually.
@@ -207,7 +207,7 @@ class WebDavFs(
             override fun writeTo(sink: BufferedSink) {
                 while (true) {
                     val chunk = pipe.poll(timeouts.readMs.toLong() * 2, TimeUnit.MILLISECONDS)
-                        ?: throw IOException("上传数据源停滞")
+                        ?: throw IOException(tr("上传数据源停滞", "Upload source stalled"))
                     if (chunk === eofMarker) break
                     sink.write(chunk)
                 }
@@ -238,14 +238,14 @@ class WebDavFs(
             private var closed = false
             private fun offer(b: ByteArray) {
                 while (true) {
-                    failureRef.get()?.let { throw FsException("上传失败: ${it.message}", it) }
+                    failureRef.get()?.let { throw FsException(tr("上传失败: ${it.message}", "Upload failed: ${it.message}"), it) }
                     if (finished.count == 0L) {
-                        responseRef.get()?.let { if (!it.isSuccessful) fail(it, "上传 $path") }
+                        responseRef.get()?.let { if (!it.isSuccessful) fail(it, tr("上传 $path", "Upload $path")) }
                         if (b === eofMarker) return
-                        throw FsException("服务器提前结束上传")
+                        throw FsException(tr("服务器提前结束上传", "Server ended upload early"))
                     }
                     if (pipe.offer(b, 1, TimeUnit.SECONDS)) return
-                    if (!worker.isAlive) throw FsException("上传线程已终止")
+                    if (!worker.isAlive) throw FsException(tr("上传线程已终止", "Upload thread died"))
                 }
             }
             override fun write(b: Int) = write(byteArrayOf(b.toByte()), 0, 1)
@@ -257,11 +257,11 @@ class WebDavFs(
                 closed = true
                 offer(eofMarker)
                 if (!finished.await(timeouts.readMs.toLong() * 2, TimeUnit.MILLISECONDS)) {
-                    throw FsException("等待服务器确认上传超时")
+                    throw FsException(tr("等待服务器确认上传超时", "Timed out waiting for server to confirm upload"))
                 }
-                failureRef.get()?.let { throw FsException("上传失败: ${it.message}", it) }
-                val r = responseRef.get() ?: throw FsException("上传无响应")
-                if (!r.isSuccessful) fail(r, "上传 $path")
+                failureRef.get()?.let { throw FsException(tr("上传失败: ${it.message}", "Upload failed: ${it.message}"), it) }
+                val r = responseRef.get() ?: throw FsException(tr("上传无响应", "No response to upload"))
+                if (!r.isSuccessful) fail(r, tr("上传 $path", "Upload $path"))
                 r.close()
             }
         }
@@ -273,14 +273,14 @@ class WebDavFs(
             cur = "$cur/$part"
             val r = call(Request.Builder().url(url(cur, dir = true)).method("MKCOL", null).build())
             // 405 = already exists
-            if (!r.isSuccessful && r.code != 405) fail(r, "创建目录 $cur")
+            if (!r.isSuccessful && r.code != 405) fail(r, tr("创建目录 $cur", "Create directory $cur"))
             r.close()
         }
     }
 
     override fun delete(path: String, recursive: Boolean) {
         val r = call(Request.Builder().url(url(path)).delete().build())
-        if (!r.isSuccessful && r.code != 404) fail(r, "删除 $path")
+        if (!r.isSuccessful && r.code != 404) fail(r, tr("删除 $path", "Delete $path"))
         r.close()
     }
 
@@ -297,7 +297,7 @@ class WebDavFs(
 
     override fun rename(from: String, to: String) {
         val r = moveOrCopy("MOVE", from, to, false)
-        if (!r.isSuccessful) fail(r, "移动 $from")
+        if (!r.isSuccessful) fail(r, tr("移动 $from", "Move $from"))
         r.close()
     }
 

@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.server
 
+import com.ghostpanter.files.core.tr
+
 import org.apache.ftpserver.DataConnectionConfigurationFactory
 import org.apache.ftpserver.FtpServer
 import org.apache.ftpserver.FtpServerFactory
@@ -38,7 +40,7 @@ class FtpHostedServer(
         activeKind = if (config.useTls || config.kind == HostedKind.FTPS) HostedKind.FTPS else HostedKind.FTP
         val root = File(config.rootPath)
         if (!root.isDirectory && !root.mkdirs()) {
-            lastError = "共享目录不可用: ${config.rootPath}"
+            lastError = tr("共享目录不可用: ${config.rootPath}", "Shared folder unavailable: ${config.rootPath}")
             return status()
         }
         try {

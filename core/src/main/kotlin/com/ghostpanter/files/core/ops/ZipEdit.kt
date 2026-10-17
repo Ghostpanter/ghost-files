@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.VPath
@@ -25,7 +27,7 @@ object ZipEdit {
         isCancelled: () -> Boolean = { false },
         onProgress: (Archives.Progress) -> Unit = {},
     ): Int {
-        if (password.isEmpty()) throw FsException("密码不能为空")
+        if (password.isEmpty()) throw FsException(tr("密码不能为空", "Password cannot be empty"))
         if (dstFile.exists()) dstFile.delete()
         val zip = ZipFile(dstFile, password.toCharArray())
         val params = ZipParameters().apply {
@@ -39,7 +41,7 @@ object ZipEdit {
         val tmpRoot = File(dstFile.parentFile, ".gf-zip-src-${System.nanoTime()}").apply { mkdirs() }
         try {
             fun stage(e: FileEntry, rel: String) {
-                if (isCancelled()) throw FsException("已取消")
+                if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                 if (e.isDirectory) {
                     for (c in srcFs.list(e.path)) stage(c, "$rel/${c.name}")
                 } else {

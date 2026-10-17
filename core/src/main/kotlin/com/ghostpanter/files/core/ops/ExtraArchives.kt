@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.VirtualFs
@@ -34,7 +36,7 @@ object ExtraArchives {
                 TarArchiveInputStream(ZstdCompressorInputStream(BufferedInputStream(raw))).use { tar ->
                     val buf = ByteArray(128 * 1024)
                     while (true) {
-                        if (isCancelled()) throw FsException("已取消")
+                        if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                         val e = tar.nextEntry ?: break
                         val target = Archives.safeChild(destDir, e.name)
                         if (e.isDirectory) { dstFs.mkdirs(target); continue }
@@ -67,7 +69,7 @@ object ExtraArchives {
                 TarArchiveInputStream(FramedLZ4CompressorInputStream(BufferedInputStream(raw))).use { tar ->
                     val buf = ByteArray(128 * 1024)
                     while (true) {
-                        if (isCancelled()) throw FsException("已取消")
+                        if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                         val e = tar.nextEntry ?: break
                         val target = Archives.safeChild(destDir, e.name)
                         if (e.isDirectory) { dstFs.mkdirs(target); continue }
@@ -105,7 +107,7 @@ object ExtraArchives {
             Iso9660.extract(local, dstFs, destDir, isCancelled)
         } catch (e: Exception) {
             throw FsException(
-                "DMG 暂仅支持内含 ISO9660 的镜像；完整 HFS+/APFS / 加密 DMG 尚未支持: ${e.message}",
+                tr("DMG 暂仅支持内含 ISO9660 的镜像；完整 HFS+/APFS / 加密 DMG 尚未支持: ${e.message}", "DMG: only ISO9660-based images are supported (no HFS+/APFS/encrypted): ${e.message}"),
                 e,
             )
         }
@@ -118,12 +120,12 @@ object Iso9660 {
 
     fun extract(iso: File, dstFs: VirtualFs, destDir: String, isCancelled: () -> Boolean): Int {
         RandomAccessFile(iso, "r").use { raf ->
-            val primary = readPvd(raf, 16) ?: throw FsException("不是有效的 ISO9660 镜像")
+            val primary = readPvd(raf, 16) ?: throw FsException(tr("不是有效的 ISO9660 镜像", "Not a valid ISO9660 image"))
             val joliet = readPvd(raf, 17)?.takeIf { it.escape == 0x25 }
             val root = joliet?.root ?: primary.root
             var count = 0
             fun walk(dirExtent: Long, dirSize: Long, prefix: String) {
-                if (isCancelled()) throw FsException("已取消")
+                if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                 val children = listDir(raf, dirExtent, dirSize, joliet != null)
                 for (c in children) {
                     if (c.name == "." || c.name == "..") continue
@@ -213,7 +215,7 @@ object Iso9660 {
         var left = size
         val buf = ByteArray(64 * 1024)
         while (left > 0) {
-            if (isCancelled()) throw FsException("已取消")
+            if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
             val n = raf.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
             if (n < 0) break
             out.write(buf, 0, n)
@@ -228,7 +230,7 @@ object CabExtract {
         RandomAccessFile(cab, "r").use { raf ->
             val hdr = ByteArray(36)
             raf.readFully(hdr)
-            if (String(hdr, 0, 4, Charsets.US_ASCII) != "MSCF") throw FsException("不是 CAB 文件")
+            if (String(hdr, 0, 4, Charsets.US_ASCII) != "MSCF") throw FsException(tr("不是 CAB 文件", "Not a CAB file"))
             val filesOffset = u32(hdr, 16)
             val fileCount = u16(hdr, 28)
             // Skip to files table — for MVP we only support cabinets with a single uncompressed folder
@@ -241,7 +243,7 @@ object CabExtract {
             // After header comes CFFOLDER then CFDATA; file entries start at filesOffset.
             // Read each CFFILE: size(4) offset(4) folder(2) date(2) time(2) attrs(2) name(asciiz)
             for (i in 0 until fileCount) {
-                if (isCancelled()) throw FsException("已取消")
+                if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                 val meta = ByteArray(16)
                 raf.readFully(meta)
                 val size = u32(meta, 0)
@@ -264,11 +266,11 @@ object CabExtract {
             val dataOffset = u32(folder, 0)
             val compression = u16(folder, 6)
             if (compression != 0) {
-                throw FsException("CAB 压缩类型 $compression 暂不支持（目前仅未压缩 CAB）；可用电脑端 7-Zip 转换")
+                throw FsException(tr("CAB 压缩类型 $compression 暂不支持（目前仅未压缩 CAB）；可用电脑端 7-Zip 转换", "CAB compression type $compression not supported (only uncompressed CAB); convert with 7-Zip on a PC"))
             }
             var count = 0
             for (f in files) {
-                if (isCancelled()) throw FsException("已取消")
+                if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                 val target = Archives.safeChild(destDir, f.name)
                 dstFs.mkdirs(VPath.parent(target))
                 raf.seek(dataOffset.toLong() + 8 + f.offset) // skip CFDATA hdr roughly — for uncompressed single-folder

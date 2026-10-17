@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.core.VPath
 import java.text.SimpleDateFormat
@@ -59,7 +61,7 @@ object BatchRename {
     /** Builds the rename plan and flags invalid names / clashes (within the batch and with [existingNames]). */
     fun plan(spec: Spec, entries: List<FileEntry>, existingNames: Set<String>): List<Plan> {
         val raw = entries.mapIndexed { i, e ->
-            runCatching { apply(spec, e, i) }.fold({ Plan(e, it) }, { Plan(e, e.name, "正则错误: ${it.message}") })
+            runCatching { apply(spec, e, i) }.fold({ Plan(e, it) }, { Plan(e, e.name, tr("正则错误: ${it.message}", "Regex error: ${it.message}")) })
         }
         val renamed = entries.map { it.name }.toSet()
         val seen = HashMap<String, Int>()
@@ -67,11 +69,11 @@ object BatchRename {
         return raw.map { p ->
             when {
                 p.error != null -> p
-                p.newName.isEmpty() || p.newName == "." || p.newName == ".." -> p.copy(error = "名称无效")
-                p.newName.contains('/') || p.newName.contains('\u0000') -> p.copy(error = "名称含非法字符")
-                (seen[p.newName.lowercase()] ?: 0) > 1 -> p.copy(error = "与本批次其他文件重名")
+                p.newName.isEmpty() || p.newName == "." || p.newName == ".." -> p.copy(error = tr("名称无效", "Invalid name"))
+                p.newName.contains('/') || p.newName.contains('\u0000') -> p.copy(error = tr("名称含非法字符", "Name contains illegal characters"))
+                (seen[p.newName.lowercase()] ?: 0) > 1 -> p.copy(error = tr("与本批次其他文件重名", "Duplicates another name in this batch"))
                 p.changed && p.newName in existingNames && p.newName !in renamed &&
-                    !p.newName.equals(p.entry.name, ignoreCase = true) -> p.copy(error = "目标已存在")
+                    !p.newName.equals(p.entry.name, ignoreCase = true) -> p.copy(error = tr("目标已存在", "Target exists"))
                 else -> p
             }
         }

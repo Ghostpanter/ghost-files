@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.server.smb2
 
+import com.ghostpanter.files.core.tr
+
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -60,7 +62,7 @@ class Smb2Server(
         stop()
         lastError = null
         if (!shareRoot.isDirectory && !shareRoot.mkdirs()) {
-            lastError = "共享目录不可用: ${shareRoot.absolutePath}"
+            lastError = tr("共享目录不可用: ${shareRoot.absolutePath}", "Shared folder unavailable: ${shareRoot.absolutePath}")
             throw IOException(lastError)
         }
         val ss = if (bindAddress != null) ServerSocket(port, 50, bindAddress) else ServerSocket(port)

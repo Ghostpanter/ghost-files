@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.VirtualFs
 import java.io.InputStream
 import java.security.MessageDigest
@@ -22,7 +24,7 @@ object Checksums {
         val buf = ByteArray(256 * 1024)
         var done = 0L
         while (true) {
-            if (isCancelled()) throw com.ghostpanter.files.core.FsException("已取消")
+            if (isCancelled()) throw com.ghostpanter.files.core.FsException(tr("已取消", "Cancelled"))
             val n = input.read(buf)
             if (n < 0) break
             for (d in digests.values) d.update(buf, 0, n)

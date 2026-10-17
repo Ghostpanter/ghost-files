@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.server
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.server.smb2.Smb2Server
 import java.io.File
 import java.net.InetAddress
@@ -35,7 +37,7 @@ class SmbHostedServer : HostedServer {
         lastError = null
         val root = File(config.rootPath)
         if (!root.isDirectory && !root.mkdirs()) {
-            lastError = "共享目录不可用: ${config.rootPath}"
+            lastError = tr("共享目录不可用: ${config.rootPath}", "Shared folder unavailable: ${config.rootPath}")
             return status()
         }
         return try {

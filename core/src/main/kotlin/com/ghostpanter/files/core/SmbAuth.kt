@@ -95,7 +95,7 @@ class SmbConnector(timeouts: NetTimeouts = NetTimeouts()) : Closeable {
 
 /** Neither guest nor anonymous login was accepted. */
 class SmbNoGuestException(val causes: List<Throwable>) :
-    FsException("服务器不允许匿名/来宾访问，请输入用户名和密码", causes.lastOrNull())
+    FsException(tr("服务器不允许匿名/来宾访问，请输入用户名和密码", "Server does not allow anonymous/guest access; enter username and password"), causes.lastOrNull())
 
 /** Plain TCP sockets with keepalive, no Nagle and a bounded connect timeout. */
 class KeepAliveSocketFactory(private val connectMs: Int) : javax.net.SocketFactory() {

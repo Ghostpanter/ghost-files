@@ -105,9 +105,9 @@ class SftpFs(
             runCatching { jump?.disconnect() }
             val msg = e.message ?: e.javaClass.simpleName
             if (msg.contains("host key", true) || msg.contains("HOST_KEY", true)) {
-                throw FsException("主机密钥与上次记录不一致，已拒绝连接（可能被中间人攻击）。如服务器重装过，请在服务器设置中重置指纹。", e)
+                throw FsException(tr("主机密钥与上次记录不一致，已拒绝连接（可能被中间人攻击）。如服务器重装过，请在服务器设置中重置指纹。", "Host key changed since last connection; refused (possible MITM). If the server was reinstalled, reset the fingerprint in server settings."), e)
             }
-            throw FsException("连接 SFTP 失败: $msg", e)
+            throw FsException(tr("连接 SFTP 失败: $msg", "SFTP connection failed: $msg"), e)
         }
     }
 
@@ -168,7 +168,7 @@ class SftpFs(
         )
     }
 
-    override fun list(path: String, onChunk: ((List<FileEntry>) -> Unit)?): List<FileEntry> = io("列出 $path") { c ->
+    override fun list(path: String, onChunk: ((List<FileEntry>) -> Unit)?): List<FileEntry> = io(tr("列出 $path", "List $path")) { c ->
         val dir = VPath.normalize(path)
         val out = c.ls(dir).filter { it.name != "." && it.name != ".." }.map { r ->
             val p = VPath.join(dir, r.name)
@@ -180,13 +180,13 @@ class SftpFs(
         out
     }
 
-    override fun stat(path: String): FileEntry? = io("读取属性 $path") { c ->
+    override fun stat(path: String): FileEntry? = io(tr("读取属性 $path", "Stat $path")) { c ->
         val p = VPath.normalize(path)
         val a = c.statExistence(p) ?: return@io null
         entry(p, VPath.name(p), a)
     }
 
-    override fun openRead(path: String, offset: Long): InputStream = io("打开 $path") { c ->
+    override fun openRead(path: String, offset: Long): InputStream = io(tr("打开 $path", "Open $path")) { c ->
         val rf: RemoteFile = c.open(VPath.normalize(path), EnumSet.of(OpenMode.READ))
         val inner = rf.ReadAheadRemoteFileInputStream(16, offset)
         object : FilterInputStream(inner) {
@@ -197,7 +197,7 @@ class SftpFs(
         }
     }
 
-    override fun openWrite(path: String, offset: Long, sizeHint: Long): OutputStream = io("写入 $path") { c ->
+    override fun openWrite(path: String, offset: Long, sizeHint: Long): OutputStream = io(tr("写入 $path", "Write $path")) { c ->
         val modes = if (offset > 0) EnumSet.of(OpenMode.WRITE, OpenMode.CREAT)
         else EnumSet.of(OpenMode.WRITE, OpenMode.CREAT, OpenMode.TRUNC)
         val rf: RemoteFile = c.open(VPath.normalize(path), modes)
@@ -218,19 +218,19 @@ class SftpFs(
         BufferedOutputStream(chunked, 32 * 1024)
     }
 
-    override fun mkdirs(path: String) = io("创建目录 $path") { c -> c.mkdirs(VPath.normalize(path)) }
+    override fun mkdirs(path: String) = io(tr("创建目录 $path", "Create directory $path")) { c -> c.mkdirs(VPath.normalize(path)) }
 
     override fun delete(path: String, recursive: Boolean) {
         val e = stat(path) ?: return
         if (e.isDirectory && !e.isLink) {
             if (recursive) for (child in list(e.path)) delete(child.path, true)
-            io("删除 $path") { c -> c.rmdir(e.path) }
+            io(tr("删除 $path", "Delete $path")) { c -> c.rmdir(e.path) }
         } else {
-            io("删除 $path") { c -> c.rm(e.path) }
+            io(tr("删除 $path", "Delete $path")) { c -> c.rm(e.path) }
         }
     }
 
-    override fun rename(from: String, to: String) = io("移动 $from") { c ->
+    override fun rename(from: String, to: String) = io(tr("移动 $from", "Move $from")) { c ->
         c.rename(VPath.normalize(from), VPath.normalize(to))
     }
 
@@ -250,15 +250,15 @@ class SftpFs(
         }
     }
 
-    override fun chmod(path: String, mode: String, recursive: Boolean) = io("修改权限 $path") { c ->
-        require(mode.matches(Regex("[0-7]{3,4}"))) { "SFTP 仅支持数字权限" }
+    override fun chmod(path: String, mode: String, recursive: Boolean) = io(tr("修改权限 $path", "chmod $path")) { c ->
+        require(mode.matches(Regex("[0-7]{3,4}"))) { tr("SFTP 仅支持数字权限", "SFTP supports numeric modes only") }
         c.chmod(VPath.normalize(path), mode.toInt(8))
     }
 
     override fun setLastModified(path: String, millis: Long) {
         if (millis <= 0) return
         runCatching {
-            io("设置时间") { c ->
+            io(tr("设置时间", "Set time")) { c ->
                 val s = millis / 1000
                 c.setattr(VPath.normalize(path), FileAttributes.Builder().withAtimeMtime(s, s).build())
             }

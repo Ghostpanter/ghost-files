@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.ShellFs
 import com.ghostpanter.files.core.VPath
@@ -13,18 +15,18 @@ object SymlinkOps {
         val tgt = target
         if (shell != null) {
             val r = shell.exec("ln -s -- ${VPath.shellQuote(tgt)} ${VPath.shellQuote(link)}")
-            if (!r.ok) throw FsException("创建软链接失败: ${r.stderr.trim().ifEmpty { "exit ${r.code}" }}")
+            if (!r.ok) throw FsException(tr("创建软链接失败", "Create symlink failed") + ": ${r.stderr.trim().ifEmpty { "exit ${r.code}" }}")
             return
         }
         val f = File(link)
-        if (f.exists() || Files.isSymbolicLink(f.toPath())) throw FsException("已存在: $link")
+        if (f.exists() || Files.isSymbolicLink(f.toPath())) throw FsException(tr("已存在: $link", "Already exists: $link"))
         f.parentFile?.mkdirs()
         try {
             Files.createSymbolicLink(f.toPath(), File(tgt).toPath())
         } catch (e: Exception) {
             val p = Runtime.getRuntime().exec(arrayOf("ln", "-s", tgt, link))
             val code = p.waitFor()
-            if (code != 0) throw FsException("创建软链接失败（本机可能无权限，请用 Root/Shizuku）: ${e.message}", e)
+            if (code != 0) throw FsException(tr("创建软链接失败（本机可能无权限，请用 Root/Shizuku）", "Create symlink failed (try Root/Shizuku)") + ": ${e.message}", e)
         }
     }
 
@@ -55,21 +57,21 @@ object SymlinkOps {
             echo OK_remount_dev
         """.trimIndent()
         val r = shell.exec(script)
-        if (!r.ok) throw FsException("重新挂载读写失败: ${r.stderr.trim().ifEmpty { r.stdout.trim() }}")
+        if (!r.ok) throw FsException(tr("重新挂载读写失败", "Remount rw failed") + ": ${r.stderr.trim().ifEmpty { r.stdout.trim() }}")
         return r.stdout.trim()
     }
 
     fun remountRo(shell: ShellFs, mountPoint: String): String {
         val mp = VPath.normalize(mountPoint)
         val r = shell.exec("mount -o remount,ro ${VPath.shellQuote(mp)} || mount -o ro,remount ${VPath.shellQuote(mp)}")
-        if (!r.ok) throw FsException("重新挂载只读失败: ${r.stderr.trim()}")
+        if (!r.ok) throw FsException(tr("重新挂载只读失败", "Remount ro failed") + ": ${r.stderr.trim()}")
         return r.stdout.trim()
     }
 
     fun readProcMounts(shell: ShellFs? = null): List<MountInfo> {
         val text = if (shell != null) {
             val r = shell.exec("cat /proc/mounts")
-            if (!r.ok) throw FsException("读取 /proc/mounts 失败")
+            if (!r.ok) throw FsException(tr("读取 /proc/mounts 失败", "Failed to read /proc/mounts"))
             r.stdout
         } else File("/proc/mounts").readText()
         return parseMounts(text)

@@ -162,6 +162,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
 
     fun refresh(tab: TabState, keepScroll: Boolean = false) {
         tab.loadJob?.cancel()
+        Thumbnails.clearMisses()
         // Elevate LocalFs → Root before listing when Root was already granted this session.
         val elevated = fsm.elevateFsId(tab.fsId, tab.path)
         if (elevated != tab.fsId) {
@@ -288,7 +289,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
 
     override fun fsLabel(fsId: String) = fsm.label(fsId)
 
-    override fun thumbnail(fsId: String, e: FileEntry): android.graphics.Bitmap? {
+    override fun thumbnail(fsId: String, e: FileEntry, sizePx: Int): android.graphics.Bitmap? {
         val fs = runCatching { fsm.get(fsId) }.getOrNull() ?: return null
         val local = if (fsId == LocalFs.ID) java.io.File(e.path).takeIf { it.isFile && it.canRead() } else null
         val apkIcon: (() -> android.graphics.Bitmap?)? = if (local != null && e.extension.equals("apk", true)) ({
@@ -300,7 +301,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                 val c = android.graphics.Canvas(b); d.setBounds(0, 0, 96, 96); d.draw(c); b
             }
         }) else null
-        return Thumbnails.load(fsId, e, fs, local, apkIcon, 96)
+        return Thumbnails.load(fsId, e, fs, local, apkIcon, sizePx)
     }
 
     override fun onEntryClick(pane: PaneState, e: FileEntry) {

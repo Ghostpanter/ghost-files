@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.server
 
+import com.ghostpanter.files.core.tr
+
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory
 import org.apache.sshd.common.session.SessionListener
 import org.apache.sshd.common.session.Session
@@ -30,7 +32,7 @@ class SftpHostedServer(
         this.listenHint = listenHint
         val root = File(config.rootPath)
         if (!root.isDirectory && !root.mkdirs()) {
-            lastError = "共享目录不可用: ${config.rootPath}"
+            lastError = tr("共享目录不可用: ${config.rootPath}", "Shared folder unavailable: ${config.rootPath}")
             return status()
         }
         try {

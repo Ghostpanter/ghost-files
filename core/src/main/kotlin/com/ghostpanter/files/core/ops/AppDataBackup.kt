@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.ShellFs
 import com.ghostpanter.files.core.VPath
@@ -11,7 +13,7 @@ import java.io.File
  */
 object AppDataBackup {
     fun backup(shell: ShellFs, packageName: String, destTar: File, timeoutSec: Long = 600): File {
-        if (!packageName.matches(Regex("[A-Za-z0-9._]+"))) throw FsException("非法包名")
+        if (!packageName.matches(Regex("[A-Za-z0-9._]+"))) throw FsException(tr("非法包名", "Invalid package name"))
         destTar.parentFile?.mkdirs()
         val tmp = "/data/local/tmp/gf-backup-$packageName.tar"
         val data = "/data/data/$packageName"
@@ -24,7 +26,7 @@ object AppDataBackup {
         """.trimIndent()
         val r = shell.exec(script, timeoutSec)
         if (!r.ok || !r.stdout.contains("OK")) {
-            throw FsException("备份失败: ${r.stderr.trim().ifEmpty { r.stdout.trim().ifEmpty { "exit ${r.code}" } }}")
+            throw FsException(tr("备份失败", "Backup failed") + ": ${r.stderr.trim().ifEmpty { r.stdout.trim().ifEmpty { "exit ${r.code}" } }}")
         }
         shell.openRead(tmp).use { ins -> destTar.outputStream().use { ins.copyTo(it, 256 * 1024) } }
         runCatching { shell.delete(tmp, recursive = false) }
@@ -32,8 +34,8 @@ object AppDataBackup {
     }
 
     fun restore(shell: ShellFs, packageName: String, srcTar: File, timeoutSec: Long = 600) {
-        if (!packageName.matches(Regex("[A-Za-z0-9._]+"))) throw FsException("非法包名")
-        if (!srcTar.isFile) throw FsException("备份文件不存在")
+        if (!packageName.matches(Regex("[A-Za-z0-9._]+"))) throw FsException(tr("非法包名", "Invalid package name"))
+        if (!srcTar.isFile) throw FsException(tr("备份文件不存在", "Backup file not found"))
         val tmp = "/data/local/tmp/gf-restore-$packageName.tar"
         shell.openWrite(tmp).use { out -> srcTar.inputStream().use { it.copyTo(out, 256 * 1024) } }
         val script = """
@@ -44,14 +46,14 @@ object AppDataBackup {
         """.trimIndent()
         val r = shell.exec(script, timeoutSec)
         if (!r.ok || !r.stdout.contains("OK")) {
-            throw FsException("恢复失败: ${r.stderr.trim().ifEmpty { r.stdout.trim().ifEmpty { "exit ${r.code}" } }}")
+            throw FsException(tr("恢复失败", "Restore failed") + ": ${r.stderr.trim().ifEmpty { r.stdout.trim().ifEmpty { "exit ${r.code}" } }}")
         }
     }
 
     fun extractApkPaths(shell: ShellFs, packageName: String): List<String> {
-        if (!packageName.matches(Regex("[A-Za-z0-9._]+"))) throw FsException("非法包名")
+        if (!packageName.matches(Regex("[A-Za-z0-9._]+"))) throw FsException(tr("非法包名", "Invalid package name"))
         val r = shell.exec("pm path ${VPath.shellQuote(packageName)}")
-        if (!r.ok) throw FsException("pm path 失败: ${r.stderr.trim()}")
+        if (!r.ok) throw FsException(tr("pm path 失败", "pm path failed") + ": ${r.stderr.trim()}")
         return r.stdout.lines().mapNotNull { line ->
             val p = line.removePrefix("package:").trim()
             p.ifEmpty { null }

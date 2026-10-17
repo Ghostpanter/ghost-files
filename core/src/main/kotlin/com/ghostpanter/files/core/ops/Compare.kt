@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.VirtualFs
@@ -47,15 +49,15 @@ object Compare {
         if (l == null && r == null) return Row(VPath.name(leftPath), Kind.SAME)
         if (l == null) return Row(VPath.name(rightPath), Kind.RIGHT_ONLY, right = r)
         if (r == null) return Row(VPath.name(leftPath), Kind.LEFT_ONLY, left = l)
-        if (l.isDirectory != r.isDirectory) return Row(l.name, Kind.TYPE_MISMATCH, l, r, detail = "类型不同")
-        if (l.isDirectory) return Row(l.name, Kind.SAME, l, r, detail = "目录（未展开）")
+        if (l.isDirectory != r.isDirectory) return Row(l.name, Kind.TYPE_MISMATCH, l, r, detail = tr("类型不同", "Type differs"))
+        if (l.isDirectory) return Row(l.name, Kind.SAME, l, r, detail = tr("目录（未展开）", "Directory (not expanded)"))
         if (l.size != r.size) {
-            return Row(l.name, Kind.DIFFERENT, l, r, detail = "大小不同: ${l.size} vs ${r.size}")
+            return Row(l.name, Kind.DIFFERENT, l, r, detail = tr("大小不同: ${l.size} vs ${r.size}", "Size differs: ${l.size} vs ${r.size}"))
         }
         val lh = leftFs.openRead(leftPath).use { hashStream(it, isCancelled = isCancelled) }
         val rh = rightFs.openRead(rightPath).use { hashStream(it, isCancelled = isCancelled) }
         return if (lh == rh) Row(l.name, Kind.SAME, l, r, lh, rh)
-        else Row(l.name, Kind.DIFFERENT, l, r, lh, rh, detail = "内容哈希不同")
+        else Row(l.name, Kind.DIFFERENT, l, r, lh, rh, detail = tr("内容哈希不同", "Content hash differs"))
     }
 
     fun compareTrees(
@@ -82,20 +84,20 @@ object Compare {
                 !hashFiles -> {
                     out.add(
                         if (l.size == r.size && l.lastModified == r.lastModified) Row(rel, Kind.SAME, l, r)
-                        else if (l.size != r.size) Row(rel, Kind.DIFFERENT, l, r, detail = "大小 ${l.size} vs ${r.size}")
-                        else Row(rel, Kind.DIFFERENT, l, r, detail = "时间不同"),
+                        else if (l.size != r.size) Row(rel, Kind.DIFFERENT, l, r, detail = tr("大小 ${l.size} vs ${r.size}", "Size ${l.size} vs ${r.size}"))
+                        else Row(rel, Kind.DIFFERENT, l, r, detail = tr("时间不同", "Time differs")),
                     )
                 }
                 else -> {
                     onProgress(rel)
                     if (l.size != r.size) {
-                        out.add(Row(rel, Kind.DIFFERENT, l, r, detail = "大小 ${l.size} vs ${r.size}"))
+                        out.add(Row(rel, Kind.DIFFERENT, l, r, detail = tr("大小 ${l.size} vs ${r.size}", "Size ${l.size} vs ${r.size}")))
                     } else {
                         val lh = leftFs.openRead(l.path).use { hashStream(it, isCancelled = isCancelled) }
                         val rh = rightFs.openRead(r.path).use { hashStream(it, isCancelled = isCancelled) }
                         out.add(
                             if (lh == rh) Row(rel, Kind.SAME, l, r, lh, rh)
-                            else Row(rel, Kind.DIFFERENT, l, r, lh, rh, detail = "哈希不同"),
+                            else Row(rel, Kind.DIFFERENT, l, r, lh, rh, detail = tr("哈希不同", "Hash differs")),
                         )
                     }
                 }

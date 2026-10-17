@@ -76,7 +76,7 @@ class SmbFs(
         val existing = diskShares[name]
         if (existing != null && existing.isConnected && session?.connection?.isConnected == true) return existing
         diskShares.remove(name)
-        val sh = session().connectShare(name) as? DiskShare ?: throw FsException("$name 不是磁盘共享")
+        val sh = session().connectShare(name) as? DiskShare ?: throw FsException(tr("$name 不是磁盘共享", "$name is not a disk share"))
         diskShares[name] = sh
         sh
     }
@@ -118,21 +118,21 @@ class SmbFs(
         s == NtStatus.STATUS_USER_SESSION_DELETED || s == NtStatus.STATUS_NETWORK_NAME_DELETED
 
     private fun statusText(s: NtStatus): String = when (s) {
-        NtStatus.STATUS_ACCESS_DENIED -> "拒绝访问"
-        NtStatus.STATUS_LOGON_FAILURE -> "用户名或密码错误"
-        NtStatus.STATUS_OBJECT_NAME_NOT_FOUND, NtStatus.STATUS_OBJECT_PATH_NOT_FOUND -> "不存在"
-        NtStatus.STATUS_OBJECT_NAME_COLLISION -> "已存在"
-        NtStatus.STATUS_BAD_NETWORK_NAME -> "共享名不存在"
-        NtStatus.STATUS_SHARING_VIOLATION -> "文件正被其他程序占用"
-        NtStatus.STATUS_CANNOT_DELETE -> "文件为只读或正在使用，无法删除"
-        NtStatus.STATUS_DISK_FULL -> "空间不足"
-        NtStatus.STATUS_DIRECTORY_NOT_EMPTY -> "目录非空"
+        NtStatus.STATUS_ACCESS_DENIED -> tr("拒绝访问", "Access denied")
+        NtStatus.STATUS_LOGON_FAILURE -> tr("用户名或密码错误", "Wrong username or password")
+        NtStatus.STATUS_OBJECT_NAME_NOT_FOUND, NtStatus.STATUS_OBJECT_PATH_NOT_FOUND -> tr("不存在", "Not found")
+        NtStatus.STATUS_OBJECT_NAME_COLLISION -> tr("已存在", "Already exists")
+        NtStatus.STATUS_BAD_NETWORK_NAME -> tr("共享名不存在", "Share not found")
+        NtStatus.STATUS_SHARING_VIOLATION -> tr("文件正被其他程序占用", "File is in use by another program")
+        NtStatus.STATUS_CANNOT_DELETE -> tr("文件为只读或正在使用，无法删除", "File is read-only or in use; cannot delete")
+        NtStatus.STATUS_DISK_FULL -> tr("空间不足", "Disk full")
+        NtStatus.STATUS_DIRECTORY_NOT_EMPTY -> tr("目录非空", "Directory not empty")
         else -> s.name
     }
 
     private fun shareRoots() = shares.map { FileEntry("/$it", it, true, 0, 0) }
 
-    override fun list(path: String, onChunk: ((List<FileEntry>) -> Unit)?): List<FileEntry> = io("列出 $path") {
+    override fun list(path: String, onChunk: ((List<FileEntry>) -> Unit)?): List<FileEntry> = io(tr("列出 $path", "List $path")) {
         val l = loc(path)
         if (l == null) {
             if (shares.isEmpty()) {
@@ -140,7 +140,7 @@ class SmbFs(
                 val found = com.ghostpanter.files.core.lan.SmbShares.userVisible(
                     com.ghostpanter.files.core.lan.SmbShares.enumerate(session())
                 )
-                if (found.isEmpty()) throw FsException("服务器没有可浏览的共享，请在服务器设置中填写共享名")
+                if (found.isEmpty()) throw FsException(tr("服务器没有可浏览的共享，请在服务器设置中填写共享名", "Server has no browsable shares; enter a share name in server settings"))
                 return@io found.map { FileEntry("/${it.name}", it.name, true, 0, 0) }
             }
             return@io shareRoots()
@@ -180,7 +180,7 @@ class SmbFs(
         val l = loc(path) ?: return FileEntry(VPath.ROOT, "", true, 0, 0)
         if (l.path.isEmpty()) return FileEntry(VPath.normalize(path), l.share, true, 0, 0)
         return try {
-            io("读取属性 $path") {
+            io(tr("读取属性 $path", "Stat $path")) {
                 val info = share(l.share).getFileInformation(l.path)
                 val isDir = info.standardInformation.isDirectory
                 FileEntry(
@@ -197,12 +197,12 @@ class SmbFs(
     }
 
     private fun requireFile(path: String): Loc {
-        val l = loc(path) ?: throw FsException("无效路径: $path")
-        if (l.path.isEmpty()) throw FsException("无效路径: $path")
+        val l = loc(path) ?: throw FsException(tr("无效路径: $path", "Invalid path: $path"))
+        if (l.path.isEmpty()) throw FsException(tr("无效路径: $path", "Invalid path: $path"))
         return l
     }
 
-    override fun openRead(path: String, offset: Long): InputStream = io("打开 $path") {
+    override fun openRead(path: String, offset: Long): InputStream = io(tr("打开 $path", "Open $path")) {
         val l = requireFile(path)
         val sh = share(l.share)
         val f = sh.openFile(
@@ -214,7 +214,7 @@ class SmbFs(
         SmbInput(f, path, offset, size, minOf(readChunk, maxRead).coerceIn(MIN_CHUNK, MAX_CHUNK))
     }
 
-    override fun openWrite(path: String, offset: Long, sizeHint: Long): OutputStream = io("写入 $path") {
+    override fun openWrite(path: String, offset: Long, sizeHint: Long): OutputStream = io(tr("写入 $path", "Write $path")) {
         val l = requireFile(path)
         val sh = share(l.share)
         val f = sh.openFile(
@@ -227,7 +227,7 @@ class SmbFs(
         SmbOutput(f, path, offset, maxWrite.coerceIn(MIN_CHUNK, MAX_CHUNK))
     }
 
-    override fun mkdirs(path: String) = io("创建目录 $path") {
+    override fun mkdirs(path: String) = io(tr("创建目录 $path", "Create directory $path")) {
         val l = requireFile(path)
         val sh = share(l.share)
         var cur = ""
@@ -237,7 +237,7 @@ class SmbFs(
         }
     }
 
-    override fun delete(path: String, recursive: Boolean) = io("删除 $path") {
+    override fun delete(path: String, recursive: Boolean) = io(tr("删除 $path", "Delete $path")) {
         val l = requireFile(path)
         val sh = share(l.share)
         val info = try {
@@ -274,10 +274,10 @@ class SmbFs(
         }
     }
 
-    override fun rename(from: String, to: String) = io("移动 $from") {
+    override fun rename(from: String, to: String) = io(tr("移动 $from", "Move $from")) {
         val a = requireFile(from)
         val b = requireFile(to)
-        if (a.share != b.share) throw FsException("不能跨共享移动")
+        if (a.share != b.share) throw FsException(tr("不能跨共享移动", "Cannot move across shares"))
         val sh = share(a.share)
         val entry = sh.open(
             a.path, EnumSet.of(AccessMask.DELETE, AccessMask.FILE_READ_ATTRIBUTES), null, SMB2ShareAccess.ALL,
@@ -329,7 +329,7 @@ class SmbFs(
      */
     private fun killConnection(c: com.hierynomus.smbj.connection.Connection) {
         runCatching { c.close(true) }
-        Thread({ runCatching { c.handleError(com.hierynomus.protocol.transport.TransportException("连接已丢弃（重连）")) } }, "smb-kill")
+        Thread({ runCatching { c.handleError(com.hierynomus.protocol.transport.TransportException(tr("连接已丢弃（重连）", "Connection dropped (reconnecting)"))) } }, "smb-kill")
             .apply { isDaemon = true }.start()
     }
 
@@ -356,7 +356,7 @@ class SmbFs(
         if (dedicated) reset()
     }
 
-    private class Aborted : java.io.IOException("已中止")
+    private class Aborted : java.io.IOException(tr("已中止", "Aborted"))
 
     /**
      * Shared recovery policy of the read/write streams: on a connection-level failure (timeout,
@@ -371,23 +371,23 @@ class SmbFs(
         private var since = 0L
 
         fun recover(what: String, e: Throwable, reopen: () -> Unit) {
-            if (aborted) throw FsException("$what: 已中止", e)
+            if (aborted) throw FsException(tr("$what: 已中止", "$what: aborted"), e)
             if (e is SMBApiException && !isSessionGone(e.status)) throw FsException("$what: ${statusText(e.status)}", e)
             if (e is FsException || !isConnectionError(e)) throw (e as? FsException ?: FsException("$what: ${ErrorText.describe(e)}", e))
             val now = System.currentTimeMillis()
             if (attempts == 0) since = now
             if (now - since > recoveryBudgetMs) {
-                throw FsException("$what: ${ErrorText.describe(e)}（已自动重连 $attempts 次仍失败）", e)
+                throw FsException(tr("$what: ${ErrorText.describe(e)}（已自动重连 $attempts 次仍失败）", "$what: ${ErrorText.describe(e)} (still failing after $attempts reconnects)"), e)
             }
             attempts++
             if (System.getenv("GF_SMB_DEBUG") != null) System.err.println("GFDBG ${System.currentTimeMillis()} recover#$attempts $what: ${ErrorText.describe(e)}")
             runCatching { onRecovery?.invoke(e, attempts) }
             if (attempts > 1) sleepAbortable(minOf(500L shl (attempts - 2).coerceAtMost(4), 8_000L))
             while (true) {
-                if (aborted) throw FsException("$what: 已中止", e)
+                if (aborted) throw FsException(tr("$what: 已中止", "$what: aborted"), e)
                 try { reopen(); break } catch (r: Exception) {
                     if (!isConnectionError(r) || System.currentTimeMillis() - since > recoveryBudgetMs) {
-                        throw FsException("重新连接失败: ${ErrorText.describe(r)}", r)
+                        throw FsException(tr("重新连接失败: ${ErrorText.describe(r)}", "Reconnect failed: ${ErrorText.describe(r)}"), r)
                     }
                     runCatching { onRecovery?.invoke(r, attempts) }
                     sleepAbortable(2_000)
@@ -442,10 +442,10 @@ class SmbFs(
                     if (!fill()) return -1
                     rec.progressed()
                 } catch (e: Aborted) {
-                    throw FsException("读取: 已中止", e)
+                    throw FsException(tr("读取: 已中止", "Read: aborted"), e)
                 } catch (e: Exception) {
                     dropInflight()
-                    rec.recover("读取", e) {
+                    rec.recover(tr("读取", "Read"), e) {
                         // Adaptive: a stall halves the read size for this server (down to 64 KB) and
                         // drops read-ahead; clean reads grow it back (see fill()).
                         chunk = (chunk / 2).coerceAtLeast(MIN_CHUNK)
@@ -503,7 +503,7 @@ class SmbFs(
                     // plain java Future semantics: slice expired
                 }
                 if (System.currentTimeMillis() > deadline) {
-                    throw java.util.concurrent.TimeoutException("SMB 读取 ${timeouts.smbReadStallMs / 1000} 秒无响应")
+                    throw java.util.concurrent.TimeoutException(tr("SMB 读取 ${timeouts.smbReadStallMs / 1000} 秒无响应", "SMB read stalled for ${timeouts.smbReadStallMs / 1000}s"))
                 }
             }
         }
@@ -530,14 +530,14 @@ class SmbFs(
             var o = off
             var left = len
             while (left > 0) {
-                if (rec.aborted) throw FsException("写入: 已中止")
+                if (rec.aborted) throw FsException(tr("写入: 已中止", "Write: aborted"))
                 val n = try {
                     f.write(b, pos, o, minOf(left, chunk)).toInt()
                 } catch (e: Exception) {
-                    rec.recover("写入", e) { f = reopenFile(path, write = true) }
+                    rec.recover(tr("写入", "Write"), e) { f = reopenFile(path, write = true) }
                     continue
                 }
-                if (n <= 0) throw FsException("SMB 写入返回 0")
+                if (n <= 0) throw FsException(tr("SMB 写入返回 0", "SMB write returned 0"))
                 pos += n; o += n; left -= n
                 rec.progressed()
             }

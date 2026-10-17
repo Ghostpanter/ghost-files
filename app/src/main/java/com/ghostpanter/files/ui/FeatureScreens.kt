@@ -230,7 +230,11 @@ object Thumbnails {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) = size > 120
     }
     /** Keys known to have no thumbnail (unsupported/too big/failed) so rows don't retry on every scroll. */
-    private val misses = java.util.Collections.synchronizedSet(HashSet<String>())
+    private val misses = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private const val MISS_TTL_MS = 90_000L
+
+    /** Forget failed thumbnails (manual refresh, Root/Shizuku reconnect). */
+    fun clearMisses() = misses.clear()
     /** Bound concurrent decodes/streams so a fast scroll over a shell/remote dir doesn't spawn dozens of readers. */
     private val gate = java.util.concurrent.Semaphore(3)
 
@@ -255,7 +259,7 @@ object Thumbnails {
         if (entry.isDirectory) return null
         val key = key(fsId, entry, size)
         synchronized(cache) { cache[key] }?.let { return it }
-        if (key in misses) return null
+        misses[key]?.let { t0 -> if (System.currentTimeMillis() - t0 < MISS_TTL_MS) return null else misses.remove(key) }
         val ext = entry.extension.lowercase()
         val isImg = ext in IMAGE_EXT
         val isVid = ext in VIDEO_EXT
@@ -278,7 +282,7 @@ object Thumbnails {
                 else -> null
             }
         } catch (_: Throwable) { null } finally { gate.release() }
-        if (bmp == null) { misses += key; return null }
+        if (bmp == null) { misses[key] = System.currentTimeMillis(); return null }
         synchronized(cache) { cache[key] = bmp }
         if (fsId != "local") runCatching {
             diskFile.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }

@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FsException
 import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator
@@ -28,7 +30,7 @@ object AesCrypt {
     }
 
     fun encrypt(src: File, dst: File, password: String) {
-        if (password.isEmpty()) throw FsException("密码不能为空")
+        if (password.isEmpty()) throw FsException(tr("密码不能为空", "Password cannot be empty"))
         val rnd = SecureRandom()
         val salt = ByteArray(SALT).also { rnd.nextBytes(it) }
         val iv = ByteArray(IV).also { rnd.nextBytes(it) }
@@ -47,14 +49,14 @@ object AesCrypt {
     }
 
     fun decrypt(src: File, dst: File, password: String) {
-        if (password.isEmpty()) throw FsException("密码不能为空")
+        if (password.isEmpty()) throw FsException(tr("密码不能为空", "Password cannot be empty"))
         val all = src.readBytes()
-        if (all.size < MAGIC.size + SALT + IV + TAG) throw FsException("文件过短或损坏")
+        if (all.size < MAGIC.size + SALT + IV + TAG) throw FsException(tr("文件过短或损坏", "File too short or corrupted"))
         if (!all.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)) {
             if (all.size >= 3 && all[0] == 0x41.toByte() && all[1] == 0x45.toByte() && all[2] == 0x53.toByte()) {
-                throw FsException("检测到 AES Crypt 桌面格式，当前仅支持本应用 GFENC1 容器（.gfenc）")
+                throw FsException(tr("检测到 AES Crypt 桌面格式，当前仅支持本应用 GFENC1 容器（.gfenc）", "AES Crypt desktop format detected; only this app's GFENC1 container (.gfenc) is supported"))
             }
-            throw FsException("不是受支持的加密容器")
+            throw FsException(tr("不是受支持的加密容器", "Not a supported encrypted container"))
         }
         var o = MAGIC.size
         val salt = all.copyOfRange(o, o + SALT); o += SALT
@@ -66,7 +68,7 @@ object AesCrypt {
             c.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG * 8, iv))
             dst.writeBytes(c.doFinal(cipherBytes))
         } catch (e: Exception) {
-            throw FsException("密码错误或文件损坏", e)
+            throw FsException(tr("密码错误或文件损坏", "Wrong password or corrupted file"), e)
         } finally {
             key.fill(0)
         }

@@ -12,6 +12,28 @@ class LocalAndShellFsTest {
 
     @Test fun shellContract() = FsContract.run(ShellFs("shell", "sh", sh), tempDir().path)
 
+    @Test fun persistentShellReusesOneProcessAndRecovers() {
+        var spawns = 0
+        val counting = ShellRunner { script -> spawns++; ProcessBuilder("sh", "-c", script).start() }
+        val fs = ShellFs("shell", "sh", counting)
+        repeat(20) { i ->
+            val r = fs.exec("echo out$i; echo err$i >&2; exit ${i % 3}")
+            assertEquals("out$i\n", r.stdout)
+            assertEquals("err$i\n", r.stderr)
+            assertEquals(i % 3, r.code)
+        }
+        assertEquals(1, spawns)
+        // No trailing newline, stdin isolation, multi-line output.
+        assertEquals("a\nb", fs.exec("printf 'a\\nb'").stdout)
+        assertEquals("", fs.exec("cat").stdout)
+        // Timeout kills the session; the next call respawns.
+        val t = runCatching { fs.exec("sleep 5", timeout = 1) }.exceptionOrNull()
+        assertTrue(t is FsException)
+        assertEquals("ok\n", fs.exec("echo ok").stdout)
+        assertEquals(2, spawns)
+        fs.close()
+    }
+
     @Test fun shellListsHiddenFilesLinksAndPerms() {
         val d = tempDir()
         File(d, ".hidden").writeText("x")

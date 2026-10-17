@@ -419,13 +419,19 @@ fun ImageScreen(vm: MainViewModel, s: Screen.Image) {
             runCatching {
                 val fs = vm.fsm.get(s.fsId)
                 val sz = runCatching { fs.stat(path)?.size }.getOrNull() ?: -1L
-                if (sz > 96L shl 20) error(t("图片过大（>96MB），无法预览", "Image too large (>96 MB) to preview"))
-                val bytes = fs.openRead(path).use { it.readBytes() }
-                val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
-                var sample = 1
-                while (o.outWidth / sample > 4096 || o.outHeight / sample > 4096) sample *= 2
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+                if (sz > 256L shl 20) error(t("图片过大（>256MB），无法预览", "Image too large (>256 MB) to preview"))
+                // Local files decode in place; other backends stream to a temp file (never the whole file in RAM).
+                val local = if (s.fsId == com.ghostpanter.files.core.LocalFs.ID) java.io.File(path).takeIf { it.isFile && it.canRead() } else null
+                val tmp = if (local == null) java.io.File.createTempFile("view", ".img", vm.getApplication<android.app.Application>().cacheDir) else null
+                try {
+                    if (tmp != null) fs.openRead(path).use { input -> tmp.outputStream().use { input.copyTo(it, 64 * 1024) } }
+                    val f = local ?: tmp!!
+                    val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(f.path, o)
+                    var sample = 1
+                    while (o.outWidth / sample > 4096 || o.outHeight / sample > 4096) sample *= 2
+                    BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })
+                } finally { tmp?.delete() }
                     ?: error(t("无法解码图片", "Cannot decode image"))
             }.onSuccess { bmp = it }.onFailure { err = it.message }
         }

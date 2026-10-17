@@ -29,6 +29,7 @@ class ShellFs(
     private val runner: ShellRunner,
     override val homePath: String = VPath.ROOT,
     private val timeoutSec: Long = 60,
+    persistent: Boolean = true,
 ) : VirtualFs {
 
     override val capabilities = setOf(
@@ -38,7 +39,20 @@ class ShellFs(
 
     private fun q(p: String) = VPath.shellQuote(VPath.normalize(p))
 
+    private val session = if (persistent) PersistentShell(runner) else null
+
     fun exec(script: String, timeout: Long = timeoutSec): ShellResult {
+        session?.let { sh ->
+            // One long-lived su/Shizuku shell for short commands (list/stat/mkdir…): avoids a process spawn
+            // (and su round-trip) per call. Falls back to a fresh process when the session can't be used.
+            try { return sh.exec(script, timeout) } catch (e: PersistentShell.Unavailable) { /* fall through */ }
+        }
+        return execOnce(script, timeout)
+    }
+
+    override fun close() { session?.close() }
+
+    private fun execOnce(script: String, timeout: Long): ShellResult {
         val p = runner.start(script)
         p.outputStream.close()
         val err = ByteArrayOutputStream()
@@ -206,4 +220,77 @@ class ShellFs(
             )
         }
     }
+}
+
+
+/**
+ * A single long-running `sh` behind [runner] that executes scripts one at a time. Each script runs in a subshell
+ * with stdin from /dev/null and is followed by a random end marker on stdout and stderr. A timeout or broken pipe
+ * kills the shell; the next call respawns it. Callers fall back to one-shot processes on [Unavailable].
+ */
+internal class PersistentShell(private val runner: ShellRunner) : java.io.Closeable {
+    class Unavailable(cause: Throwable?) : Exception(cause)
+
+    private val lock = Any()
+    private var proc: Process? = null
+    private var stdout: java.io.BufferedReader? = null
+    private var stderr: java.io.BufferedReader? = null
+    private var failures = 0
+    private var disabledUntil = 0L
+    private val pool = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "pshell-io").apply { isDaemon = true } }
+
+    private fun ensure(): Process {
+        proc?.takeIf { it.isAlive }?.let { return it }
+        kill()
+        val p = runner.start("exec sh")
+        proc = p
+        stdout = p.inputStream.bufferedReader(Charsets.UTF_8)
+        stderr = p.errorStream.bufferedReader(Charsets.UTF_8)
+        return p
+    }
+
+    fun exec(script: String, timeoutSec: Long): ShellResult = synchronized(lock) {
+        if (System.currentTimeMillis() < disabledUntil) throw Unavailable(null)
+        val mark = "__GF_END_" + java.util.UUID.randomUUID().toString().replace("-", "") + "__"
+        try {
+            val p = ensure()
+            val out = stdout!!; val err = stderr!!
+            val cmd = "(\n$script\n) </dev/null\nprintf '\\n%s %d\\n' '$mark' \$?\nprintf '\\n%s\\n' '$mark' >&2\n"
+            p.outputStream.write(cmd.toByteArray(Charsets.UTF_8)); p.outputStream.flush()
+            val outF = pool.submit(java.util.concurrent.Callable { readUntil(out, mark) })
+            val errF = pool.submit(java.util.concurrent.Callable { readUntil(err, mark) })
+            val (o, codeStr) = outF.get(timeoutSec, java.util.concurrent.TimeUnit.SECONDS)
+            val (e, _) = errF.get(5, java.util.concurrent.TimeUnit.SECONDS)
+            failures = 0
+            ShellResult(codeStr.trim().toIntOrNull() ?: -1, o, e)
+        } catch (e: java.util.concurrent.TimeoutException) {
+            kill()
+            throw FsException(tr("命令超时 (${timeoutSec}s)", "Command timed out (${timeoutSec}s)"))
+        } catch (e: Throwable) {
+            kill()
+            // Repeated failures (e.g. su denies a persistent shell): stop trying for a while.
+            if (++failures >= 3) { disabledUntil = System.currentTimeMillis() + 60_000; failures = 0 }
+            throw Unavailable(e)
+        }
+    }
+
+    /** Returns (text before the marker, rest of the marker line). Strips the newline we print before it. */
+    private fun readUntil(r: java.io.BufferedReader, mark: String): Pair<String, String> {
+        val sb = StringBuilder()
+        while (true) {
+            val line = r.readLine() ?: throw java.io.EOFException("shell closed")
+            if (line.startsWith(mark)) {
+                if (sb.isNotEmpty() && sb[sb.length - 1] == '\n') sb.setLength(sb.length - 1)
+                return sb.toString() to line.removePrefix(mark)
+            }
+            sb.append(line).append('\n')
+        }
+    }
+
+    private fun kill() {
+        proc?.let { runCatching { it.outputStream.close() }; runCatching { it.destroyForcibly() } }
+        proc = null; stdout = null; stderr = null
+    }
+
+    override fun close() = synchronized(lock) { kill() }
 }

@@ -251,7 +251,8 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
                         onClick = { host.onEntryClick(pane, e) },
                         onLongClick = { host.onEntryLongPress(pane, e) },
                         onSwipe = { host.onEntrySwipe(pane, e) },
-                        thumb = { host.thumbnail(tab.fsId, e) },
+                        thumb = { host.thumbnail(tab.fsId, e, 192) },
+                        iconSize = 56.dp,
                     )
                 }
             }
@@ -314,6 +315,7 @@ fun FileRow(
     onLongClick: () -> Unit,
     onSwipe: () -> Unit,
     thumb: (() -> android.graphics.Bitmap?)? = null,
+    iconSize: Dp = 28.dp,
 ) {
     val bg = when {
         selected -> MaterialTheme.colorScheme.primaryContainer
@@ -347,10 +349,10 @@ fun FileRow(
             if (!showThumbs || e.isDirectory || thumb == null) { thumbBmp = null; return@LaunchedEffect }
             thumbBmp = withContext(Dispatchers.IO) { runCatching { thumb() }.getOrNull() }
         }
-        Box(Modifier.size(28.dp)) {
+        Box(Modifier.size(iconSize)) {
             val tb = thumbBmp
-            if (tb != null) Image(tb.asImageBitmap(), null, Modifier.size(28.dp).clip(RoundedCornerShape(3.dp)))
-            else Icon(icon, null, tint = tint, modifier = Modifier.size(28.dp))
+            if (tb != null) Image(tb.asImageBitmap(), null, Modifier.size(iconSize).clip(RoundedCornerShape(3.dp)))
+            else Icon(icon, null, tint = tint, modifier = Modifier.size(iconSize))
             if (e.isLink) Icon(Icons.Filled.Link, null, Modifier.size(12.dp).align(Alignment.BottomEnd), tint = MaterialTheme.colorScheme.tertiary)
         }
         Spacer(Modifier.width(6.dp))

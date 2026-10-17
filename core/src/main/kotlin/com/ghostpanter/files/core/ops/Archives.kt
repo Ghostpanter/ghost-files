@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.VPath
@@ -66,7 +68,7 @@ object Archives {
 
     fun safeChild(destDir: String, entryName: String): String {
         val clean = entryName.replace('\\', '/').trim('/')
-        if (clean.split('/').any { it == ".." }) throw FsException("压缩包内含非法路径: $entryName")
+        if (clean.split('/').any { it == ".." }) throw FsException(tr("压缩包内含非法路径: $entryName", "Archive contains illegal path: $entryName"))
         return VPath.join(destDir, clean)
     }
 
@@ -83,7 +85,7 @@ object Archives {
                 zip.setUseLanguageEncodingFlag(true)
                 val buf = ByteArray(128 * 1024)
                 fun add(e: FileEntry, name: String) {
-                    if (isCancelled()) throw FsException("已取消")
+                    if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                     if (e.isDirectory) {
                         val de = ZipArchiveEntry("$name/")
                         if (e.lastModified > 0) de.time = e.lastModified
@@ -145,12 +147,12 @@ object Archives {
         Kind.TAR, Kind.TAR_GZ, Kind.TAR_XZ, Kind.TAR_BZ2 ->
             compressTar(kind, srcFs, sources, dstFs, dstPath, isCancelled, onProgress)
         Kind.SEVEN_Z -> compress7z(srcFs, sources, dstFs, dstPath, tmpDir, password, isCancelled, onProgress)
-        else -> throw FsException("不支持创建该格式")
+        else -> throw FsException(tr("不支持创建该格式", "Creating this format is not supported"))
     }
 
     private fun walk(srcFs: VirtualFs, sources: List<FileEntry>, isCancelled: () -> Boolean, visit: (FileEntry, String) -> Unit) {
         fun add(e: FileEntry, name: String) {
-            if (isCancelled()) throw FsException("已取消")
+            if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
             visit(e, name)
             if (e.isDirectory) for (c in srcFs.list(e.path)) if (!(c.isLink && c.isDirectory)) add(c, "$name/${c.name}")
         }
@@ -182,12 +184,12 @@ object Archives {
                         var left = e.size
                         srcFs.openRead(e.path).use { input ->
                             while (left > 0) {
-                                if (isCancelled()) throw FsException("已取消")
+                                if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                                 val n = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt()); if (n < 0) break
                                 tar.write(buf, 0, n); left -= n
                             }
                         }
-                        if (left != 0L) throw FsException("文件在压缩时被修改: ${e.path}")
+                        if (left != 0L) throw FsException(tr("文件在压缩时被修改: ${e.path}", "File changed while compressing: ${e.path}"))
                         count++; onProgress(Progress(name, count))
                     }
                     tar.closeArchiveEntry()
@@ -221,7 +223,7 @@ object Archives {
                     if (!e.isDirectory) {
                         srcFs.openRead(e.path).use { input ->
                             while (true) {
-                                if (isCancelled()) throw FsException("已取消")
+                                if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                                 val n = input.read(buf); if (n < 0) break
                                 z.write(buf, 0, n)
                             }
@@ -241,12 +243,12 @@ object Archives {
         localFile: File? = null, tmpDir: File? = null, password: String? = null,
         isCancelled: () -> Boolean = { false }, onProgress: (Progress) -> Unit = {},
     ): Int {
-        val kind = kindOf(archivePath) ?: throw FsException("不支持的压缩格式")
+        val kind = kindOf(archivePath) ?: throw FsException(tr("不支持的压缩格式", "Unsupported archive format"))
         dstFs.mkdirs(destDir)
         var count = 0
         val buf = ByteArray(128 * 1024)
         fun write(name: String, input: InputStream, isDir: Boolean, mtime: Long) {
-            if (isCancelled()) throw FsException("已取消")
+            if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
             val target = safeChild(destDir, name)
             if (isDir) { dstFs.mkdirs(target); return }
             dstFs.mkdirs(VPath.parent(target))
@@ -259,7 +261,7 @@ object Archives {
         fun drain(ais: ArchiveInputStream<*>) {
             while (true) {
                 val e = ais.nextEntry ?: break
-                if (!ais.canReadEntryData(e)) throw FsException("不支持的条目（可能已加密）: ${e.name}")
+                if (!ais.canReadEntryData(e)) throw FsException(tr("不支持的条目（可能已加密）: ${e.name}", "Unsupported entry (maybe encrypted): ${e.name}"))
                 val name = if (e is ZipArchiveEntry && !e.generalPurposeBit.usesUTF8ForNames()) decodeName(e.rawName) else e.name
                 write(name, ais, e.isDirectory, e.lastModifiedDate?.time ?: 0)
             }
@@ -272,7 +274,7 @@ object Archives {
                     try {
                         val z = net.lingala.zip4j.ZipFile(file, password.toCharArray())
                         for (h in z.fileHeaders) {
-                            if (isCancelled()) throw FsException("已取消")
+                            if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                             val name = h.fileName.replace('\\', '/')
                             if (h.isDirectory) { write(name, EMPTY, true, 0); continue }
                             z.getInputStream(h).use { ins -> write(name, ins, false, h.lastModifiedTime) }
@@ -315,11 +317,11 @@ object Archives {
                     val isRar5 = sig.size >= 8 && sig[0] == 'R'.code.toByte() && sig[6] == 1.toByte()
                     if (isRar5) {
                         throw FsException(
-                            "检测到 RAR5。当前内置 junrar 仅稳定支持 RAR4；请用电脑 7-Zip 转成 zip/7z，或等后续版本内置 RAR5 引擎",
+                            tr("检测到 RAR5。当前内置 junrar 仅稳定支持 RAR4；请用电脑 7-Zip 转成 zip/7z，或等后续版本内置 RAR5 引擎", "RAR5 detected. The built-in junrar only supports RAR4; convert to zip/7z with 7-Zip on a PC"),
                         )
                     }
                     val arc = try { Archive(file, password) } catch (e: Exception) {
-                        throw FsException("无法打开 RAR: ${e.message}", e)
+                        throw FsException(tr("无法打开 RAR: ${e.message}", "Cannot open RAR: ${e.message}"), e)
                     }
                     arc.use {
                         for (h in arc.fileHeaders) {

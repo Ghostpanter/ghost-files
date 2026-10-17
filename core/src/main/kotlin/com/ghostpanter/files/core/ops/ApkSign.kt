@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core.ops
 
+import com.ghostpanter.files.core.tr
+
 import com.ghostpanter.files.core.FsException
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
@@ -61,7 +63,7 @@ object ApkSign {
     }
 
     fun signV1(inputApk: File, outputApk: File, ksFile: File, password: String = "android", alias: String = "ghost") {
-        if (!inputApk.isFile) throw FsException("APK 不存在")
+        if (!inputApk.isFile) throw FsException(tr("APK 不存在", "APK not found"))
         val ks = ensureDebugKeystore(ksFile, password, alias)
         val key = ks.getKey(alias, password.toCharArray()) as java.security.PrivateKey
         val cert = ks.getCertificate(alias) as X509Certificate
