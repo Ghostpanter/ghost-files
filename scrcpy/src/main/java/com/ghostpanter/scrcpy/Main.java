@@ -552,10 +552,18 @@ public final class Main extends Activity {
     }
 
     private void showDeviceActions(Devices.Device d) {
-        CharSequence[] items = new CharSequence[] {
-                getString(R.string.rediscover_port),
-                getString(R.string.forget_device),
-        };
+        final ScrcpyHost.DeviceActions host = ScrcpyHost.deviceActions();
+        CharSequence[] items = host == null
+                ? new CharSequence[] {
+                        getString(R.string.rediscover_port),
+                        getString(R.string.forget_device),
+                }
+                : new CharSequence[] {
+                        getString(R.string.rediscover_port),
+                        getString(R.string.forget_device),
+                        getString(R.string.device_open_tools),
+                        getString(R.string.device_browse_files),
+                };
         new AlertDialog.Builder(this)
                 .setTitle(R.string.device_actions_title)
                 .setItems(items, (dlg, which) -> {
@@ -563,6 +571,10 @@ public final class Main extends Activity {
                         rediscoverPortForDevice(d);
                     } else if (which == 1) {
                         confirmForget(d);
+                    } else if (which == 2 && host != null) {
+                        host.openTools(this, d.host, d.port, null);
+                    } else if (which == 3 && host != null) {
+                        host.browseFiles(this, d.host, d.port, null);
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null)

@@ -160,6 +160,7 @@ fun MainViewModel.buildMoreMenu(pane: PaneState): ActionMenu {
     add(t("扫描局域网", "Scan LAN"), Icons.Filled.Radar) { screen = Screen.LanScan }
     add(t("本机服务", "Hosted services"), Icons.Filled.CloudUpload) { screen = Screen.Servers }
     add(t("终端", "Terminal"), Icons.Filled.Code) { screen = Screen.Terminal }
+    add(t("设备 / 投屏", "Devices / mirror"), Icons.Filled.Cast) { screen = Screen.Devices }
     add(t("应用管理（备份 APK）", "App manager"), Icons.Filled.Apps) { screen = Screen.Apps }
     add(t("传输队列", "Transfers"), Icons.Filled.SwapVert) { screen = Screen.Transfers }
     add(t("目录属性", "Folder properties"), Icons.Filled.Info) {

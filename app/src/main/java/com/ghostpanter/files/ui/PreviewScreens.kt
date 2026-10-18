@@ -206,67 +206,6 @@ private fun FontPreview(file: File) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TerminalScreen(vm: MainViewModel) {
-    val scope = rememberCoroutineScope()
-    var cwd by remember { mutableStateOf(vm.pane(vm.activePane).tab.path) }
-    var input by remember { mutableStateOf("") }
-    var log by remember { mutableStateOf(t("简易终端：每行一条 sh 命令，非完整 PTY。Root/Shizuku 可用时走特权壳。\n", "Simple shell: one sh command per line (not a full PTY).\n")) }
-    fun runCmd(cmd: String) {
-        if (cmd.isBlank()) return
-        log += "\n$ $cmd\n"
-        scope.launch {
-            val out = withContext(Dispatchers.IO) {
-                runCatching {
-                    val shell = runCatching { vm.fsm.root }.getOrNull()
-                    if (shell != null) {
-                        val r = shell.exec("cd -- ${com.ghostpanter.files.core.VPath.shellQuote(cwd)} || exit 1\n$cmd\npwd")
-                        val lines = r.stdout.lines()
-                        if (lines.isNotEmpty() && lines.last().startsWith("/")) {
-                            cwd = lines.last().trim()
-                            (lines.dropLast(1).joinToString("\n") + "\n" + r.stderr).trim()
-                        } else (r.stdout + r.stderr).trim() + "\n[exit ${r.code}]"
-                    } else {
-                        val p = ProcessBuilder("sh", "-c", "cd ${com.ghostpanter.files.core.VPath.shellQuote(cwd)} && $cmd && pwd")
-                            .redirectErrorStream(true).start()
-                        val text = p.inputStream.bufferedReader().readText()
-                        p.waitFor()
-                        val lines = text.lines()
-                        if (lines.isNotEmpty() && lines.last().startsWith("/")) {
-                            cwd = lines.last().trim()
-                            lines.dropLast(1).joinToString("\n")
-                        } else text
-                    }
-                }.getOrElse { it.message ?: it.javaClass.simpleName }
-            }
-            log += out + "\n"
-        }
-    }
-    Scaffold(topBar = {
-        TopAppBar(
-            title = { Text(t("终端", "Terminal") + " · $cwd") },
-            navigationIcon = { IconButton(onClick = { vm.screen = Screen.Main }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
-        )
-    }) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize()) {
-            SelectionContainer(Modifier.weight(1f).fillMaxWidth()) {
-                Text(log, fontFamily = FontFamily.Monospace, fontSize = 12.sp,
-                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(8.dp).background(Color(0xFF111111)))
-            }
-            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(input, { input = it }, singleLine = true, modifier = Modifier.weight(1f),
-                    label = { Text(t("命令", "Command")) },
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { runCmd(input); input = "" }),
-                )
-                Spacer(Modifier.width(8.dp))
-                Button(onClick = { runCmd(input); input = "" }) { Text(t("运行", "Run")) }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 fun MusicTagScreen(vm: MainViewModel, s: Screen.MusicTag) {
     val scope = rememberCoroutineScope()
     var tags by remember { mutableStateOf(MusicTags.Tags()) }

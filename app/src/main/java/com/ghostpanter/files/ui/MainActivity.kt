@@ -64,6 +64,7 @@ class MainActivity : ComponentActivity() {
             intent?.action == "com.ghostpanter.files.action.SHOW_TRANSFERS" -> vm.screen = Screen.Transfers
             intent?.action == "com.ghostpanter.files.action.SCAN_LAN" -> vm.screen = Screen.LanScan
         }
+        intent?.let { handleAdbIntent(it) }
         if (com.ghostpanter.files.BuildConfig.DEBUG) intent?.getStringExtra("debug_fs")?.let { fs ->
             vm.openFs(fs, intent.getStringExtra("debug_path") ?: "/")
         }
@@ -98,6 +99,13 @@ class MainActivity : ComponentActivity() {
             intent.getBooleanExtra(EXTRA_SHOW_SERVERS, false) -> vm.screen = Screen.Servers
             intent.getBooleanExtra(EXTRA_SHOW_TRANSFERS, false) -> vm.screen = Screen.Transfers
         }
+        handleAdbIntent(intent)
+    }
+
+    /** From the embedded scrcpy panel: open the ADB tools page or browse the device in the active pane. */
+    private fun handleAdbIntent(i: Intent) {
+        i.getStringExtra(EXTRA_ADB_TOOLS)?.let { vm.screen = Screen.AdbTools(it); i.removeExtra(EXTRA_ADB_TOOLS) }
+        i.getStringExtra(EXTRA_ADB_BROWSE)?.let { vm.openFs(com.ghostpanter.adb.AdbFs.idFor(it, false)); i.removeExtra(EXTRA_ADB_BROWSE) }
     }
 
     override fun onResume() {
@@ -194,6 +202,8 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_SHOW_SERVERS = "show_servers"
+        const val EXTRA_ADB_TOOLS = "adb_tools"
+        const val EXTRA_ADB_BROWSE = "adb_browse"
         const val EXTRA_SHOW_TRANSFERS = "show_transfers"
     }
 }

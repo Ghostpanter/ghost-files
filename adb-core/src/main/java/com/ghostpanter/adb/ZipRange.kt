@@ -72,10 +72,16 @@ class ZipRange(private val size: Long, private val read: (offset: Long, len: Int
     fun bytes(name: String, maxBytes: Long = 32L shl 20): ByteArray? {
         val e = entries[name] ?: return null
         if (e.usize > maxBytes || e.csize > maxBytes) return null
-        val lh = read(e.localOffset, 30)
-        if (u32(lh, 0) != 0x04034b50L) throw IOException("bad local header: $name")
-        val dataOff = e.localOffset + 30 + u16(lh, 26) + u16(lh, 28)
-        val raw = if (e.csize == 0L) ByteArray(0) else read(dataOff, e.csize.toInt())
+        // One round trip: local header + name + a generous extra-field guess + data.
+        val guess = 30 + name.toByteArray(Charsets.UTF_8).size + 64
+        val first = read(e.localOffset, (guess + e.csize).toInt().coerceAtMost((size - e.localOffset).toInt()))
+        if (first.size < 30 || u32(first, 0) != 0x04034b50L) throw IOException("bad local header: $name")
+        val hdr = 30 + u16(first, 26) + u16(first, 28)
+        val raw = when {
+            e.csize == 0L -> ByteArray(0)
+            hdr + e.csize <= first.size -> first.copyOfRange(hdr, hdr + e.csize.toInt())
+            else -> read(e.localOffset + hdr, e.csize.toInt())
+        }
         if (raw.size.toLong() != e.csize) throw IOException("short read: $name")
         return when (e.method) {
             0 -> raw

@@ -176,6 +176,8 @@ private fun ScreenHost(vm: MainViewModel, activity: MainActivity, tablet: Window
         is Screen.Preview -> PreviewScreen(vm, s)
         Screen.Terminal -> TerminalScreen(vm)
         is Screen.MusicTag -> MusicTagScreen(vm, s)
+        Screen.Devices -> com.ghostpanter.files.ui.adb.DevicesScreen(vm)
+        is Screen.AdbTools -> com.ghostpanter.files.ui.adb.AdbToolsScreen(vm, s)
     }
 }
 

@@ -71,6 +71,9 @@ sealed interface Screen {
     data class Preview(val fsId: String, val path: String, val kind: String) : Screen
     data object Terminal : Screen
     data class MusicTag(val fsId: String, val path: String) : Screen
+    /** Paired ADB targets: mirror, browse, tools. */
+    data object Devices : Screen
+    data class AdbTools(val serial: String, val tab: Int = 0) : Screen
 }
 
 sealed interface UiEvent {
@@ -92,6 +95,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     var pathJump by mutableStateOf<PaneState?>(null)
     var clip by mutableStateOf<Clip?>(null)
     var screen by mutableStateOf<Screen>(Screen.Main)
+    /** Apps / Terminal pages: null = this device, else an ADB serial. */
+    var appsTarget by mutableStateOf<String?>(null)
+    var termTarget by mutableStateOf<String?>(null)
+    /** A device shell the Terminal page should open on arrival. */
+    var pendingTerminal: String? = null
     /** True while the tablet frame is shown (set by MainScreen). */
     var tabletUi = false
     var pendingTransfer by mutableStateOf<PendingTransfer?>(null)

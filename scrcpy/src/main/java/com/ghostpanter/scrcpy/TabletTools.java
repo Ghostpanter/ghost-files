@@ -35,6 +35,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.nio.charset.StandardCharsets;
+import java.io.Closeable;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -111,6 +112,9 @@ public final class TabletTools {
     private final StringBuilder terminalLog = new StringBuilder();
     private static final int TERMINAL_MAX_CHARS = 200_000;
     private final AtomicReference<AdbRemote.ShellSession> shellSession = new AtomicReference<>();
+    // New macOS-Terminal-style panel (inline prompt, tabs, history, favorites) from :terminal.
+    private com.ghostpanter.terminal.TerminalPanel embeddedTerminal;
+    private final com.ghostpanter.terminal.TermSessions embeddedSessions = new com.ghostpanter.terminal.TermSessions();
     private final Object shellStartLock = new Object();
     private final AtomicInteger shellGen = new AtomicInteger();
     private boolean terminalCtrlSticky;
@@ -980,8 +984,47 @@ public final class TabletTools {
         }
     }
 
+    private com.ghostpanter.terminal.TermBackend embeddedBackend() {
+        final Adb a = adb;
+        final AdbRemote r = remote;
+        return new com.ghostpanter.terminal.StreamShellBackend(
+                "adb", "shell", "device", true,
+                () -> {
+                    try {
+                        if (a == null) throw new IOException(activity.getString(R.string.files_need_connection));
+                        io.github.muntashirakon.adb.AdbStream st = a.openInteractiveShell();
+                        return new kotlin.Triple<InputStream, OutputStream, Closeable>(
+                                st.openInputStream(), st.openOutputStream(), st);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e.getMessage(), e);
+                    }
+                },
+                cmd -> {
+                    try { return r == null ? "" : r.shell(cmd); } catch (Exception e) { return ""; }
+                },
+                null);
+    }
+
+    private void mountEmbeddedTerminal() {
+        if (embeddedTerminal != null || !(panelTerminal instanceof ViewGroup) || adb == null) return;
+        ViewGroup host = (ViewGroup) panelTerminal;
+        host.removeAllViews();
+        boolean night = (activity.getResources().getConfiguration().uiMode
+                & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        com.ghostpanter.terminal.TermTheme theme = com.ghostpanter.terminal.TermTheme.Companion.of(night, false);
+        embeddedTerminal = new com.ghostpanter.terminal.TerminalPanel(activity, embeddedSessions,
+                () -> java.util.Collections.singletonList(
+                        new kotlin.Pair<String, kotlin.jvm.functions.Function0<com.ghostpanter.terminal.TermBackend>>(
+                                "ADB shell", this::embeddedBackend)),
+                theme);
+        host.addView(embeddedTerminal, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
     private void startShellSession() {
         if (destroyed.get()) return;
+        if (adb != null) mountEmbeddedTerminal();
+        if (embeddedTerminal != null) return;
         AdbRemote r = remote;
         if (r == null) {
             setTerminalPhase(PHASE_IDLE, activity.getString(R.string.files_need_connection));

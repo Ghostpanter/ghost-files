@@ -24,6 +24,16 @@ class GhostApp : Application() {
         com.ghostpanter.scrcpy.ScrcpyHost.install(this)
         com.ghostpanter.adb.AdbPool.init(this)
         com.ghostpanter.scrcpy.ScrcpyHost.setLocaleHook { base -> com.ghostpanter.files.ui.LocaleCtx.wrap(base) }
+        com.ghostpanter.scrcpy.ScrcpyHost.setDeviceActions(object : com.ghostpanter.scrcpy.ScrcpyHost.DeviceActions {
+            private fun open(ctx: android.content.Context, extra: String, host: String, port: Int) {
+                val serial = com.ghostpanter.adb.AdbPool.serialOf(com.ghostpanter.scrcpy.Devices.Device(host, port))
+                ctx.startActivity(android.content.Intent(ctx, com.ghostpanter.files.ui.MainActivity::class.java)
+                    .putExtra(extra, serial)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP))
+            }
+            override fun openTools(ctx: android.content.Context, host: String, port: Int, name: String?) = open(ctx, com.ghostpanter.files.ui.MainActivity.EXTRA_ADB_TOOLS, host, port)
+            override fun browseFiles(ctx: android.content.Context, host: String, port: Int, name: String?) = open(ctx, com.ghostpanter.files.ui.MainActivity.EXTRA_ADB_BROWSE, host, port)
+        })
     }
 
     private fun installSecurityProviders() {

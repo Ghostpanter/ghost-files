@@ -400,7 +400,7 @@ private data class BatchBackupProgress(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun AppsScreen(vm: MainViewModel) {
+fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
     val ctx = LocalContext.current
     val pm = ctx.packageManager
     val scope = rememberCoroutineScope()
@@ -548,6 +548,7 @@ fun AppsScreen(vm: MainViewModel) {
         },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
+            header()
             OutlinedTextField(
                 query, { query = it }, singleLine = true,
                 placeholder = { Text(t("搜索名称或包名", "Search")) },

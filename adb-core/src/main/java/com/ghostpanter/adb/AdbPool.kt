@@ -62,8 +62,13 @@ object AdbPool {
 
     // ---- friendly names (model) cache ----
     private fun prefs() = appCtx?.getSharedPreferences("adb_devices", Context.MODE_PRIVATE)
-    fun name(serial: String): String? = prefs()?.getString("name:$serial", null)
-    fun setName(serial: String, name: String) { prefs()?.edit()?.putString("name:$serial", name)?.apply() }
+    private val names = ConcurrentHashMap<String, String>()
+    fun name(serial: String): String? = names[serial] ?: prefs()?.getString("name:$serial", null)?.also { names[serial] = it }
+    fun setName(serial: String, name: String) {
+        if (names[serial] == name) return
+        names[serial] = name
+        prefs()?.edit()?.putString("name:$serial", name)?.apply()
+    }
     fun rootEnabled(serial: String): Boolean = prefs()?.getBoolean("root:$serial", false) ?: false
     fun setRootEnabled(serial: String, on: Boolean) { prefs()?.edit()?.putBoolean("root:$serial", on)?.apply() }
 }

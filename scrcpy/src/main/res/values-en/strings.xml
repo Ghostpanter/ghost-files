@@ -332,4 +332,6 @@
     <string name="zyt_exit">Exit</string>
     <string name="stay_awake">Keep the target awake while controlling (svc power stayon, restored on disconnect)</string>
     <string name="screen_off_mirror">Turn the target screen off while mirroring</string>
+    <string name="device_open_tools">ADB tools (apps / processes / logcat / activation)</string>
+    <string name="device_browse_files">Browse in file manager</string>
 </resources>

@@ -182,6 +182,17 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         Item(Icons.Filled.CloudUpload, t("本机服务（FTP / WebDAV / SFTP / SMB）", "Hosted services (FTP / WebDAV / SFTP / SMB)")) { vm.screen = Screen.Servers; close() }
         Item(Icons.Filled.Add, t("手动添加服务器（SMB/FTP/SFTP/WebDAV）", "Add server")) { editServer(null); close() }
 
+        Section(t("ADB 设备", "ADB devices"))
+        com.ghostpanter.files.ui.adb.rememberSavedDevices().forEach { serial ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) {
+                    Item(Icons.Filled.PhoneAndroid, com.ghostpanter.files.ui.adb.adbLabel(serial)) { go(com.ghostpanter.adb.AdbFs.idFor(serial, false)) }
+                }
+                IconButton(onClick = { vm.screen = Screen.AdbTools(serial); close() }) { Icon(Icons.Filled.Build, t("工具", "Tools")) }
+            }
+        }
+        Item(Icons.Filled.Cast, t("设备 / 投屏（配对、投屏、工具）", "Devices / mirror (pair, mirror, tools)")) { vm.screen = Screen.Devices; close() }
+
         Section(t("工具", "Tools"))
         Item(Icons.Filled.DeleteSweep, t("回收站", "Recycle bin")) { vm.screen = Screen.Trash; close() }
         Item(Icons.Filled.Apps, t("应用管理", "App manager")) { vm.screen = Screen.Apps; close() }
