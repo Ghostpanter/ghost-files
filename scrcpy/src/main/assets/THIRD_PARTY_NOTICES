@@ -1,0 +1,53 @@
+scrcpy-android third-party notices
+==================================
+
+This application includes the following open-source components. Complete
+corresponding source is available from the listed versioned source URLs.
+
+libadb-android 3.1.1
+--------------------
+Copyright 2021 Muntashir Al-Islam and contributors.
+Licensed under GPL-3.0-or-later OR Apache-2.0; this application uses the
+Apache-2.0 option. Portions retain BSD-3-Clause and MIT notices.
+Source: https://github.com/MuntashirAkon/libadb-android/tree/3.1.1
+
+SPAKE2-Java / spake2-android 2.2.1
+----------------------------------
+Copyright 2021 Muntashir Al-Islam and contributors.
+Licensed under LGPL-3.0-only. The Android artifact contains spake2-c and
+components under LGPL-3.0-or-later, LGPL-2.1-or-later, Apache-2.0, ISC, MIT,
+and public-domain terms.
+Source: https://github.com/MuntashirAkon/spake2-java/tree/2.2.1
+Native source: https://github.com/MuntashirAkon/spake2-c/tree/0d15933e5ba3e662cb01245a7ac0dc9fca3eac31
+License: https://www.gnu.org/licenses/lgpl-3.0.txt
+
+The application source and build scripts needed to replace this library with
+a modified compatible version and rebuild the application are available at:
+https://gitlab.com/0xlena/scrcpy-android
+
+Reverse engineering for debugging modifications to LGPL-covered components
+is permitted.
+
+Bouncy Castle Provider 1.84
+---------------------------
+Copyright 2000-2023 The Legion of the Bouncy Castle Inc.
+Licensed under the MIT license.
+Source: https://github.com/bcgit/bc-java/tree/r1rv84
+
+Conscrypt Android 2.6.1
+-----------------------
+Copyright 2016 The Android Open Source Project.
+Licensed under Apache-2.0. Contains modified portions of Netty and Apache
+Harmony under Apache-2.0.
+Source: https://github.com/google/conscrypt/tree/2.6.1
+Notice: https://github.com/google/conscrypt/blob/2.6.1/NOTICE
+
+scrcpy server 4.1
+-----------------
+Copyright 2018 Genymobile and 2018-2026 Romain Vimont.
+Licensed under Apache-2.0.
+Source: https://github.com/Genymobile/scrcpy/tree/v4.1
+
+The Apache-2.0 terms used by this application and several components are in
+the top-level LICENSE file in the source distribution:
+https://gitlab.com/0xlena/scrcpy-android/-/blob/master/LICENSE

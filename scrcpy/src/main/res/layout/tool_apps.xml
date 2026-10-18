@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <TextView
+        style="@style/SectionHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/tools_apps"/>
+
+    <EditText android:id="@+id/apps_search"
+        style="@style/Field"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/apps_search_hint"
+        android:inputType="text"
+        android:imeOptions="actionSearch"
+        android:singleLine="true"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="@dimen/space_sm">
+
+        <CheckBox android:id="@+id/apps_user"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="@string/apps_user"
+            android:textColor="@color/on_surface"/>
+
+        <CheckBox android:id="@+id/apps_system"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_md"
+            android:text="@string/apps_system"
+            android:textColor="@color/on_surface"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="@dimen/space_sm">
+
+        <Button android:id="@+id/apps_install"
+            android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="@dimen/space_xs"
+            android:background="@drawable/btn_install"
+            android:textColor="@color/on_push"
+            android:textAllCaps="false"
+            android:minHeight="@dimen/touch_min"
+            android:text="@string/apps_install_apk"/>
+
+        <Button android:id="@+id/apps_refresh" style="@style/Button.Secondary"
+            android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_xs"
+            android:text="@string/apps_refresh"/>
+    </LinearLayout>
+
+    <TextView android:id="@+id/apps_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="@dimen/space_xs"
+        android:textColor="@color/on_surface_muted"
+        android:textSize="12sp"/>
+
+    <ListView android:id="@+id/apps_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="@dimen/space_sm"
+        android:divider="@color/stroke"
+        android:dividerHeight="1dp"/>
+</LinearLayout>

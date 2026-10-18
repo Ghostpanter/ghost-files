@@ -73,3 +73,13 @@
 # libVLC: JNI calls back into these classes by name
 -keep class org.videolan.libvlc.** { *; }
 -dontwarn org.videolan.**
+
+# Embedded scrcpy-android / libadb (0.7.0)
+# Conscrypt's pre-KitKat adapter references Harmony classes absent at runtime.
+-dontwarn org.apache.harmony.xnet.provider.jsse.SSLParametersImpl
+-dontwarn com.android.org.conscrypt.SSLParametersImpl
+# SPAKE2 pairing bridge is native and resolves methods by JNI name.
+-keep class io.github.muntashirakon.crypto.spake2.** { *; }
+-dontwarn io.github.muntashirakon.crypto.spake2.**
+# Shizuku UserService is instantiated reflectively by class name.
+-keep class com.ghostpanter.scrcpy.ShellUserService { *; }

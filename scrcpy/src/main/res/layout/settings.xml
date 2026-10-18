@@ -1,0 +1,557 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Title lives in the layout, not in an action bar: the window is
+     edge-to-edge, so Ui.padForSystemBars() on this root is what keeps the
+     content clear of the system bars. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/space_lg">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/settings"
+            android:textColor="@color/on_surface"
+            android:textSize="22sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/version"
+            style="@style/Caption"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/space_lg"/>
+
+        <TextView
+            style="@style/Note"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="@dimen/space_lg"
+            android:text="@string/settings_apply_on_reconnect"/>
+
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/streaming_presets"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="@dimen/space_sm"
+                android:text="@string/streaming_presets_caption"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/preset_smooth"
+                    style="@style/Button.Primary"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="@dimen/space_sm"
+                    android:text="@string/preset_smooth"/>
+
+                <Button
+                    android:id="@+id/preset_quality"
+                    style="@style/Button.Secondary"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/space_sm"
+                    android:text="@string/preset_quality"/>
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/video_codec"/>
+
+            <RadioGroup
+                android:id="@+id/video_codec"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/video_h264"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/video_h264"/>
+
+                <RadioButton
+                    android:id="@+id/video_h265"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/video_h265"/>
+
+                <RadioButton
+                    android:id="@+id/video_av1"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/video_av1"/>
+
+            </RadioGroup>
+
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/audio_codec"/>
+
+            <RadioGroup
+                android:id="@+id/audio_codec"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/audio_raw"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/audio_raw"/>
+
+                <RadioButton
+                    android:id="@+id/audio_opus"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/audio_opus"/>
+
+            </RadioGroup>
+
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/max_size"/>
+
+            <RadioGroup
+                android:id="@+id/max_size"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/max_size_0"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/max_size_original"/>
+
+                <RadioButton
+                    android:id="@+id/max_size_480"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/max_size_480"/>
+
+                <RadioButton
+                    android:id="@+id/max_size_720"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/max_size_720"/>
+
+                <RadioButton
+                    android:id="@+id/max_size_1080"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/max_size_1080"/>
+
+                <RadioButton
+                    android:id="@+id/max_size_1440"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/max_size_1440"/>
+
+                <RadioButton
+                    android:id="@+id/max_size_2160"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/max_size_2160"/>
+
+            </RadioGroup>
+
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/video_bit_rate"/>
+
+            <RadioGroup
+                android:id="@+id/video_bit_rate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/bit_rate_1m"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/bit_rate_1m"/>
+
+                <RadioButton
+                    android:id="@+id/bit_rate_2m"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/bit_rate_2m"/>
+
+                <RadioButton
+                    android:id="@+id/bit_rate_4m"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/bit_rate_4m"/>
+
+                <RadioButton
+                    android:id="@+id/bit_rate_6m"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/bit_rate_6m"/>
+
+                <RadioButton
+                    android:id="@+id/bit_rate_8m"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/bit_rate_8m"/>
+
+                <RadioButton
+                    android:id="@+id/bit_rate_16m"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/bit_rate_16m"/>
+
+            </RadioGroup>
+
+        </LinearLayout>
+
+
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/latency"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/max_fps"/>
+
+            <RadioGroup
+                android:id="@+id/max_fps"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/max_fps_0"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/max_fps_uncapped"/>
+
+                <RadioButton
+                    android:id="@+id/max_fps_15"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/max_fps_15"/>
+
+                <RadioButton
+                    android:id="@+id/max_fps_30"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/max_fps_30"/>
+
+                <RadioButton
+                    android:id="@+id/max_fps_60"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/max_fps_60"/>
+
+                <RadioButton
+                    android:id="@+id/max_fps_120"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/max_fps_120"/>
+
+            </RadioGroup>
+
+            <CheckBox
+                android:id="@+id/low_latency"
+                style="@style/RadioOption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/low_latency"/>
+
+        </LinearLayout>
+
+
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="0dp">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/display"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="@dimen/space_sm"
+                android:text="@string/ui_mode"/>
+
+            <RadioGroup
+                android:id="@+id/ui_mode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/ui_mode_auto"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ui_mode_auto"/>
+
+                <RadioButton
+                    android:id="@+id/ui_mode_phone"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ui_mode_phone"/>
+
+                <RadioButton
+                    android:id="@+id/ui_mode_tablet"
+                    style="@style/RadioOption"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ui_mode_tablet"/>
+
+            </RadioGroup>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="@dimen/space_sm"
+                android:text="@string/ui_mode_help"/>
+
+            <CheckBox
+                android:id="@+id/tools_on_left"
+                style="@style/RadioOption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/split_tools_left"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="@dimen/space_sm"
+                android:text="@string/split_swap_help"/>
+
+            <CheckBox
+                android:id="@+id/clipboard_sync"
+                style="@style/RadioOption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/clipboard_sync"/>
+
+        </LinearLayout>
+
+
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/secure_content_title"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="@dimen/space_sm"
+                android:text="@string/secure_content_nonroot"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/secure_content_root"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="@dimen/space_sm"
+                android:text="@string/secure_content_shizuku"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="@dimen/space_sm"
+                android:text="@string/secure_content_magisk"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="@dimen/space_sm"
+                android:text="@string/secure_content_lsposed"/>
+
+            <CheckBox
+                android:id="@+id/root_capture_secure"
+                style="@style/RadioOption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:text="@string/root_capture_secure"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/root_capture_secure_help"/>
+
+            <CheckBox
+                android:id="@+id/prefer_shizuku"
+                style="@style/RadioOption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:text="@string/prefer_shizuku"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/prefer_shizuku_help"/>
+
+            <TextView
+                android:id="@+id/shizuku_status"
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="@dimen/space_sm"
+                android:text="@string/shizuku_status"/>
+
+            <Button
+                android:id="@+id/shizuku_request"
+                style="@style/Button.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:text="@string/shizuku_request"/>
+
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/view_logs"
+            style="@style/Button.Secondary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_lg"
+            android:text="@string/view_logs"/>
+
+        <Button
+            android:id="@+id/donate"
+            style="@style/Button.Secondary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_lg"
+            android:text="@string/donate"/>
+
+        <!-- Required, not decorative: the bundled SPAKE2 library is
+             LGPL-3.0 and the combined work has to give the user prominent
+             notice of that and of where to get the source. -->
+        <Button
+            android:id="@+id/licenses"
+            style="@style/Button.Secondary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md"
+            android:text="@string/licenses"/>
+
+    </LinearLayout>
+
+</ScrollView>

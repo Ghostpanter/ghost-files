@@ -1,0 +1,333 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="scrcpy_title">Devices / Mirror</string>
+    <string name="address_hint">192.168.1.42:41234</string>
+    <string name="pair_port_hint">pairing port (if IP only)</string>
+    <string name="pair_code_hint">6 digits</string>
+    <string name="pair_help">Pair first, then connect: on the target open “Pair device with pairing code”, copy IP:pairing-port and the 6-digit code. Connect port may be left empty and auto-discovered after pairing.</string>
+    <string name="label_address">Device address</string>
+    <string name="sub_address">The “IP address &amp; Port” on the Wireless debugging screen</string>
+    <string name="label_pairing">Pairing port and code</string>
+    <string name="sub_pairing">From the “Pair device with pairing code” dialog. Same IP, different port</string>
+    <string name="bad_address">Enter the device address as 192.168.1.42:41234</string>
+    <string name="bad_pair_port">Pairing port must be a number from 1 to 65535</string>
+    <string name="bad_pair_code">Enter the 6-digit pairing code</string>
+    <string name="device_not_paired">This target is not paired. Pair it again from the device list.</string>
+    <string name="device_list_unreadable">The paired-device list could not be read; it was left unchanged.</string>
+    <string name="network_trust">Use only on a network you trust, or over a VPN. ADB cannot verify the target\'s identity, so anything answering this address could receive what you type.</string>
+    <string name="pair_and_save">Pair and save</string>
+    <string name="pair_a_device">Pair a device</string>
+    <string name="saved_devices">Saved devices</string>
+    <string name="notif_session_active">Mirroring active</string>
+    <string name="settings">Settings</string>
+    <string name="version_format">Version %1$s (%2$d)</string>
+    <string name="compat_requirements">Controller: Android 9–17. Controlled device: Wireless debugging pairing usually needs Android 11+; wired/already-paired follows scrcpy-server capabilities.</string>
+    <string name="licenses">Open-source licenses</string>
+    <string name="licenses_unavailable">Notices unavailable.</string>
+    <string name="video_codec">Video codec</string>
+    <string name="audio_codec">Audio codec</string>
+    <string name="video_h264">H.264 (default)</string>
+    <string name="video_h265">H.265</string>
+    <string name="video_av1" tools:ignore="Typos">AV1 (target Android 14+)</string>
+    <string name="audio_raw">Raw PCM (1.5 Mbps)</string>
+    <string name="audio_opus">Opus (~128 kbps, default)</string>
+    <string name="forget_device">Forget device?</string>
+    <string name="max_size">Max size (long edge, px)</string>
+    <string name="max_size_original">Original</string>
+    <string name="max_size_480">480</string>
+    <string name="max_size_720">720 (default)</string>
+    <string name="max_size_1080">1080</string>
+    <string name="max_size_1440">1440</string>
+    <string name="max_size_2160">2160</string>
+    <string name="video_bit_rate">Video bit rate</string>
+    <string name="bit_rate_1m">1 Mbps</string>
+    <string name="bit_rate_2m">2 Mbps</string>
+    <string name="bit_rate_4m">4 Mbps</string>
+    <string name="bit_rate_6m">6 Mbps (default)</string>
+    <string name="bit_rate_8m">8 Mbps</string>
+    <string name="bit_rate_16m">16 Mbps</string>
+    <string name="reconnect">Reconnect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="elevate_root_ok">Server started with root/system identity; will try AID_SYSTEM for a secure virtual display. If DisplayManager still rejects it (common on HyperOS), you will see an LSPosed tip. Normal mirroring is unaffected.</string>
+    <string name="elevate_su_denied">Elevate failed: Magisk denied or timed out. Secure apps stay black. Allow shell/ADB on the target, then Reconnect.</string>
+    <string name="elevate_su_unavailable">No working su (no Root/Magisk). Secure apps stay black; use Unlock for blind PIN, or install Magisk and enable Root elevate.</string>
+    <string name="elevate_fallback">Elevate failed (still black): could not start server as uid 0; fell back to shell. Open Settings → Logs for the full probe/start transcript; confirm Magisk allowed Shell, then reconnect.</string>
+    <string name="elevate_secure_oem_rejected">Root/system identity is available and normal mirroring works, but this HyperOS/Android 16 DisplayManager rejected the secure virtual display (packageName must match the owner uid / SECURE_VD_OEM_REJECT). Magisk elevate alone cannot unlock FLAG_SECURE black screens. Preferred: Magisk enable Zygisk → install ih8SecureLock-scrcpy v10.2 (https://github.com/Ghostpanter/ih8SecureLock-scrcpy/releases/download/v10.2-scrcpy/ih8SecureLock-scrcpy-v10.2-scrcpy.zip) → reboot → do not DenyList target apps → optional disable LSPosed Enable Screenshot → then scrcpy. Secondary: LSPosed + Enable Screenshot (System Framework only, not SystemUI; avoid v5.0.1, prefer v4.2.0). Not bundled. Blind PIN unlock remains available.</string>
+    
+    <string name="log_viewer_title">Logs</string>
+    <string name="log_viewer_caption">Full elevate / ADB / su / server output (toasts truncate). Filter by level, copy or share.</string>
+    <string name="log_level">Log level</string>
+    <string name="log_level_verbose">Verbose</string>
+    <string name="log_level_debug">Debug</string>
+    <string name="log_level_info">Info</string>
+    <string name="log_level_warn">Warn</string>
+    <string name="log_level_error">Error</string>
+    <string name="log_refresh">Refresh</string>
+    <string name="log_copy">Copy</string>
+    <string name="log_share">Share</string>
+    <string name="log_clear">Clear</string>
+    <string name="log_copied">Copied to clipboard</string>
+    <string name="log_copy_failed">Copy failed</string>
+    <string name="log_cleared">Logs cleared</string>
+    <string name="log_empty">(no log lines yet)</string>
+    <string name="log_count_format">%1$d buffered · showing ≥ %2$s</string>
+    <string name="view_logs">View logs</string>
+    <string name="elevate_fallback_view_logs">View full error</string>
+    <string name="elevate_open_logs_hint">See Settings → Logs for details</string>
+
+<string name="elevate_waiting">Waiting for Magisk grant…</string>
+    <string name="connecting">connecting…</string>
+    <string name="disconnected">disconnected</string>
+    <string name="session_error">Session error: %1$s</string>
+    <string name="session_stop_timeout">The old session did not stop. Reconnect was cancelled.</string>
+    <string name="hint_back">Back goes to the target. Press Back twice to leave.</string>
+    <string name="pairing">Pairing…</string>
+    <string name="settings_apply_on_reconnect">Changes apply on the next connection.</string>
+    <string name="display">Display</string>
+
+    <string name="ui_mode">UI mode</string>
+    <string name="ui_mode_auto">Auto (default)</string>
+    <string name="ui_mode_phone">Force phone</string>
+    <string name="ui_mode_tablet">Force tablet</string>
+    <string name="ui_mode_help">Auto uses smallest width ≥600dp or LARGE/XLARGE. Force shows/hides the mirror tools pane and affects the native-resolution default when max size is unset.</string>
+    <string name="ui_mode_apply_hint">UI mode saved; reopen Mirror to apply.</string>
+    <string name="ui_mode_cycle">Switch UI mode</string>
+    <string name="ui_mode_now_auto">Switched: Auto</string>
+    <string name="ui_mode_now_phone">Switched: Force phone</string>
+    <string name="ui_mode_now_tablet">Switched: Force tablet</string>
+
+    <string name="split_swap">Swap left/right</string>
+    <string name="split_swap_help">Drag the divider to switch Preview|Tools and Tools|Preview. Those are the only two layouts.</string>
+    <string name="split_tools_left">Tools pane on the left</string>
+    <string name="split_now_preview_tools">Layout: Preview | Tools</string>
+    <string name="split_now_tools_preview">Layout: Tools | Preview</string>
+
+    <string name="clipboard_sync">Sync clipboard with the target</string>
+    <string name="no_devices_yet">No devices paired yet — fill pairing address and code, then tap Pair and save.</string>
+
+    <string name="latency">Latency</string>
+    <string name="max_fps">Max FPS</string>
+    <string name="max_fps_uncapped">Uncapped</string>
+    <string name="max_fps_15">15</string>
+    <string name="max_fps_30">30</string>
+    <string name="max_fps_60">60 (default)</string>
+    <string name="max_fps_120">120</string>
+    <string name="low_latency">Prefer low-latency encoder (frequent keyframes)</string>
+    <string name="pair_with_qr">Pair with QR code</string>
+    <string name="qr_help">On the target open Wireless debugging → Pair device with QR code, then scan this code. Both devices must be on the same LAN (mDNS).</string>
+    <string name="qr_waiting">Waiting for the target to scan…</string>
+    <string name="qr_status_ready">Show this QR on the target</string>
+    <string name="qr_paired">Paired via QR</string>
+    <string name="qr_failed">QR pairing failed: %1$s</string>
+    <string name="qr_need_connect_address">Paired. Waiting for connect port discovery, or enter Wireless debugging IP:port below and tap Save.</string>
+    <string name="qr_save_address">Save connect address</string>
+    <string name="qr_refresh">New QR code</string>
+    <string name="qr_permission_nearby">Nearby Wi-Fi devices permission is needed for QR pairing discovery.</string>
+
+    <string name="adb_init_failed">adb init failed: %1$s</string>
+    <string name="could_not_save_device_list">could not save device list</string>
+    <string name="paired_and_saved">paired and saved</string>
+    <string name="pair_failed">pair failed: %1$s</string>
+    <string name="could_not_save_device">could not save device: %1$s</string>
+    <string name="nsd_unavailable">NSD unavailable</string>
+    <string name="error_unknown">unknown</string>
+
+    <string name="label_pair_address">Pairing address</string>
+    <string name="sub_pair_address">IP:pairing-port from the “Pair device with pairing code” dialog</string>
+    <string name="pair_address_hint">192.168.31.25:40347</string>
+    <string name="bad_pair_address">Enter the pairing address as 192.168.31.25:40347 (IP:pairing port)</string>
+    <string name="label_pair_code">Pairing code</string>
+    <string name="sub_pair_code">The 6-digit code from the pairing dialog</string>
+    <string name="label_pair_port_legacy">Pairing port (optional)</string>
+    <string name="sub_pair_port_legacy">Only needed when the pairing address is IP-only (no port)</string>
+    <string name="label_connect_address">Connect address (optional)</string>
+    <string name="sub_connect_address">IP:connect-port from the Wireless debugging main screen; leave empty to auto-discover after pairing</string>
+    <string name="connect_address_hint">Leave empty to auto-discover after pairing</string>
+    <string name="bad_connect_address">Connect address must be IP:port, or leave empty to auto-discover</string>
+    <string name="discover_pairing">Discover pairing on LAN</string>
+    <string name="discovering_pairing">Scanning for pairing services…</string>
+    <string name="discover_pairing_title">Choose a pairing device</string>
+    <string name="discover_pairing_none">No pairing devices found. Open “Pair device with pairing code” and stay on the same LAN.</string>
+    <string name="discover_pairing_filled">Pairing address filled</string>
+    <string name="discover_pairing_failed">LAN discovery failed: %1$s</string>
+    <string name="pair_ok_no_connect">Paired, but no connect port was found. Enter IP:port from the Wireless debugging main screen.</string>
+    <string name="paired_saved_verify_failed">Paired and saved, but connect verify failed (possible network isolation). You can retry connecting later.</string>
+    <string name="qr_autosaved">Paired and connect address auto-saved</string>
+
+
+    <string name="reconnect_after_reboot">Reconnect after reboot</string>
+    <string name="reconnect_by_ip_help">The connect port changes every time Wireless debugging is turned back on. This app discovers the current TLS connect port on the LAN automatically — no fixed port needed. After reboot, enter only the IP to reconnect (no pairing code).</string>
+    <string name="label_reconnect_ip">Device IP</string>
+    <string name="sub_reconnect_ip">IPv4 address on the same LAN as the target</string>
+    <string name="reconnect_ip_hint">192.168.31.25</string>
+    <string name="reconnect_by_ip">One-tap reconnect (IP only)</string>
+    <string name="bad_reconnect_ip">Enter a valid IPv4 address, e.g. 192.168.31.25</string>
+    <string name="discovering_connect">Discovering wireless-debug connect port for this IP…</string>
+    <string name="reconnect_connect_none">No wireless-debug connect port found for this IP. Confirm Wireless debugging is on and both devices are on the same LAN.</string>
+    <string name="reconnect_ok">Reconnected and saved %1$s</string>
+    <string name="reconnect_failed">Reconnect failed: %1$s</string>
+    <string name="rediscover_port">Rediscover port by IP</string>
+    <string name="device_actions_title">Device actions</string>
+
+    <string name="wireless_debug_port_none">No wireless-debug port found. Re-enable Wireless debugging on the target device.</string>
+    <string name="streaming_presets">Streaming presets</string>
+    <string name="streaming_presets_caption">Smooth: 720p / 6Mbps / 60fps / H.264, low latency. Quality: 1080p / 8Mbps / 60fps / H.264, low latency. Applied immediately; takes effect on the next connection.</string>
+    <string name="preset_smooth">Smooth</string>
+    <string name="preset_quality">Quality</string>
+    <string name="preset_smooth_toast">Switched to Smooth mode — applies on next connection</string>
+    <string name="preset_quality_toast">Switched to Quality mode — applies on next connection</string>
+
+    <string name="donate">Donate</string>
+    <string name="donate_help">Long-press a QR code to save it to Photos, then scan with WeChat or Alipay. Thank you!</string>
+    <string name="donate_wechat">WeChat Pay</string>
+    <string name="donate_alipay">Alipay</string>
+    <string name="donate_saved">Saved to Photos</string>
+    <string name="donate_save_failed">Could not save: %1$s</string>
+
+
+
+    <!-- Minimal expandable mirror actions (unlock + disconnect) -->
+    <string name="mirror_actions">Actions</string>
+    <string name="mirror_actions_expand">Expand actions</string>
+    <string name="mirror_actions_collapse">Collapse actions</string>
+
+    <!-- Blind unlock assist (mirror overlay) -->
+    <string name="unlock_assist">Unlock</string>
+    <string name="unlock_assist_title">Blind unlock</string>
+    <string name="unlock_assist_help">On Android 12+, FLAG_SECURE makes the lock screen, encrypted album/gallery previews, and banking/secure apps appear black in the mirror (platform limit; no full view without root). Use this keypad to enter PIN/password blindly. Pattern locks: unlock on the phone first. Encrypted album content cannot be previewed remotely.</string>
+    <string name="unlock_wake">Wake</string>
+    <string name="unlock_enter">OK</string>
+    <string name="unlock_close">Close</string>
+    <string name="unlock_power">Power</string>
+
+    <!-- Settings: secure content / root guidance -->
+    <string name="secure_content_title">Secure content / Root / Shizuku</string>
+    <string name="secure_content_nonroot">Non-root: use Unlock on the mirror for blind PIN/password; unlock patterns on the phone first. On Android 12+ lock screen, encrypted gallery, and FLAG_SECURE apps stay black — encrypted albums cannot be previewed remotely.</string>
+    <string name="secure_content_root">Root elevate (optional): off by default — enable 「Elevate server for secure layers」 manually. When on, Magisk su starts the patched server (uid 0, or try uid 1000) and creates a VIRTUAL_DISPLAY_FLAG_SECURE mirror as AID_SYSTEM. Failure falls back to normal mirroring. On HyperOS/A16 Magisk elevate alone often still hits SECURE_VD_OEM_REJECT — prefer the ih8SecureLock-scrcpy Zygisk module above; LSPosed is secondary (below).</string>
+
+    <string name="secure_content_shizuku">Shizuku (local shell): authorize Shizuku on this controller for local shell helpers. Shizuku is only shell uid — it does not replace Root on the target. Android 12+ FLAG_SECURE lock/gallery on the target still need Root elevate there. Wireless ADB always remains available.</string>
+
+    
+    <string name="secure_content_magisk">Magisk Zygisk module (preferred; verified on MI 9 HyperOS A16): enable Zygisk → install ih8SecureLock-scrcpy v10.2 (download: https://github.com/Ghostpanter/ih8SecureLock-scrcpy/releases/download/v10.2-scrcpy/ih8SecureLock-scrcpy-v10.2-scrcpy.zip) → reboot → do not DenyList target apps → optional: disable LSPosed Enable Screenshot if installed → verify with scrcpy. Repo: https://github.com/Ghostpanter/ih8SecureLock-scrcpy. No LSPosed required; prefer this over the LSPosed steps below. Not bundled in this APK.</string>
+
+    <string name="secure_content_lsposed">LSPosed (secondary; only if not using the Zygisk module above): Magisk Zygisk → JingMatrix LSPosed → Enable Screenshot (Disable FLAG_SECURE; prefer v4.2.0, link in OEM-reject tip) → scope System Framework only → do NOT enable SystemUI → reboot → then scrcpy. Why: scrcpy captures via DisplayManager/SurfaceFlinger in system_server; FLAG_SECURE / encrypted-album blackout is enforced on that framework compose path. Hooking System Framework unlocks the mirror; SystemUI scope only affects SystemUI’s own screenshot/windows and is unnecessary (can hurt). Note: v5.0.1 may break wireless ADB on some HyperOS builds; prefer v4.2.0. This APK does not embed an Xposed module.</string>
+<string name="root_capture_secure">Elevate server for secure layers (su)</string>
+
+    <string name="root_capture_secure_help">Off by default (opt-in; does not auto-force Magisk secure path). When enabled, requests su on connect; tries a secure virtual display as root or AID_SYSTEM. On HyperOS/Android 16, if logs show SECURE_VD_OEM_REJECT, prefer ih8SecureLock-scrcpy Zygisk module above, or the secondary LSPosed steps (not bundled). Normal mirroring still works.</string>
+
+    <string name="prefer_shizuku">Enable Shizuku (this device)</string>
+
+    <string name="prefer_shizuku_help">On by default. Install and start Shizuku, then tap the button below to grant. Important: Shizuku provides shell-only access on the controller; on Android 12+, it cannot show the target lock screen or encrypted gallery content (FLAG_SECURE). Those cases require Root elevation on the target.</string>
+
+    <string name="shizuku_status">Shizuku status: %1$s</string>
+
+    <string name="shizuku_request">Request Shizuku permission (controller shell only)</string>
+
+    <string name="shizuku_status_not_installed">not installed</string>
+
+    <string name="shizuku_status_dead">not running</string>
+
+    <string name="shizuku_status_denied">denied</string>
+
+    <string name="shizuku_status_granted">granted</string>
+
+    <!-- Tablet tools pane -->
+    <string name="tools_section">Utilities</string>
+    <string name="tools_files">File browser</string>
+    <string name="tools_apps">App manager</string>
+    <string name="tools_debug">Device debug</string>
+    <string name="tools_terminal">Terminal</string>
+    <string name="terminal_title">Terminal</string>
+    <string name="terminal_prompt">$</string>
+    <string name="terminal_help">ADB interactive shell (not SSH). Tap Keyboard for soft IME; ExtraKeys send Esc/Ctrl/^C.</string>
+    <string name="terminal_hint">Type and press Enter to send</string>
+    <string name="terminal_run">↵</string>
+    <string name="terminal_clear">Clear</string>
+    <string name="terminal_status_ready">Disconnected</string>
+    <string name="terminal_status_running">Running…</string>
+    <string name="terminal_empty">Enter a command</string>
+    <string name="terminal_error">Error: %1$s</string>
+    <string name="files_quick_dirs">Quick folders</string>
+    <string name="files_dir_root">Root</string>
+    <string name="files_dir_sdcard">Internal storage</string>
+    <string name="files_dir_download">Download</string>
+    <string name="files_dir_pictures">Pictures</string>
+    <string name="files_dir_documents">Documents</string>
+    <string name="files_refresh">Refresh</string>
+    <string name="files_push">Push</string>
+    <string name="files_pull">Pull to local</string>
+    <string name="files_status_ready">Ready</string>
+    <string name="files_status_loading">Loading…</string>
+    <string name="files_status_count">%1$d items</string>
+    <string name="files_select_first">Select a file first</string>
+    <string name="files_push_ok">Pushed: %1$s (%2$d bytes)</string>
+    <string name="files_pull_ok">Pulled: %1$s (%2$d bytes)</string>
+    <string name="files_error">File operation failed: %1$s</string>
+    <string name="terminal_status_connecting">Connecting</string>
+    <string name="terminal_status_connected">Connected</string>
+    <string name="terminal_ctrl_c">Ctrl-C</string>
+    <string name="terminal_reconnect">Reconnect</string>
+    <string name="terminal_session_started">—— shell session started ——</string>
+    <string name="terminal_session_ended">Disconnected</string>
+    <string name="terminal_session_closed">Disconnected: %1$s</string>
+    <string name="terminal_disconnect">Disconnect</string>
+    <string name="terminal_more">⋮</string>
+    <string name="terminal_paste">Paste</string>
+    <string name="terminal_menu_paste">Paste clipboard</string>
+    <string name="terminal_menu_clear">Clear screen</string>
+    <string name="terminal_menu_reconnect">Reconnect</string>
+    <string name="terminal_menu_disconnect">Disconnect session</string>
+    <string name="terminal_menu_kbd">Keyboard (soft IME)</string>
+    <string name="terminal_key_kbd">Kbd</string>
+    <string name="terminal_key_esc">Esc</string>
+    <string name="terminal_key_tab">Tab</string>
+    <string name="terminal_key_ctrl">Ctrl</string>
+    <string name="terminal_key_alt">Alt</string>
+    <string name="terminal_key_up">↑</string>
+    <string name="terminal_key_down">↓</string>
+    <string name="terminal_key_left">←</string>
+    <string name="terminal_key_right">→</string>
+    <string name="terminal_key_home">Home</string>
+    <string name="terminal_key_end">End</string>
+    <string name="terminal_key_ctrl_c">^C</string>
+    <string name="terminal_key_ctrl_d">^D</string>
+    <string name="terminal_key_ctrl_z">^Z</string>
+    <string name="terminal_key_pipe">|</string>
+    <string name="terminal_key_tilde">~</string>
+    <string name="terminal_status_connected_live">Connected · ADB shell</string>
+    <string name="terminal_paste_empty">Clipboard empty</string>
+
+    <string name="files_pull_download_ok">Saved to local Download: %1$s (%2$d bytes)</string>
+    <string name="files_pull_download_toast">Saved to local Download folder</string>
+    <string name="files_need_connection">A live wireless debugging session is required</string>
+    <string name="apps_search_hint">Search app name or package…</string>
+    <string name="apps_user">User apps</string>
+    <string name="apps_system">System apps</string>
+    <string name="apps_install_apk">Install APK</string>
+    <string name="apps_refresh">Refresh list</string>
+    <string name="apps_status_count">%1$d apps</string>
+    <string name="apps_installing">Pushing and installing…</string>
+    <string name="apps_install_ok">Install result: %1$s</string>
+    <string name="apps_error">App manager failed: %1$s</string>
+    <string name="apps_pick_apk">Choose an APK</string>
+    <string name="debug_resolution">Screen resolution</string>
+    <string name="debug_density">Display density</string>
+    <string name="debug_resolution_help">Prefer the controlled device native (physical) resolution for mirroring. Changing size/DPI alters the target display and may require reconnecting.</string>
+    <string name="debug_physical_size">Physical: %1$s</string>
+    <string name="debug_current_size">Current: %1$s</string>
+    <string name="debug_physical_dpi">Physical density: %1$d</string>
+    <string name="debug_current_dpi">Current density: %1$d</string>
+    <string name="debug_width">Width</string>
+    <string name="debug_height">Height</string>
+    <string name="debug_dpi_hint">DPI (e.g. 480)</string>
+    <string name="debug_apply">Apply</string>
+    <string name="debug_reset">Reset to physical</string>
+    <string name="debug_refresh">Refresh</string>
+    <string name="debug_applied">Applied - reconnect mirroring recommended</string>
+    <string name="debug_reset_ok">Reset to physical values</string>
+    <string name="debug_error">Device debug failed: %1$s</string>
+    <string name="debug_bad_size">Enter a valid width and height</string>
+    <string name="debug_bad_dpi">Enter a valid DPI (72–640)</string>
+    <string name="zyt_title">Unsupported environment</string>
+    <string name="zyt_exit">Exit</string>
+</resources>

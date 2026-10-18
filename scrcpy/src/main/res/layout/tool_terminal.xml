@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ssh-pad-flutter inspired terminal chrome: Primer-dark toolbar + full
+     scrollback + ExtraKeys strip. Transport remains adb interactive shell:. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="0dp"
+    android:background="@color/terminal_bg">
+
+    <!-- Top toolbar (ssh-pad TerminalPage._toolbar) -->
+    <LinearLayout
+        android:id="@+id/terminal_toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/touch_min"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="@dimen/space_sm"
+        android:paddingEnd="@dimen/space_xs"
+        android:background="@color/terminal_toolbar"
+        android:elevation="1dp">
+
+        <View
+            android:id="@+id/terminal_status_dot"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_marginEnd="@dimen/space_sm"
+            android:background="@drawable/bg_terminal_status_dot"/>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/terminal_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/terminal_title"
+                android:textColor="@color/terminal_fg"
+                android:textStyle="bold"
+                android:textSize="13sp"
+                android:maxLines="1"
+                android:ellipsize="end"/>
+
+            <TextView
+                android:id="@+id/terminal_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/terminal_status_ready"
+                android:textColor="@color/terminal_status_idle"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:ellipsize="end"/>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/terminal_kbd"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/touch_min"
+            android:minWidth="@dimen/touch_min"
+            android:gravity="center"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:text="@string/terminal_key_kbd"
+            android:textColor="@color/terminal_fg"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <TextView
+            android:id="@+id/terminal_disconnect"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/touch_min"
+            android:minWidth="@dimen/touch_min"
+            android:gravity="center"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:text="@string/terminal_disconnect"
+            android:textColor="@color/terminal_fg"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <TextView
+            android:id="@+id/terminal_more"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/touch_min"
+            android:minWidth="@dimen/touch_min"
+            android:gravity="center"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:text="@string/terminal_more"
+            android:textColor="@color/terminal_fg"
+            android:textSize="18sp"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"/>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/terminal_border"/>
+
+    <!-- Dominant scrollback (Primer canvas, not green CRT) -->
+    <ScrollView
+        android:id="@+id/terminal_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:background="@color/terminal_bg"
+        android:fadeScrollbars="false"
+        android:clickable="true"
+        android:focusable="true">
+
+        <TextView
+            android:id="@+id/terminal_output"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingLeft="6dp"
+            android:paddingRight="6dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:minHeight="160dp"
+            android:textIsSelectable="true"
+            android:textColor="@color/terminal_fg"
+            android:textSize="12sp"
+            android:lineSpacingExtra="1dp"
+            android:fontFamily="monospace"
+            android:text=""/>
+    </ScrollView>
+
+    <!-- Thin input chrome (adb shell is line-oriented; ssh-pad uses xterm IME) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:minHeight="40dp"
+        android:paddingHorizontal="@dimen/space_sm"
+        android:paddingVertical="@dimen/space_xs"
+        android:background="@color/terminal_toolbar">
+
+        <EditText
+            android:id="@+id/terminal_input"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="36dp"
+            android:hint="@string/terminal_hint"
+            android:inputType="textVisiblePassword|textNoSuggestions"
+            android:imeOptions="actionGo|flagNoExtractUi"
+            android:singleLine="true"
+            android:background="@drawable/bg_terminal_input"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:paddingVertical="@dimen/space_xs"
+            android:textColor="@color/terminal_fg"
+            android:textColorHint="@color/terminal_muted"
+            android:textSize="13sp"
+            android:fontFamily="monospace"
+            android:importantForAutofill="no"/>
+
+        <TextView
+            android:id="@+id/terminal_run"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:minWidth="44dp"
+            android:layout_marginStart="@dimen/space_xs"
+            android:gravity="center"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:background="@drawable/bg_terminal_key"
+            android:text="@string/terminal_run"
+            android:textColor="@color/terminal_fg"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:fontFamily="monospace"
+            android:clickable="true"
+            android:focusable="true"/>
+    </LinearLayout>
+
+    <!-- ExtraKeys bar (ssh-pad ExtraKeysBar) -->
+    <HorizontalScrollView
+        android:id="@+id/terminal_extra_keys"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/terminal_toolbar"
+        android:scrollbars="none"
+        android:fadeScrollbars="true"
+        android:elevation="2dp">
+
+        <LinearLayout
+            android:id="@+id/terminal_extra_keys_row"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="6dp"
+            android:paddingVertical="4dp"
+            android:minHeight="44dp">
+
+            <TextView android:id="@+id/terminal_key_kbd"
+                style="@style/TerminalExtraKey"
+                android:text="@string/terminal_key_kbd"/>
+            <TextView android:id="@+id/terminal_key_esc"
+                style="@style/TerminalExtraKey"
+                android:text="@string/terminal_key_esc"/>
+            <TextView android:id="@+id/terminal_key_tab"
+                style="@style/TerminalExtraKey"
+                android:text="@string/terminal_key_tab"/>
+            <TextView android:id="@+id/terminal_key_ctrl"
+                style="@style/TerminalExtraKey"
+                android:minWidth="48dp"
+                android:text="@string/terminal_key_ctrl"/>
+            <TextView android:id="@+id/terminal_key_alt"
+                style="@style/TerminalExtraKey"
+                android:text="@string/terminal_key_alt"/>
+            <TextView android:id="@+id/terminal_key_up"
+                style="@style/TerminalExtraKey"
+                android:minWidth="40dp"
+                android:text="@string/terminal_key_up"/>
+            <TextView android:id="@+id/terminal_key_down"
+                style="@style/TerminalExtraKey"
+                android:minWidth="40dp"
+                android:text="@string/terminal_key_down"/>
+            <TextView android:id="@+id/terminal_key_left"
+                style="@style/TerminalExtraKey"
+                android:minWidth="40dp"
+                android:text="@string/terminal_key_left"/>
+            <TextView android:id="@+id/terminal_key_right"
+                style="@style/TerminalExtraKey"
+                android:minWidth="40dp"
+                android:text="@string/terminal_key_right"/>
+            <TextView android:id="@+id/terminal_key_home"
+                style="@style/TerminalExtraKey"
+                android:minWidth="48dp"
+                android:text="@string/terminal_key_home"/>
+            <TextView android:id="@+id/terminal_key_end"
+                style="@style/TerminalExtraKey"
+                android:text="@string/terminal_key_end"/>
+            <TextView android:id="@+id/terminal_key_ctrl_c"
+                style="@style/TerminalExtraKey"
+                android:text="@string/terminal_key_ctrl_c"/>
+            <TextView android:id="@+id/terminal_key_ctrl_d"
+                style="@style/TerminalExtraKey"
+                android:text="@string/terminal_key_ctrl_d"/>
+            <TextView android:id="@+id/terminal_key_ctrl_z"
+                style="@style/TerminalExtraKey"
+                android:text="@string/terminal_key_ctrl_z"/>
+            <TextView android:id="@+id/terminal_key_pipe"
+                style="@style/TerminalExtraKey"
+                android:minWidth="36dp"
+                android:text="@string/terminal_key_pipe"/>
+            <TextView android:id="@+id/terminal_key_tilde"
+                style="@style/TerminalExtraKey"
+                android:minWidth="36dp"
+                android:text="@string/terminal_key_tilde"/>
+        </LinearLayout>
+    </HorizontalScrollView>
+</LinearLayout>

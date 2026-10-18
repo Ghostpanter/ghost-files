@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tablet utility tools pane: sidebar nav + content (files / apps / debug / terminal). -->
+<!-- Width 0dp + weight 1: expands into leftover space after the preview
+     pane is sized to the mirrored device aspect ratio (see Mirror.applySplitPreviewSize).
+     tools_pane_width dimen is the minimum clamp, not a fixed width. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tools_pane"
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_weight="1"
+    android:orientation="horizontal"
+    android:background="@drawable/bg_tools_pane"
+    android:clickable="true"
+    android:focusable="true"
+    android:minWidth="@dimen/tools_pane_width">
+
+    <!-- Sidebar: 实用工具 -->
+    <LinearLayout
+        android:layout_width="@dimen/tools_sidebar_width"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="@dimen/space_sm"
+        android:background="@color/surface_alt">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="@dimen/space_sm"
+            android:text="@string/tools_section"
+            android:textColor="@color/accent"
+            android:textStyle="bold"
+            android:textSize="13sp"/>
+
+        <TextView
+            android:id="@+id/nav_files"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/touch_min"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:background="@drawable/bg_sidebar_item"
+            android:text="@string/tools_files"
+            android:textColor="@color/on_surface"
+            android:textSize="13sp"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <TextView
+            android:id="@+id/nav_apps"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/touch_min"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:layout_marginTop="@dimen/space_xs"
+            android:background="@drawable/bg_sidebar_item"
+            android:text="@string/tools_apps"
+            android:textColor="@color/on_surface"
+            android:textSize="13sp"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <TextView
+            android:id="@+id/nav_debug"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/touch_min"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:layout_marginTop="@dimen/space_xs"
+            android:background="@drawable/bg_sidebar_item"
+            android:text="@string/tools_debug"
+            android:textColor="@color/on_surface"
+            android:textSize="13sp"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <TextView
+            android:id="@+id/nav_terminal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/touch_min"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:layout_marginTop="@dimen/space_xs"
+            android:background="@drawable/bg_sidebar_item"
+            android:text="@string/tools_terminal"
+            android:textColor="@color/on_surface"
+            android:textSize="13sp"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"/>
+
+        <TextView
+            android:id="@+id/tools_split_swap"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/touch_min"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:background="@drawable/bg_sidebar_item"
+            android:text="@string/split_swap"
+            android:textColor="@color/on_surface_muted"
+            android:textSize="12sp"
+            android:clickable="true"
+            android:focusable="true"/>
+
+        <TextView
+            android:id="@+id/tools_ui_mode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="@dimen/touch_min"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="@dimen/space_sm"
+            android:layout_marginTop="@dimen/space_xs"
+            android:background="@drawable/bg_sidebar_item"
+            android:text="@string/ui_mode_cycle"
+            android:textColor="@color/on_surface_muted"
+            android:textSize="12sp"
+            android:clickable="true"
+            android:focusable="true"/>
+    </LinearLayout>
+
+    <!-- Content flipper -->
+    <FrameLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:padding="@dimen/space_sm">
+
+        <include layout="@layout/tool_files" android:id="@+id/panel_files"/>
+        <include layout="@layout/tool_apps" android:id="@+id/panel_apps"
+            android:visibility="gone"/>
+        <include layout="@layout/tool_debug" android:id="@+id/panel_debug"
+            android:visibility="gone"/>
+        <include layout="@layout/tool_terminal" android:id="@+id/panel_terminal"
+            android:visibility="gone"/>
+    </FrameLayout>
+</LinearLayout>

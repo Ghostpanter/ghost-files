@@ -51,13 +51,7 @@ class MainActivity : ComponentActivity() {
 
     override fun attachBaseContext(newBase: android.content.Context) {
         // Apply the in-app language to Android resources too (app_name, system dialogs we inflate).
-        val pref = newBase.getSharedPreferences("settings", MODE_PRIVATE).getString("language", "system")
-        val ctx = if (pref == "zh" || pref == "en") {
-            val loc = if (pref == "en") java.util.Locale.ENGLISH else java.util.Locale.SIMPLIFIED_CHINESE
-            val cfg = android.content.res.Configuration(newBase.resources.configuration).apply { setLocale(loc) }
-            newBase.createConfigurationContext(cfg)
-        } else newBase
-        super.attachBaseContext(ctx)
+        super.attachBaseContext(LocaleCtx.wrap(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -201,5 +195,17 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_SHOW_SERVERS = "show_servers"
         const val EXTRA_SHOW_TRANSFERS = "show_transfers"
+    }
+}
+
+/** Applies the in-app language (Settings → 语言) to a Context's Android resources. */
+object LocaleCtx {
+    fun wrap(newBase: android.content.Context): android.content.Context {
+        val pref = newBase.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE).getString("language", "system")
+        return if (pref == "zh" || pref == "en") {
+            val loc = if (pref == "en") java.util.Locale.ENGLISH else java.util.Locale.SIMPLIFIED_CHINESE
+            val cfg = android.content.res.Configuration(newBase.resources.configuration).apply { setLocale(loc) }
+            newBase.createConfigurationContext(cfg)
+        } else newBase
     }
 }

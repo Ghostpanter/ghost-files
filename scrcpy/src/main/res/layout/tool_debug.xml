@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            style="@style/SectionHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/tools_debug"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/debug_resolution_help"
+            android:textColor="@color/on_surface_muted"
+            android:textSize="12sp"
+            android:paddingBottom="@dimen/space_sm"/>
+
+        <!-- Resolution card -->
+        <LinearLayout style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/debug_resolution"
+                android:textColor="@color/on_surface"
+                android:textStyle="bold"
+                android:textSize="15sp"/>
+
+            <TextView android:id="@+id/debug_physical_size"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:textColor="@color/on_surface"
+                android:textSize="13sp"/>
+
+            <TextView android:id="@+id/debug_current_size"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/success"
+                android:textSize="13sp"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="@dimen/space_sm">
+
+                <EditText android:id="@+id/debug_width"
+                    style="@style/Field"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="@string/debug_width"
+                    android:inputType="number"
+                    android:singleLine="true"/>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="@dimen/space_xs"
+                    android:text="×"
+                    android:textColor="@color/on_surface"/>
+
+                <EditText android:id="@+id/debug_height"
+                    style="@style/Field"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="@string/debug_height"
+                    android:inputType="number"
+                    android:singleLine="true"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="@dimen/space_sm">
+
+                <Button android:id="@+id/debug_apply_size" style="@style/Button.Primary"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="@dimen/space_xs"
+                    android:text="@string/debug_apply"/>
+
+                <Button android:id="@+id/debug_reset_size" style="@style/Button.Secondary"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/space_xs"
+                    android:text="@string/debug_reset"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- DPI card -->
+        <LinearLayout style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/debug_density"
+                android:textColor="@color/on_surface"
+                android:textStyle="bold"
+                android:textSize="15sp"/>
+
+            <TextView android:id="@+id/debug_physical_dpi"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:textColor="@color/on_surface"
+                android:textSize="13sp"/>
+
+            <TextView android:id="@+id/debug_current_dpi"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/success"
+                android:textSize="13sp"/>
+
+            <EditText android:id="@+id/debug_dpi"
+                style="@style/Field"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:hint="@string/debug_dpi_hint"
+                android:inputType="number"
+                android:singleLine="true"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="@dimen/space_sm">
+
+                <Button android:id="@+id/debug_apply_dpi" style="@style/Button.Primary"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="@dimen/space_xs"
+                    android:text="@string/debug_apply"/>
+
+                <Button android:id="@+id/debug_reset_dpi" style="@style/Button.Secondary"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/space_xs"
+                    android:text="@string/debug_reset"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <Button android:id="@+id/debug_refresh" style="@style/Button.Secondary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/debug_refresh"/>
+
+        <TextView android:id="@+id/debug_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="@dimen/space_sm"
+            android:textColor="@color/on_surface_muted"
+            android:textSize="12sp"/>
+    </LinearLayout>
+</ScrollView>

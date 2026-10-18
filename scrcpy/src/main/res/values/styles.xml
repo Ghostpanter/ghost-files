@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reusable widget styles. Applied per-widget via style="@style/..." so
+     behaviour stays explicit and visible at the call site. -->
+<resources>
+    <style name="Card">
+        <item name="android:orientation">vertical</item>
+        <item name="android:background">@drawable/bg_card</item>
+        <item name="android:padding">@dimen/card_padding</item>
+        <item name="android:layout_marginBottom">@dimen/space_lg</item>
+    </style>
+
+    <style name="SectionHeader">
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:paddingBottom">@dimen/space_sm</item>
+    </style>
+
+    <style name="Field" parent="@android:style/Widget.Material.EditText">
+        <item name="android:background">@drawable/bg_field</item>
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textColorHint">@color/on_surface_muted</item>
+        <item name="android:paddingHorizontal">@dimen/space_md</item>
+        <item name="android:paddingVertical">@dimen/space_md</item>
+        <item name="android:minHeight">@dimen/touch_min</item>
+    </style>
+
+    <style name="Button.Primary" parent="@android:style/Widget.Material.Button">
+        <item name="android:background">@drawable/btn_primary</item>
+        <item name="android:textColor">@color/on_accent</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:minHeight">@dimen/touch_min</item>
+    </style>
+
+    <style name="Button.Secondary" parent="@android:style/Widget.Material.Button">
+        <item name="android:background">@drawable/btn_secondary</item>
+        <item name="android:textColor">@color/accent</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:minWidth">0dp</item>
+    </style>
+
+    <style name="RadioOption">
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:paddingTop">@dimen/space_sm</item>
+        <item name="android:paddingBottom">@dimen/space_sm</item>
+        <item name="android:minHeight">@dimen/touch_min</item>
+    </style>
+
+    <style name="Note">
+        <item name="android:textStyle">italic</item>
+        <item name="android:textColor">@color/on_surface_muted</item>
+    </style>
+
+    <style name="FieldLabel">
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:paddingTop">@dimen/space_md</item>
+    </style>
+
+    <style name="Caption">
+        <item name="android:textColor">@color/on_surface_muted</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="DeviceLabel">
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:fontFamily">monospace</item>
+    </style>
+
+    <style name="Button.UnlockKey" parent="@android:style/Widget.Material.Button">
+        <item name="android:background">@drawable/btn_unlock_key</item>
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:minHeight">@dimen/touch_min</item>
+        <item name="android:minWidth">0dp</item>
+    </style>
+
+    <style name="TerminalExtraKey">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minWidth">44dp</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="android:layout_marginHorizontal">2dp</item>
+        <item name="android:paddingHorizontal">10dp</item>
+        <item name="android:paddingVertical">8dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/bg_terminal_key</item>
+        <item name="android:textColor">@color/terminal_fg</item>
+        <item name="android:textSize">12.5sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+</resources>

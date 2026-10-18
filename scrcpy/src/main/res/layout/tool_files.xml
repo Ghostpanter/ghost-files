@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <TextView
+        style="@style/SectionHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/tools_files"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/files_quick_dirs"
+        android:textColor="@color/on_surface_muted"
+        android:textSize="12sp"
+        android:paddingBottom="@dimen/space_xs"/>
+
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none">
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            <Button android:id="@+id/files_quick_root" style="@style/Button.Secondary"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/space_xs"
+                android:minHeight="40dp" android:text="@string/files_dir_root"/>
+            <Button android:id="@+id/files_quick_sdcard" style="@style/Button.Secondary"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/space_xs"
+                android:minHeight="40dp" android:text="@string/files_dir_sdcard"/>
+            <Button android:id="@+id/files_quick_download" style="@style/Button.Secondary"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/space_xs"
+                android:minHeight="40dp" android:text="@string/files_dir_download"/>
+            <Button android:id="@+id/files_quick_pictures" style="@style/Button.Secondary"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginEnd="@dimen/space_xs"
+                android:minHeight="40dp" android:text="@string/files_dir_pictures"/>
+            <Button android:id="@+id/files_quick_documents" style="@style/Button.Secondary"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:minHeight="40dp" android:text="@string/files_dir_documents"/>
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="@dimen/space_sm">
+
+        <Button android:id="@+id/files_up" style="@style/Button.Secondary"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:minHeight="40dp" android:text="↑"/>
+
+        <EditText android:id="@+id/files_path"
+            style="@style/Field"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="@dimen/space_xs"
+            android:inputType="textUri"
+            android:imeOptions="actionGo"
+            android:singleLine="true"
+            android:hint="/sdcard"/>
+
+        <Button android:id="@+id/files_refresh" style="@style/Button.Secondary"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:minHeight="40dp" android:text="@string/files_refresh"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="@dimen/space_sm">
+
+        <Button android:id="@+id/files_push"
+            android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="@dimen/space_xs"
+            android:background="@drawable/btn_push"
+            android:textColor="@color/on_push"
+            android:textAllCaps="false"
+            android:minHeight="@dimen/touch_min"
+            android:text="@string/files_push"/>
+
+        <Button android:id="@+id/files_pull"
+            android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_xs"
+            android:background="@drawable/btn_pull"
+            android:textColor="@color/on_push"
+            android:textAllCaps="false"
+            android:minHeight="@dimen/touch_min"
+            android:text="@string/files_pull"/>
+    </LinearLayout>
+
+    <TextView android:id="@+id/files_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="@dimen/space_xs"
+        android:textColor="@color/on_surface_muted"
+        android:textSize="12sp"/>
+
+    <ListView android:id="@+id/files_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="@dimen/space_sm"
+        android:divider="@color/stroke"
+        android:dividerHeight="1dp"
+        android:choiceMode="singleChoice"/>
+</LinearLayout>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Small phone outline used as the leading glyph on saved-device rows. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:strokeColor="@color/accent"
+        android:strokeWidth="2"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M8,3 H16 A2,2 0 0 1 18,5 V19 A2,2 0 0 1 16,21 H8 A2,2 0 0 1 6,19 V5 A2,2 0 0 1 8,3 Z"/>
+</vector>

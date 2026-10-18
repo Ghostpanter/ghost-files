@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One scroll for the whole page. The saved-device rows are built into
+     the LinearLayout below rather than a ListView, because a ListView
+     inside a ScrollView cannot measure itself and splitting the screen
+     into two independently scrolling halves left one of them unusable at
+     some sizes. The list is a handful of rows; it does not need
+     recycling.
+
+     Root padding is the base; Ui.padForSystemBarsAndIme() adds the system bar and
+     IME insets to it at runtime (the window is edge-to-edge). -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:padding="@dimen/space_lg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Header: app glyph + name, Settings on the right. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="@dimen/space_lg">
+
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_scrcpy_logo"
+                android:scaleType="fitCenter"
+                android:contentDescription="@null"/>
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/space_sm"
+                android:text="@string/scrcpy_title"
+                android:textColor="@color/on_surface"
+                android:textSize="22sp"
+                android:textStyle="bold"/>
+
+            <ImageButton
+                android:id="@+id/settings"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_settings"
+                android:scaleType="centerInside"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/settings"/>
+
+        </LinearLayout>
+
+        <!-- Direct IP:port connect (legacy adb tcpip, Android 9/10; no pairing). -->
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/space_lg">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/direct_connect_title"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/direct_connect_help"/>
+
+            <EditText
+                android:id="@+id/direct_address"
+                style="@style/Field"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:hint="@string/direct_address_hint"
+                android:inputType="textUri"
+                android:importantForAutofill="no"/>
+
+            <Button
+                android:id="@+id/direct_connect"
+                style="@style/Button.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:text="@string/direct_connect"/>
+
+            <Button
+                android:id="@+id/direct_howto"
+                style="@style/Button.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:text="@string/direct_howto"/>
+
+        </LinearLayout>
+
+        <!-- Pair-first form: pairing dialog address + code, optional connect. -->
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/pair_a_device"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/pair_help"/>
+
+            <TextView
+                style="@style/FieldLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_pair_address"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/sub_pair_address"/>
+
+            <EditText
+                android:id="@+id/pair_address"
+                style="@style/Field"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:hint="@string/pair_address_hint"
+                android:inputType="textUri"
+                android:importantForAutofill="no"/>
+
+            <TextView
+                style="@style/FieldLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_pair_code"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/sub_pair_code"/>
+
+            <EditText
+                android:id="@+id/pair_code"
+                style="@style/Field"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:hint="@string/pair_code_hint"
+                android:inputType="numberPassword"
+                android:maxLength="6"
+                android:importantForAutofill="no"/>
+
+            <!-- Legacy: only needed when 配对地址 is IP-only without :port. -->
+            <TextView
+                style="@style/FieldLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_pair_port_legacy"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/sub_pair_port_legacy"/>
+
+            <EditText
+                android:id="@+id/pair_port"
+                style="@style/Field"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:hint="@string/pair_port_hint"
+                android:inputType="number"
+                android:importantForAutofill="no"/>
+
+            <TextView
+                style="@style/FieldLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_connect_address"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/sub_connect_address"/>
+
+            <EditText
+                android:id="@+id/connect_address"
+                style="@style/Field"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:hint="@string/connect_address_hint"
+                android:inputType="textUri"
+                android:importantForAutofill="no"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:text="@string/network_trust"/>
+
+            <Button
+                android:id="@+id/pair"
+                style="@style/Button.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:text="@string/pair_and_save"/>
+
+            <Button
+                android:id="@+id/discover_pairing"
+                style="@style/Button.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:text="@string/discover_pairing"/>
+
+            <Button
+                android:id="@+id/pair_qr"
+                style="@style/Button.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:text="@string/pair_with_qr"/>
+
+        </LinearLayout>
+
+        <!-- Reconnect after reboot: IP-only mDNS rediscovery of connect port. -->
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_lg">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/reconnect_after_reboot"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/reconnect_by_ip_help"/>
+
+            <TextView
+                style="@style/FieldLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_reconnect_ip"/>
+
+            <TextView
+                style="@style/Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/sub_reconnect_ip"/>
+
+            <EditText
+                android:id="@+id/reconnect_ip"
+                style="@style/Field"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:hint="@string/reconnect_ip_hint"
+                android:inputType="textUri"
+                android:importantForAutofill="no"/>
+
+            <Button
+                android:id="@+id/reconnect_by_ip"
+                style="@style/Button.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:text="@string/reconnect_by_ip"/>
+
+        </LinearLayout>
+
+        <TextView
+            style="@style/SectionHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/saved_devices"/>
+
+        <LinearLayout
+            android:id="@+id/devices"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:divider="@color/stroke"
+            android:showDividers="middle"
+            android:dividerPadding="0dp"/>
+
+        <TextView
+            android:id="@+id/devices_empty"
+            style="@style/Note"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:paddingTop="@dimen/space_xl"
+            android:text="@string/no_devices_yet"/>
+
+    </LinearLayout>
+
+</ScrollView>

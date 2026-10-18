@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Outlined accent button (transparent fill, accent border). -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?android:attr/colorControlHighlight">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent"/>
+            <stroke android:width="1dp" android:color="@color/accent"/>
+            <corners android:radius="@dimen/button_radius"/>
+        </shape>
+    </item>
+</ripple>

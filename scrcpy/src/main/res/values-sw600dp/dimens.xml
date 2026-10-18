@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tablet (smallest width ≥ 600dp): roomier spacing + tools pane widths. -->
+<resources>
+    <dimen name="space_xs">6dp</dimen>
+    <dimen name="space_sm">10dp</dimen>
+    <dimen name="space_md">16dp</dimen>
+    <dimen name="space_lg">24dp</dimen>
+    <dimen name="space_xl">32dp</dimen>
+
+    <dimen name="card_radius">16dp</dimen>
+    <dimen name="field_radius">10dp</dimen>
+    <dimen name="button_radius">12dp</dimen>
+
+    <dimen name="card_padding">20dp</dimen>
+    <dimen name="touch_min">52dp</dimen>
+
+    <dimen name="tools_pane_width">400dp</dimen>
+    <dimen name="tools_pane_min_width">280dp</dimen>
+    <dimen name="tools_sidebar_width">150dp</dimen>
+</resources>

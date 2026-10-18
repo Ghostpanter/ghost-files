@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Title + help + two payment QR codes. Long-press an image to save. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/space_lg">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/donate"
+            android:textColor="@color/on_surface"
+            android:textSize="22sp"
+            android:textStyle="bold"/>
+
+        <TextView
+            style="@style/Note"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_sm"
+            android:layout_marginBottom="@dimen/space_lg"
+            android:text="@string/donate_help"/>
+
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/donate_wechat"/>
+
+            <ImageView
+                android:id="@+id/donate_wechat"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:adjustViewBounds="true"
+                android:contentDescription="@string/donate_wechat"
+                android:scaleType="fitCenter"
+                android:src="@drawable/donate_wechat"/>
+
+        </LinearLayout>
+
+        <LinearLayout
+            style="@style/Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="0dp">
+
+            <TextView
+                style="@style/SectionHeader"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/donate_alipay"/>
+
+            <ImageView
+                android:id="@+id/donate_alipay"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:adjustViewBounds="true"
+                android:contentDescription="@string/donate_alipay"
+                android:scaleType="fitCenter"
+                android:src="@drawable/donate_alipay"/>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</ScrollView>

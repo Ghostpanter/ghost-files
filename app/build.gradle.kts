@@ -87,6 +87,10 @@ android {
 
 dependencies {
     implementation(project(":core"))
+    // Embedded scrcpy-android + ADB (M1–M3 of the device integration)
+    implementation(project(":adb-core"))
+    implementation(project(":scrcpy"))
+    implementation(project(":terminal"))
 
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
@@ -107,8 +111,8 @@ dependencies {
     implementation("dev.rikka.shizuku:provider:13.1.5")
 
     // Crypto providers: full BouncyCastle for sshj; Conscrypt for modern TLS (FTPS/HTTPS WebDAV).
-    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.84")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.84")
     implementation("org.conscrypt:conscrypt-android:2.6.1")
 
     // Media player (local + network streams)

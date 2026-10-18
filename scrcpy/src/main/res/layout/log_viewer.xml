@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="@dimen/space_lg">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/log_viewer_title"
+        android:textColor="@color/on_surface"
+        android:textSize="22sp"
+        android:textStyle="bold"/>
+
+    <TextView
+        style="@style/Caption"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="@dimen/space_sm"
+        android:text="@string/log_viewer_caption"/>
+
+    <TextView
+        style="@style/FieldLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/log_level"/>
+
+    <RadioGroup
+        android:id="@+id/log_level"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <RadioButton
+            android:id="@+id/log_level_verbose"
+            style="@style/RadioOption"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/log_level_verbose"/>
+
+        <RadioButton
+            android:id="@+id/log_level_debug"
+            style="@style/RadioOption"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/log_level_debug"/>
+
+        <RadioButton
+            android:id="@+id/log_level_info"
+            style="@style/RadioOption"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="@string/log_level_info"/>
+
+        <RadioButton
+            android:id="@+id/log_level_warn"
+            style="@style/RadioOption"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/log_level_warn"/>
+
+        <RadioButton
+            android:id="@+id/log_level_error"
+            style="@style/RadioOption"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/log_level_error"/>
+    </RadioGroup>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="@dimen/space_sm"
+        android:layout_marginBottom="@dimen/space_sm">
+
+        <Button
+            android:id="@+id/log_refresh"
+            style="@style/Button.Secondary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="@dimen/space_sm"
+            android:text="@string/log_refresh"/>
+
+        <Button
+            android:id="@+id/log_copy"
+            style="@style/Button.Secondary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="@dimen/space_sm"
+            android:text="@string/log_copy"/>
+
+        <Button
+            android:id="@+id/log_share"
+            style="@style/Button.Secondary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="@dimen/space_sm"
+            android:text="@string/log_share"/>
+
+        <Button
+            android:id="@+id/log_clear"
+            style="@style/Button.Secondary"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/log_clear"/>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/log_count"
+        style="@style/Caption"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingBottom="@dimen/space_sm"/>
+
+    <ScrollView
+        android:id="@+id/log_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/surface"
+        android:fillViewport="true"
+        android:padding="@dimen/space_sm">
+
+        <TextView
+            android:id="@+id/log_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textColor="@color/on_surface"
+            android:textIsSelectable="true"
+            android:textSize="11sp"/>
+    </ScrollView>
+
+</LinearLayout>

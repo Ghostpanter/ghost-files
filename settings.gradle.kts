@@ -23,3 +23,7 @@ dependencyResolutionManagement {
 rootProject.name = "ghost-files"
 include(":core")
 include(":app")
+include(":libadb")
+include(":adb-core")
+include(":scrcpy")
+include(":terminal")

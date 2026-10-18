@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="scrcpy_title">设备 / 投屏</string>
+    <string name="address_hint">192.168.1.42:41234</string>
+    <string name="pair_port_hint">配对端口（仅 IP 无端口时）</string>
+    <string name="pair_code_hint">6 位数字</string>
+    <string name="pair_help">先配对再连接：在目标设备打开「使用配对码配对设备」，复制 IP:配对端口 与 6 位配对码。连接端口可留空，配对成功后自动发现。</string>
+    <string name="label_address">设备地址</string>
+    <string name="sub_address">无线调试界面上的「IP 地址和端口」</string>
+    <string name="label_pairing">配对端口与配对码</string>
+    <string name="sub_pairing">来自「使用配对码配对设备」对话框。同一 IP，不同端口</string>
+    <string name="bad_address">请按 192.168.1.42:41234 格式输入设备地址</string>
+    <string name="bad_pair_port">配对端口必须是 1 到 65535 之间的数字</string>
+    <string name="bad_pair_code">请输入 6 位配对码</string>
+    <string name="device_not_paired">此目标尚未配对。请从设备列表重新配对。</string>
+    <string name="device_list_unreadable">无法读取已配对设备列表；列表未更改。</string>
+    <string name="network_trust">请仅在可信网络或 VPN 上使用。ADB 无法验证目标身份，因此任何响应此地址的设备都可能收到你输入的内容。</string>
+    <string name="pair_and_save">配对并保存</string>
+    <string name="pair_a_device">配对设备</string>
+    <string name="saved_devices">已保存的设备</string>
+    <string name="notif_session_active">镜像进行中</string>
+    <string name="settings">设置</string>
+    <string name="version_format">版本 %1$s (%2$d)</string>
+    <string name="compat_requirements">控制端：Android 9–17。被控端：无线调试配对通常需 Android 11+；有线/已配对场景按 scrcpy-server 能力。</string>
+    <string name="licenses">开源许可证</string>
+    <string name="licenses_unavailable">无法加载许可证说明。</string>
+    <string name="video_codec">视频编码</string>
+    <string name="audio_codec">音频编码</string>
+    <string name="video_h264">H.264（默认）</string>
+    <string name="video_h265">H.265</string>
+    <string name="video_av1" tools:ignore="Typos">AV1（目标设备 Android 14+）</string>
+    <string name="audio_raw">原始 PCM（1.5 Mbps）</string>
+    <string name="audio_opus">Opus（约 128 kbps，默认）</string>
+    <string name="forget_device">忘记此设备？</string>
+    <string name="max_size">最大尺寸（长边，像素）</string>
+    <string name="max_size_original">原始</string>
+    <string name="max_size_480">480</string>
+    <string name="max_size_720">720（默认）</string>
+    <string name="max_size_1080">1080</string>
+    <string name="max_size_1440">1440</string>
+    <string name="max_size_2160">2160</string>
+    <string name="video_bit_rate">视频码率</string>
+    <string name="bit_rate_1m">1 Mbps</string>
+    <string name="bit_rate_2m">2 Mbps</string>
+    <string name="bit_rate_4m">4 Mbps</string>
+    <string name="bit_rate_6m">6 Mbps（默认）</string>
+    <string name="bit_rate_8m">8 Mbps</string>
+    <string name="bit_rate_16m">16 Mbps</string>
+    <string name="reconnect">重新连接</string>
+    <string name="disconnect">断开连接</string>
+    <string name="elevate_root_ok">已获 Root/系统身份启动 server；将优先以 AID_SYSTEM 创建安全虚拟显示。若 DisplayManager 仍拒绝（HyperOS 常见），会提示需 LSPosed；普通镜像不受影响。</string>
+    <string name="elevate_su_denied">提权失败：Magisk 未授权或超时。安全层仍为黑屏。请在被控端允许 shell/ADB 后点重新连接。</string>
+    <string name="elevate_su_unavailable">未检测到可用 su（无 Root/Magisk）。安全层仍为黑屏；可用「解锁」盲输 PIN，或安装 Magisk 并开启 Root 提权。</string>
+    <string name="elevate_fallback">提权失败仍黑屏：未能以 uid 0 启动 server，已回退普通 shell。请打开「设置→日志」查看完整 probe/start 报错；确认 Magisk 已允许 Shell 后点重新连接。</string>
+    <string name="elevate_secure_oem_rejected">Root 已获取且普通镜像可用，但本机 HyperOS/Android 16 的 DisplayManager 拒绝了安全虚拟显示（packageName must match the owner uid / SECURE_VD_OEM_REJECT）。仅 Magisk 提权无法解开锁屏/加密相册等 FLAG_SECURE 黑屏。请优先：Magisk 开启 Zygisk → 安装 ih8SecureLock-scrcpy v10.2（https://github.com/Ghostpanter/ih8SecureLock-scrcpy/releases/download/v10.2-scrcpy/ih8SecureLock-scrcpy-v10.2-scrcpy.zip）→ 重启 → 勿将目标 App 放入 DenyList → 可选禁用 LSPosed Enable Screenshot → 再开 scrcpy。备选：LSPosed + Enable Screenshot（仅系统框架，勿勾选 SystemUI；避免 v5.0.1，优先 v4.2.0）。本应用不附带模块。可用「解锁」盲输 PIN。</string>
+    
+    <string name="log_viewer_title">日志</string>
+    <string name="log_viewer_caption">查看提权 / ADB / su / server 完整输出（解决 toast 截断）。可筛选等级、复制或分享。</string>
+    <string name="log_level">日志等级</string>
+    <string name="log_level_verbose">Verbose</string>
+    <string name="log_level_debug">Debug</string>
+    <string name="log_level_info">Info</string>
+    <string name="log_level_warn">Warn</string>
+    <string name="log_level_error">Error</string>
+    <string name="log_refresh">刷新</string>
+    <string name="log_copy">复制</string>
+    <string name="log_share">分享</string>
+    <string name="log_clear">清空</string>
+    <string name="log_copied">已复制到剪贴板</string>
+    <string name="log_copy_failed">复制失败</string>
+    <string name="log_cleared">日志已清空</string>
+    <string name="log_empty">（暂无日志）</string>
+    <string name="log_count_format">缓冲 %1$d 条 · 显示 ≥ %2$s</string>
+    <string name="view_logs">查看日志</string>
+    <string name="elevate_fallback_view_logs">查看完整报错</string>
+    <string name="elevate_open_logs_hint">详情见 设置 → 日志</string>
+
+<string name="elevate_waiting">正在等待 Magisk 授权…</string>
+    <string name="connecting">正在连接…</string>
+    <string name="disconnected">已断开</string>
+    <string name="session_error">会话错误：%1$s</string>
+    <string name="session_stop_timeout">旧会话未能停止，已取消重新连接。</string>
+    <string name="hint_back">返回键会发往目标设备。连按两次返回可退出。</string>
+    <string name="pairing">正在配对…</string>
+    <string name="settings_apply_on_reconnect">更改将在下次连接时生效。</string>
+    <string name="display">显示</string>
+
+    <string name="ui_mode">界面模式</string>
+    <string name="ui_mode_auto">自动（默认）</string>
+    <string name="ui_mode_phone">强制手机</string>
+    <string name="ui_mode_tablet">强制平板</string>
+    <string name="ui_mode_help">自动按屏幕最短边 ≥600dp 或 LARGE/XLARGE 判断。强制模式会显示/隐藏镜像侧工具栏，并影响未手动设置时的原生分辨率默认值。</string>
+    <string name="ui_mode_apply_hint">界面模式已保存；请重新打开镜像以生效。</string>
+    <string name="ui_mode_cycle">切换界面模式</string>
+    <string name="ui_mode_now_auto">已切换：自动</string>
+    <string name="ui_mode_now_phone">已切换：强制手机</string>
+    <string name="ui_mode_now_tablet">已切换：强制平板</string>
+
+    <string name="split_swap">交换左右布局</string>
+    <string name="split_swap_help">拖动中间分隔条可切换「预览|工具」与「工具|预览」。仅这两种布局。</string>
+    <string name="split_tools_left">工具栏在左侧</string>
+    <string name="split_now_preview_tools">布局：预览 | 工具</string>
+    <string name="split_now_tools_preview">布局：工具 | 预览</string>
+
+    <string name="clipboard_sync">与目标设备同步剪贴板</string>
+    <string name="no_devices_yet">尚未配对设备 — 填写配对地址与配对码后点「配对并保存」。</string>
+
+    <string name="latency">延迟</string>
+    <string name="max_fps">最大帧率</string>
+    <string name="max_fps_uncapped">不限制</string>
+    <string name="max_fps_15">15</string>
+    <string name="max_fps_30">30</string>
+    <string name="max_fps_60">60（默认）</string>
+    <string name="max_fps_120">120</string>
+    <string name="low_latency">优先低延迟编码器（更频繁关键帧）</string>
+    <string name="pair_with_qr">二维码配对</string>
+    <string name="qr_help">在目标设备打开无线调试 → 使用二维码配对设备，然后扫描此码。两台设备须在同一局域网（mDNS）。</string>
+    <string name="qr_waiting">等待目标设备扫描…</string>
+    <string name="qr_status_ready">请在目标设备上扫描此二维码</string>
+    <string name="qr_paired">已通过二维码配对</string>
+    <string name="qr_failed">二维码配对失败：%1$s</string>
+    <string name="qr_need_connect_address">已配对。正在自动发现连接端口；若未发现请在下方填写无线调试的 IP:端口 后点保存。</string>
+    <string name="qr_save_address">保存连接地址</string>
+    <string name="qr_refresh">换一个二维码</string>
+    <string name="qr_permission_nearby">二维码配对发现需要「附近的 Wi‑Fi 设备」权限。</string>
+
+    <!-- Moved from hardcoded Java toasts -->
+    <string name="adb_init_failed">ADB 初始化失败：%1$s</string>
+    <string name="could_not_save_device_list">无法保存设备列表</string>
+    <string name="paired_and_saved">已配对并保存</string>
+    <string name="pair_failed">配对失败：%1$s</string>
+    <string name="could_not_save_device">无法保存设备：%1$s</string>
+    <string name="nsd_unavailable">NSD 不可用</string>
+    <string name="error_unknown">未知</string>
+
+    <string name="label_pair_address">配对地址</string>
+    <string name="sub_pair_address">来自「使用配对码配对设备」对话框的 IP:配对端口</string>
+    <string name="pair_address_hint">192.168.31.25:40347</string>
+    <string name="bad_pair_address">请按 192.168.31.25:40347 格式输入配对地址（IP:配对端口）</string>
+    <string name="label_pair_code">配对码</string>
+    <string name="sub_pair_code">对话框中的 6 位数字配对码</string>
+    <string name="label_pair_port_legacy">配对端口（可选）</string>
+    <string name="sub_pair_port_legacy">仅当配对地址只填了 IP、没有端口时需要</string>
+    <string name="label_connect_address">连接地址（可选）</string>
+    <string name="sub_connect_address">无线调试主界面的 IP:连接端口；可留空，配对成功后自动发现</string>
+    <string name="connect_address_hint">可留空，配对成功后自动发现</string>
+    <string name="bad_connect_address">连接地址格式应为 IP:端口，或留空以自动发现</string>
+    <string name="discover_pairing">局域网发现配对</string>
+    <string name="discovering_pairing">正在扫描局域网配对服务…</string>
+    <string name="discover_pairing_title">选择配对设备</string>
+    <string name="discover_pairing_none">未发现等待配对的设备。请确认已打开「使用配对码配对设备」且在同一局域网。</string>
+    <string name="discover_pairing_filled">已填入配对地址</string>
+    <string name="discover_pairing_failed">局域网发现失败：%1$s</string>
+    <string name="pair_ok_no_connect">配对成功但未发现连接端口，请从无线调试主界面填写 IP:端口。</string>
+    <string name="paired_saved_verify_failed">已配对并保存，但连接校验失败（可能是网络隔离），仍可稍后重试连接。</string>
+    <string name="qr_autosaved">已配对并自动保存连接地址</string>
+
+
+    <string name="reconnect_after_reboot">重启后重连</string>
+    <string name="reconnect_by_ip_help">每次重新打开「无线调试」后连接端口都会变，应用会通过局域网自动发现当前 TLS 连接端口，无需固定端口。重启后只需输入 IP 即可重连（无需配对码）。</string>
+    <string name="label_reconnect_ip">设备 IP</string>
+    <string name="sub_reconnect_ip">与被控端同一局域网的 IPv4 地址</string>
+    <string name="reconnect_ip_hint">192.168.31.25</string>
+    <string name="reconnect_by_ip">一键重连（仅 IP）</string>
+    <string name="bad_reconnect_ip">请输入有效的 IPv4 地址，例如 192.168.31.25</string>
+    <string name="discovering_connect">正在发现该 IP 的无线调试连接端口…</string>
+    <string name="reconnect_connect_none">未发现该 IP 的无线调试连接端口，请确认被控端已打开「无线调试」且同一局域网</string>
+    <string name="reconnect_ok">已重连并保存 %1$s</string>
+    <string name="reconnect_failed">重连失败：%1$s</string>
+    <string name="rediscover_port">按 IP 重新发现端口</string>
+    <string name="device_actions_title">设备操作</string>
+
+    <string name="wireless_debug_port_none">未发现无线调试端口，请在被控端重新打开「无线调试」。</string>
+    <string name="streaming_presets">串流预设</string>
+    <string name="streaming_presets_caption">流畅：720p / 6Mbps / 60fps / H.264，低延迟。画质：1080p / 8Mbps / 60fps / H.264，低延迟。点按后立即写入设置，下次连接生效。</string>
+    <string name="preset_smooth">流畅模式</string>
+    <string name="preset_quality">画质模式</string>
+    <string name="preset_smooth_toast">已切换到流畅模式，下次连接生效</string>
+    <string name="preset_quality_toast">已切换到画质模式，下次连接生效</string>
+
+    <string name="donate">捐赠</string>
+    <string name="donate_help">长按二维码可保存到相册，再用微信或支付宝扫一扫。感谢支持！</string>
+    <string name="donate_wechat">微信支付</string>
+    <string name="donate_alipay">支付宝</string>
+    <string name="donate_saved">已保存到相册</string>
+    <string name="donate_save_failed">保存失败：%1$s</string>
+
+
+
+    <!-- Minimal expandable mirror actions (unlock + disconnect) -->
+    <string name="mirror_actions">操作</string>
+    <string name="mirror_actions_expand">展开操作</string>
+    <string name="mirror_actions_collapse">收起操作</string>
+
+    <!-- Blind unlock assist (mirror overlay) -->
+    <string name="unlock_assist">解锁</string>
+    <string name="unlock_assist_title">盲输解锁</string>
+    <string name="unlock_assist_help">Android 12+ 因 FLAG_SECURE，锁屏、加密相册/图库预览及银行等安全界面在镜像中会显示为黑屏（平台限制，非 root 无法完整显示画面）。可用此键盘盲输 PIN/密码；图案锁请先在手机上解锁。加密相册内容无法远程预览。</string>
+    <string name="unlock_wake">亮屏</string>
+    <string name="unlock_enter">确定</string>
+    <string name="unlock_close">关闭</string>
+    <string name="unlock_power">电源键</string>
+
+    <!-- Settings: secure content / root guidance -->
+    <string name="secure_content_title">安全内容 / Root / Shizuku</string>
+    <string name="secure_content_nonroot">非 Root：镜像页「解锁」可盲输 PIN/密码；锁屏/图案请先在手机上操作。Android 12+ 锁屏、加密相册/图库与 FLAG_SECURE 应用在镜像中仍为黑屏，无法远程预览加密相册。</string>
+    <string name="secure_content_root">Root 提权（可选）：默认关闭，需手动开启「Root 提权捕获安全层」。开启后以 Magisk su 启动已修补 server（uid 0 或尝试 uid 1000），并用 AID_SYSTEM 创建 VIRTUAL_DISPLAY_FLAG_SECURE 镜像。失败自动回退普通镜像。HyperOS/A16 上 Magisk 单独提权常仍遇到 SECURE_VD_OEM_REJECT——请优先安装上方 ih8SecureLock-scrcpy Zygisk 模块；LSPosed 仅为备选（见下方）。</string>
+
+    <string name="secure_content_shizuku">Shizuku（本机 shell）：可在本控制端授权 Shizuku，便于本机 shell 能力。Shizuku 仅为 shell uid，不能替代被控端 Root；Android 12+ 被控端锁屏/加密相册的 FLAG_SECURE 仍需被控端 Root 提权。无线 ADB 路径始终可用。</string>
+
+    
+    <string name="secure_content_magisk">Magisk Zygisk 模块（推荐，MI 9 HyperOS A16 已验证）：开启 Zygisk → 安装 ih8SecureLock-scrcpy v10.2（下载：https://github.com/Ghostpanter/ih8SecureLock-scrcpy/releases/download/v10.2-scrcpy/ih8SecureLock-scrcpy-v10.2-scrcpy.zip）→ 重启 → 勿将目标 App 放入 Magisk DenyList → 可选：若已装 LSPosed「Enable Screenshot」请先禁用 → 用 scrcpy 验证。仓库：https://github.com/Ghostpanter/ih8SecureLock-scrcpy 。无需 LSPosed；优先于此方案，而非下方 LSPosed。本 APK 不附带该模块。</string>
+
+    <string name="secure_content_lsposed">LSPosed（备选，仅当未用上方 Zygisk 模块时）：Magisk Zygisk → JingMatrix LSPosed → Enable Screenshot（Disable FLAG_SECURE；推荐 v4.2.0，链接见 OEM 拒绝提示）→ 作用域仅「系统框架 / System Framework」→ 不要勾选「系统界面 / SystemUI」→ 重启 → 再开 scrcpy。原因：scrcpy 经 DisplayManager/SurfaceFlinger（system_server）抓屏，FLAG_SECURE/加密相册黑屏由框架合成路径拦截；钩住系统框架即可让镜像看到加密内容，SystemUI 作用域只影响系统界面自己的截图/窗口，对本路径无必要，勾选还可能带来副作用。注意：v5.0.1 在部分 HyperOS 上可能破坏无线 ADB，优先 v4.2.0。本 APK 不内嵌 Xposed 模块。</string>
+<string name="root_capture_secure">Root 提权捕获安全层（su）</string>
+
+    <string name="root_capture_secure_help">默认关闭，需手动开启（不自动强制 Magisk 安全层路径）。连接时请求 su；成功后以 root 或 AID_SYSTEM 尝试安全虚拟显示。HyperOS/Android 16 若仍报 SECURE_VD_OEM_REJECT，请优先装 ih8SecureLock-scrcpy Zygisk 模块（见上方），或按下方 LSPosed 备选步骤（不附带）。普通画面仍可用。</string>
+
+    <string name="prefer_shizuku">启用 Shizuku（本机）</string>
+
+    <string name="prefer_shizuku_help">默认开启。需安装并启动 Shizuku，点下方按钮授权。注意：Shizuku 在控制端仅提供 shell 权限；Android 12 及以上无法显示目标设备锁屏或加密相册（FLAG_SECURE）内容，这些场景需在目标设备使用 Root 提权。</string>
+
+    <string name="shizuku_status">Shizuku 状态：%1$s</string>
+
+    <string name="shizuku_request">请求 Shizuku 授权（仅控制端 shell）</string>
+
+    <string name="shizuku_status_not_installed">未安装</string>
+
+    <string name="shizuku_status_dead">未运行</string>
+
+    <string name="shizuku_status_denied">未授权</string>
+
+    <string name="shizuku_status_granted">已授权</string>
+
+    <!-- Tablet tools pane -->
+    <string name="tools_section">实用工具</string>
+    <string name="tools_files">文件浏览器</string>
+    <string name="tools_apps">软件管理</string>
+    <string name="tools_debug">设备调试</string>
+    <string name="tools_terminal">终端</string>
+    <string name="terminal_title">终端</string>
+    <string name="terminal_prompt">$</string>
+    <string name="terminal_help">ADB 交互式 shell（非 SSH）。点「键盘」唤起软键盘；底部 ExtraKeys 可发 Esc/Ctrl/^C 等。</string>
+    <string name="terminal_hint">输入后回车发送</string>
+    <string name="terminal_run">↵</string>
+    <string name="terminal_clear">清空</string>
+    <string name="terminal_status_ready">未连接</string>
+    <string name="terminal_status_running">执行中…</string>
+    <string name="terminal_empty">请输入命令</string>
+    <string name="terminal_error">错误：%1$s</string>
+    <string name="files_quick_dirs">快捷目录</string>
+    <string name="files_dir_root">根目录</string>
+    <string name="files_dir_sdcard">内部存储</string>
+    <string name="files_dir_download">下载</string>
+    <string name="files_dir_pictures">图片</string>
+    <string name="files_dir_documents">文档</string>
+    <string name="files_refresh">刷新</string>
+    <string name="files_push">传入</string>
+    <string name="files_pull">传出到本机</string>
+    <string name="files_status_ready">已就绪</string>
+    <string name="files_status_loading">正在加载…</string>
+    <string name="files_status_count">共 %1$d 项</string>
+    <string name="files_select_first">请先选择一个文件</string>
+    <string name="files_push_ok">已传入：%1$s（%2$d 字节）</string>
+    <string name="files_pull_ok">已传出：%1$s（%2$d 字节）</string>
+    <string name="files_error">文件操作失败：%1$s</string>
+    <string name="terminal_status_connecting">连接中</string>
+    <string name="terminal_status_connected">已连接</string>
+    <string name="terminal_ctrl_c">Ctrl-C</string>
+    <string name="terminal_reconnect">重连</string>
+    <string name="terminal_session_started">—— shell 会话已启动 ——</string>
+    <string name="terminal_session_ended">已断开</string>
+    <string name="terminal_session_closed">已断开：%1$s</string>
+    <string name="terminal_disconnect">断开</string>
+    <string name="terminal_more">⋮</string>
+    <string name="terminal_paste">粘贴</string>
+    <string name="terminal_menu_paste">粘贴剪贴板</string>
+    <string name="terminal_menu_clear">清空屏幕</string>
+    <string name="terminal_menu_reconnect">重新连接</string>
+    <string name="terminal_menu_disconnect">断开会话</string>
+    <string name="terminal_menu_kbd">键盘（软键盘）</string>
+    <string name="terminal_key_kbd">键盘</string>
+    <string name="terminal_key_esc">Esc</string>
+    <string name="terminal_key_tab">Tab</string>
+    <string name="terminal_key_ctrl">Ctrl</string>
+    <string name="terminal_key_alt">Alt</string>
+    <string name="terminal_key_up">↑</string>
+    <string name="terminal_key_down">↓</string>
+    <string name="terminal_key_left">←</string>
+    <string name="terminal_key_right">→</string>
+    <string name="terminal_key_home">Home</string>
+    <string name="terminal_key_end">End</string>
+    <string name="terminal_key_ctrl_c">^C</string>
+    <string name="terminal_key_ctrl_d">^D</string>
+    <string name="terminal_key_ctrl_z">^Z</string>
+    <string name="terminal_key_pipe">|</string>
+    <string name="terminal_key_tilde">~</string>
+    <string name="terminal_status_connected_live">已连接 · ADB shell</string>
+    <string name="terminal_paste_empty">剪贴板为空</string>
+
+    <string name="files_pull_download_ok">已保存到本机 Download：%1$s（%2$d 字节）</string>
+    <string name="files_pull_download_toast">已保存到本机 Download 目录</string>
+    <string name="files_need_connection">需要已连接的无线调试会话</string>
+    <string name="apps_search_hint">搜索应用名称或包名…</string>
+    <string name="apps_user">用户应用</string>
+    <string name="apps_system">系统应用</string>
+    <string name="apps_install_apk">安装 APK</string>
+    <string name="apps_refresh">刷新列表</string>
+    <string name="apps_status_count">共 %1$d 个应用</string>
+    <string name="apps_installing">正在推送并安装…</string>
+    <string name="apps_install_ok">安装结果：%1$s</string>
+    <string name="apps_error">软件管理失败：%1$s</string>
+    <string name="apps_pick_apk">选择 APK 文件</string>
+    <string name="debug_resolution">屏幕分辨率</string>
+    <string name="debug_density">显示密度</string>
+    <string name="debug_resolution_help">优先使用被控端原始（物理）分辨率进行镜像。修改分辨率/DPI 会改变被控端显示，可能需要重新连接镜像。</string>
+    <string name="debug_physical_size">物理分辨率：%1$s</string>
+    <string name="debug_current_size">当前分辨率：%1$s</string>
+    <string name="debug_physical_dpi">物理密度：%1$d</string>
+    <string name="debug_current_dpi">当前密度：%1$d</string>
+    <string name="debug_width">宽</string>
+    <string name="debug_height">高</string>
+    <string name="debug_dpi_hint">DPI 值（如 480）</string>
+    <string name="debug_apply">应用</string>
+    <string name="debug_reset">重置为物理值</string>
+    <string name="debug_refresh">刷新</string>
+    <string name="debug_applied">已应用，建议重新连接镜像</string>
+    <string name="debug_reset_ok">已重置为物理值</string>
+    <string name="debug_error">设备调试失败：%1$s</string>
+    <string name="debug_bad_size">请输入有效的宽高</string>
+    <string name="debug_bad_dpi">请输入有效的 DPI（72–640）</string>
+    <string name="zyt_title">不支持的运行环境</string>
+    <string name="zyt_exit">退出</string>
+</resources>

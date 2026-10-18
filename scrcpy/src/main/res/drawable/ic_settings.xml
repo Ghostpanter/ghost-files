@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sliders glyph for the Settings action in the Main header. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="@color/on_surface_muted">
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="2"
+        android:pathData="M4,7h16M4,12h16M4,17h16"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M8,5a2,2 0,1 0,0 4a2,2 0,1 0,0 -4M16,10a2,2 0,1 0,0 4a2,2 0,1 0,0 -4M10,15a2,2 0,1 0,0 4a2,2 0,1 0,0 -4"/>
+</vector>

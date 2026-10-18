@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's private files hold the ADB private key and the list of
+     paired targets. Neither may leave this device: allowBackup="false"
+     already blocks cloud backup, but Android 12's device-to-device
+     transfer is a separate path and would otherwise clone an identity
+     the target has authorised onto another phone. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root"/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root"/>
+    </device-transfer>
+</data-extraction-rules>

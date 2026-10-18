@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Unified mirror: preview | tools split always inflated; Mirror shows/hides
+     tools_pane from Ui.isTablet (incl. force override). Preview FrameLayout
+     keeps id=root so letterboxing/insets/FAB stay unchanged. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/split_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:baselineAligned="false"
+    tools:ignore="MergeRootFrame">
+
+    <!-- Preview pane: weight 1 fills width in phone mode. On tablet split,
+         Mirror.applySplitPreviewSize sets a fixed width from the mirrored
+         device aspect so tools_pane (weight 1) receives leftover space. -->
+    <FrameLayout
+        android:id="@+id/root"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:background="#000000"
+        tools:ignore="MergeRootFrame">
+
+        <!-- Sized at runtime to the target's aspect ratio and centred, so the
+             black FrameLayout behind it shows as letterbox bars. -->
+        <SurfaceView
+            android:id="@+id/surface"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"/>
+
+        <!-- Invisible full-screen catcher: collapses the actions menu when the
+             user taps outside it. Does not intercept while GONE. -->
+        <View
+            android:id="@+id/mirror_menu_scrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/transparent"
+            android:clickable="true"
+            android:focusable="true"
+            android:visibility="gone"/>
+
+        <LinearLayout
+            android:id="@+id/status_bar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top"
+            android:layout_margin="@dimen/space_sm"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="@dimen/space_md"
+            android:paddingVertical="@dimen/space_sm"
+            android:background="@drawable/bg_status_pill">
+
+            <TextView
+                android:id="@+id/status_text"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:textColor="#ffffff"
+                android:textSize="14sp"
+                android:fontFamily="monospace"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:text="@string/connecting"/>
+            <Button
+                android:id="@+id/reconnect"
+                style="@style/Button.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_sm"
+                android:minHeight="@dimen/touch_min"
+                android:paddingHorizontal="@dimen/space_md"
+                android:paddingVertical="@dimen/space_xs"
+                android:text="@string/reconnect"
+                android:visibility="gone"/>
+
+        </LinearLayout>
+
+        <!-- Collapsed FAB: tiny so it does not cover the preview. Bottom margin
+             is raised above the gesture/nav inset at runtime. -->
+        <Button
+            android:id="@+id/mirror_menu_fab"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="@dimen/space_lg"
+            android:layout_marginBottom="@dimen/space_lg"
+            android:background="@drawable/btn_mirror_fab"
+            android:text="⋮"
+            android:textColor="@color/on_accent"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textAllCaps="false"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:padding="0dp"
+            android:contentDescription="@string/mirror_actions_expand"
+            android:visibility="gone"/>
+
+        <!-- Expanded menu: unlock + disconnect. Max width keeps it compact on
+             tablets; gravity end keeps it near the FAB on phones and tablets. -->
+        <LinearLayout
+            android:id="@+id/mirror_menu_panel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="@dimen/space_lg"
+            android:layout_marginBottom="@dimen/space_lg"
+            android:orientation="vertical"
+            android:padding="@dimen/space_sm"
+            android:background="@drawable/bg_mirror_menu"
+            android:clickable="true"
+            android:focusable="true"
+            android:visibility="gone"
+            android:elevation="6dp">
+
+            <Button
+                android:id="@+id/unlock_fab"
+                style="@style/Button.Primary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="@dimen/touch_min"
+                android:minWidth="120dp"
+                android:paddingHorizontal="@dimen/space_lg"
+                android:text="@string/unlock_assist"
+                android:visibility="gone"/>
+
+            <Button
+                android:id="@+id/disconnect"
+                style="@style/Button.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:minHeight="@dimen/touch_min"
+                android:minWidth="120dp"
+                android:paddingHorizontal="@dimen/space_lg"
+                android:text="@string/disconnect"/>
+
+            <Button
+                android:id="@+id/ui_mode_cycle"
+                style="@style/Button.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:minHeight="@dimen/touch_min"
+                android:minWidth="120dp"
+                android:paddingHorizontal="@dimen/space_lg"
+                android:text="@string/ui_mode_cycle"/>
+
+            <Button
+                android:id="@+id/split_swap"
+                style="@style/Button.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:minHeight="@dimen/touch_min"
+                android:minWidth="120dp"
+                android:paddingHorizontal="@dimen/space_lg"
+                android:text="@string/split_swap"
+                android:visibility="gone"/>
+        </LinearLayout>
+
+        <!-- Semi-transparent keypad. clickable so touches stay local and are
+             not forwarded as remote touches on the (often black) surface. -->
+        <LinearLayout
+            android:id="@+id/unlock_panel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:layout_marginHorizontal="@dimen/space_md"
+            android:layout_marginBottom="@dimen/space_lg"
+            android:orientation="vertical"
+            android:padding="@dimen/space_md"
+            android:background="@drawable/bg_unlock_panel"
+            android:clickable="true"
+            android:focusable="true"
+            android:visibility="gone"
+            android:maxWidth="480dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingBottom="@dimen/space_sm">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/unlock_assist_title"
+                    android:textColor="@color/on_surface"
+                    android:textStyle="bold"
+                    android:textSize="16sp"/>
+
+                <Button
+                    android:id="@+id/unlock_close"
+                    style="@style/Button.Secondary"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="@dimen/touch_min"
+                    android:paddingHorizontal="@dimen/space_md"
+                    android:text="@string/unlock_close"/>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="@dimen/space_md"
+                android:text="@string/unlock_assist_help"
+                android:textColor="@color/on_surface_muted"
+                android:textSize="12sp"/>
+
+            <!-- 1 2 3 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button android:id="@+id/unlock_key_1" style="@style/Button.UnlockKey"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="@dimen/space_xs"
+                    android:text="1"/>
+                <Button android:id="@+id/unlock_key_2" style="@style/Button.UnlockKey"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="@dimen/space_xs"
+                    android:text="2"/>
+                <Button android:id="@+id/unlock_key_3" style="@style/Button.UnlockKey"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="@dimen/space_xs"
+                    android:text="3"/>
+            </LinearLayout>
+            <!-- 4 5 6 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button android:id="@+id/unlock_key_4" style="@style/Button.UnlockKey"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="@dimen/space_xs"
+                    android:text="4"/>
+                <Button android:id="@+id/unlock_key_5" style="@style/Button.UnlockKey"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="@dimen/space_xs"
+                    android:text="5"/>
+                <Button android:id="@+id/unlock_key_6" style="@style/Button.UnlockKey"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="@dimen/space_xs"
+                    android:text="6"/>
+            </LinearLayout>
+            <!-- 7 8 9 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button android:id="@+id/unlock_key_7" style="@style/Button.UnlockKey"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="@dimen/space_xs"
+                    android:text="7"/>
+                <Button android:id="@+id/unlock_key_8" style="@style/Button.UnlockKey"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="@dimen/space_xs"
+                    android:text="8"/>
+                <Button android:id="@+id/unlock_key_9" style="@style/Button.UnlockKey"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="@dimen/space_xs"
+                    android:text="9"/>
+            </LinearLayout>
+            <!-- DEL 0 Enter -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button android:id="@+id/unlock_key_del" style="@style/Button.UnlockKey"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="@dimen/space_xs"
+                    android:text="⌫"/>
+                <Button android:id="@+id/unlock_key_0" style="@style/Button.UnlockKey"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="@dimen/space_xs"
+                    android:text="0"/>
+                <Button android:id="@+id/unlock_key_enter" style="@style/Button.UnlockKey"
+                    android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_margin="@dimen/space_xs"
+                    android:text="@string/unlock_enter"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingTop="@dimen/space_sm">
+
+                <Button
+                    android:id="@+id/unlock_wake"
+                    style="@style/Button.Secondary"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="@dimen/space_xs"
+                    android:minHeight="@dimen/touch_min"
+                    android:text="@string/unlock_wake"/>
+
+                <Button
+                    android:id="@+id/unlock_power"
+                    style="@style/Button.Secondary"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/space_xs"
+                    android:minHeight="@dimen/touch_min"
+                    android:text="@string/unlock_power"/>
+            </LinearLayout>
+        </LinearLayout>
+
+    </FrameLayout>
+
+
+    <!-- Drag handle between preview and tools: drag horizontally to swap
+         Preview|Tools ↔ Tools|Preview (only those two layouts). -->
+    <View
+        android:id="@+id/split_handle"
+        android:layout_width="12dp"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_split_handle"
+        android:contentDescription="@string/split_swap_help"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone"/>
+
+    <include layout="@layout/tablet_tools"/>
+
+</LinearLayout>

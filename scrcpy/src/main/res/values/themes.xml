@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Custom theme on the platform's built-in Material theme (ships with
+     Android, not a dependency). Setting the colour attributes makes the
+     framework auto-tint EditText focus, radio buttons, checkboxes, the
+     action bar, and the cursor. NoActionBar / Fullscreen inherit the
+     same colours via dotted-name inheritance. -->
+<resources>
+    <style name="Theme.Scrcpy" parent="@android:style/Theme.Material">
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:colorPrimary">@color/surface</item>
+        <item name="android:colorPrimaryDark">@color/bg</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:textColorPrimary">@color/on_surface</item>
+        <item name="android:textColorSecondary">@color/on_surface_muted</item>
+        <item name="android:textColorHint">@color/on_surface_muted</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+    </style>
+
+    <style name="Theme.Scrcpy.NoActionBar">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+
+    <style name="Theme.Scrcpy.Fullscreen">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Filled accent button with the platform press ripple on top. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="?android:attr/colorControlHighlight">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/accent"/>
+            <corners android:radius="@dimen/button_radius"/>
+        </shape>
+    </item>
+</ripple>

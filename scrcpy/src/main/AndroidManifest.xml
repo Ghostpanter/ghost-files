@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- API 34+ typed FGS for the mirror session (audio + video playback). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        tools:targetApi="34"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"
+        tools:targetApi="33"/>
+
+    <queries>
+        <package android:name="moe.shizuku.privileged.api"/>
+    </queries>
+
+    <application>
+        <!-- Device / mirror home (was scrcpy-android's launcher). Started from the file manager's nav rail. -->
+        <activity
+            android:name=".Main"
+            android:exported="false"
+            android:label="@string/scrcpy_title"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:theme="@style/Theme.Scrcpy.NoActionBar"/>
+
+        <activity
+            android:name=".Mirror"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:hardwareAccelerated="true"
+            android:theme="@style/Theme.Scrcpy.Fullscreen"/>
+
+        <activity
+            android:name=".QrPair"
+            android:exported="false"
+            android:label="@string/pair_with_qr"
+            android:theme="@style/Theme.Scrcpy.NoActionBar"/>
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings"
+            android:theme="@style/Theme.Scrcpy.NoActionBar"/>
+
+        <activity
+            android:name=".LogViewerActivity"
+            android:exported="false"
+            android:label="@string/log_viewer_title"
+            android:theme="@style/Theme.Scrcpy.NoActionBar"/>
+
+        <activity
+            android:name=".Licenses"
+            android:exported="false"
+            android:label="@string/licenses"
+            android:theme="@style/Theme.Scrcpy.NoActionBar"/>
+
+        <activity
+            android:name=".Donate"
+            android:exported="false"
+            android:label="@string/donate"
+            android:theme="@style/Theme.Scrcpy.NoActionBar"/>
+
+        <service
+            android:name=".Sessions"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback"/>
+    </application>
+</manifest>

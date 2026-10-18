@@ -14,8 +14,15 @@ class GhostApp : Application() {
         instance = this
         installSecurityProviders()
         graph = AppGraph(this)
+        installScrcpy()
         com.ghostpanter.files.core.Lang.apply(graph.settings.language)
         Thread { com.ghostpanter.files.ui.Thumbnails.trimDisk() }.start()
+    }
+
+    /** Embedded scrcpy-android: crash log + Shizuku listener, and in-app language for its View activities. */
+    private fun installScrcpy() {
+        com.ghostpanter.scrcpy.ScrcpyHost.install(this)
+        com.ghostpanter.scrcpy.ScrcpyHost.setLocaleHook { base -> com.ghostpanter.files.ui.LocaleCtx.wrap(base) }
     }
 
     private fun installSecurityProviders() {

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Wide screens (available width ≥ 600dp): tools pane for split mirror. -->
+<resources>
+    <dimen name="tools_pane_width">420dp</dimen>
+    <dimen name="tools_pane_min_width">280dp</dimen>
+    <dimen name="tools_sidebar_width">150dp</dimen>
+</resources>

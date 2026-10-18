@@ -28,8 +28,8 @@ dependencies {
     api("org.apache.sshd:sshd-core:2.13.2")
     api("org.apache.sshd:sshd-sftp:2.13.2")
     api("org.slf4j:slf4j-nop:2.0.13")
-    api("org.bouncycastle:bcprov-jdk18on:1.78.1")
-    api("org.bouncycastle:bcpkix-jdk18on:1.78.1")
+    api("org.bouncycastle:bcprov-jdk18on:1.84")
+    api("org.bouncycastle:bcpkix-jdk18on:1.84")
     // Archives
     api("org.apache.commons:commons-compress:1.27.1")
     api("org.tukaani:xz:1.10")

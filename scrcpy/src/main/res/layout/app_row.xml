@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="@dimen/space_md"
+    android:paddingVertical="@dimen/space_sm"
+    android:background="?android:attr/selectableItemBackground"
+    android:minHeight="@dimen/touch_min">
+
+    <TextView
+        android:id="@+id/app_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/on_surface"
+        android:textSize="14sp"
+        android:singleLine="true"
+        android:ellipsize="end"/>
+
+    <TextView
+        android:id="@+id/app_package"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/on_surface_muted"
+        android:textSize="11sp"
+        android:fontFamily="monospace"
+        android:singleLine="true"
+        android:ellipsize="middle"/>
+</LinearLayout>

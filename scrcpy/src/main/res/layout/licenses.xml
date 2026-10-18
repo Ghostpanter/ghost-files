@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plain scrolling text. The notices are wrapped at 78 columns in the
+     asset, so they are shown in a monospace face at a size that does not
+     re-wrap them into nonsense. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="@dimen/space_lg">
+
+    <TextView
+        android:id="@+id/notices"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/on_surface"
+        android:textSize="12sp"
+        android:fontFamily="monospace"
+        android:textIsSelectable="true"/>
+
+</ScrollView>
