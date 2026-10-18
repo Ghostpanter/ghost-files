@@ -73,6 +73,9 @@ class TermSession(val backend: TermBackend, var theme: TermTheme) {
         try { block() } finally { programmatic = false }
     }
 
+    /** Feeds backend output synchronously (screenshots / tests). */
+    fun feedNow(text: String) = feed(text)
+
     private fun feed(text: String) {
         for (ev in parser.feed(text)) when (ev) {
             is TermParser.Event.Pid -> (backend as? StreamShellBackend)?.onPid(ev.pid)

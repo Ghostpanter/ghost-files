@@ -107,6 +107,9 @@ class TerminalView(context: Context, val session: TermSession, private val host:
 
     override fun onSelectionChanged(selStart: Int, selEnd: Int) {
         super.onSelectionChanged(selStart, selEnd)
+        // Called from TextView's constructor (setText) before our fields are initialised.
+        @Suppress("SENSELESS_COMPARISON")
+        if (session == null) return
         // a plain tap in the read-only transcript puts the caret back at the prompt
         if (selStart == selEnd && selStart < session.inputStart && session.buf.length >= session.inputStart) {
             post { if (selectionStart == selectionEnd && selectionStart < session.inputStart) setSelection(session.buf.length) }
