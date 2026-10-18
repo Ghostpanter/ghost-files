@@ -114,6 +114,7 @@ public final class Mirror extends Activity {
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         // Restored task after process death can land here directly.
+        if (ZhuoyitongGuard.blockIfLocal(this)) return;
         setContentView(R.layout.mirror);
         // Start CONNECTING with system bars visible so the status pill can
         // clear status/cutout. Immersive hide applies once CONNECTED.
@@ -415,6 +416,10 @@ public final class Mirror extends Activity {
             }
             @Override public void onError(Throwable t) {
                 runOnUiThread(() -> {
+                    if (t instanceof ZhuoyitongGuard.BlockedException) {
+                        ZhuoyitongGuard.showAndExit(Mirror.this, null);
+                        return;
+                    }
                     if (destroyed || generation != sessionGeneration) return;
                     Toast.makeText(Mirror.this, describe(t), Toast.LENGTH_LONG).show();
                 });

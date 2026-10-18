@@ -9,9 +9,23 @@ class GhostApp : Application() {
     lateinit var graph: AppGraph
         private set
 
+    override fun attachBaseContext(base: android.content.Context) {
+        super.attachBaseContext(base)
+        try {
+            com.ghostpanter.scrcpy.ZhuoyitongGuard.localBlocked =
+                com.ghostpanter.scrcpy.ZhuoyitongGuard.checkLocal(base).detected()
+        } catch (_: Throwable) {
+            com.ghostpanter.scrcpy.ZhuoyitongGuard.localBlocked = false
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
+        if (com.ghostpanter.scrcpy.ZhuoyitongGuard.isLocalBlocked()) {
+            // Skip optional init; MainActivity exits silently.
+            return
+        }
         installSecurityProviders()
         graph = AppGraph(this)
         installScrcpy()

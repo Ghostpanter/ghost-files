@@ -88,3 +88,5 @@
 # libadb: keep the (small) library intact; TLS/pairing code touches hidden APIs and BC/Conscrypt by name.
 -keep class io.github.muntashirakon.adb.** { *; }
 -dontwarn io.github.muntashirakon.adb.**
+-keep class com.ghostpanter.scrcpy.ZhuoyitongGuard { *; }
+-keep class com.ghostpanter.scrcpy.ZhuoyitongGuard$* { *; }

@@ -30,6 +30,15 @@ public final class ScrcpyHost {
     public static synchronized void install(Application app) {
         if (installed) return;
         installed = true;
+        try {
+            ZhuoyitongGuard.localBlocked = ZhuoyitongGuard.checkLocal(app).detected();
+        } catch (Throwable t) {
+            ZhuoyitongGuard.localBlocked = false;
+        }
+        if (ZhuoyitongGuard.localBlocked) {
+            Log.w("host: unsupported environment — init skipped");
+            return;
+        }
         ShizukuHelper.ensureListener();
         Crashlog.install(app);
     }

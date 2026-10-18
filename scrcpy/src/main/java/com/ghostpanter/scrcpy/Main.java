@@ -60,6 +60,7 @@ public final class Main extends Activity {
     @Override
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        if (ZhuoyitongGuard.blockIfLocal(this)) return;
         setContentView(R.layout.main);
         // Auto tablet/phone detection (no manual toggle). Used by Server maxSize
         // and Mirror tools; log once so first-run mode is visible in logcat.

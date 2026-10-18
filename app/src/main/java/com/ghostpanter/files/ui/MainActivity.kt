@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        if (com.ghostpanter.scrcpy.ZhuoyitongGuard.blockIfLocal(this)) return
         when {
             intent?.getBooleanExtra(EXTRA_SHOW_SERVERS, false) == true -> vm.screen = Screen.Servers
             intent?.getBooleanExtra(EXTRA_SHOW_TRANSFERS, false) == true -> vm.screen = Screen.Transfers

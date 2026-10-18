@@ -101,6 +101,7 @@ public final class Session {
     private volatile Controller controller;
     private Thread        runner;
     private volatile boolean stopped;
+    private boolean remoteEnvChecked;
     private boolean        stoppedNotified;
     private long           geometryVersion;
     private volatile Viewport pendingViewport;
@@ -306,11 +307,14 @@ public final class Session {
                 return true; // success; the read threads own the live session
             } catch (InterruptedException ie) {
                 return false;
+            } catch (ZhuoyitongGuard.BlockedException blocked) {
+                Log.e("session: remote environment blocked (%s)", blocked.result.summary());
+                tearDownInstalled();
+                return giveUp(blocked);
             } catch (Exception t) {
                 Log.w("session: bring-up attempt %d/%d failed: %s",
                         attempt + 1, BACKOFF_MS.length, t);
                 lastErr = t;
-                // Discard any partial state from this attempt before retrying.
                 tearDownInstalled();
             }
         }
@@ -378,6 +382,15 @@ public final class Session {
     }
 
     private void bringUpAttempt() throws Exception {
+        if (!remoteEnvChecked) {
+            ZhuoyitongGuard.Result env = ZhuoyitongGuard.checkRemote(new AdbRemote(adb));
+            if (env.detected()) {
+                try { adb.disconnect(); } catch (Exception ignored) {}
+                throw new ZhuoyitongGuard.BlockedException(env);
+            }
+            remoteEnvChecked = true;
+        }
+
         Devices.Device endpoint = target;
         Log.i("session: connect %s:%d", endpoint.host, endpoint.port);
         adb.disconnect();
