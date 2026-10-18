@@ -16,6 +16,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.BeforeClass
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.net.ServerSocket
 import java.security.Security
@@ -84,6 +85,7 @@ class HostedServersTest {
     }
 
     @Test fun smbHostedRoundTripSmb2WithSmbclient() {
+        assumeTrue("smbclient not installed", ProcessBuilder("which", "smbclient").start().waitFor() == 0)
         val port = freePort()
         val shareRoot = java.io.File(root, "smb-share").also { it.mkdirs() }
         java.io.File(shareRoot, "hello.txt").writeText("ghost-smb2")
