@@ -19,6 +19,8 @@ public final class Settings {
     public static final String LOW_LATENCY   = "low_latency";     // prefer low-latency encoder
     public static final String HINT_BACK_SHOWN = "hint_back_shown"; // first-run UI hint
     public static final String CLIPBOARD       = "clipboard";       // two-way clipboard sync
+    public static final String STAY_AWAKE      = "stay_awake";      // target stays on while controlled (svc power stayon)
+    public static final String SCREEN_OFF      = "screen_off";      // turn the target's screen off while mirroring
     public static final String ROOT_CAPTURE   = "root_capture";    // su-elevate server
     public static final String PREFER_SHIZUKU = "prefer_shizuku";  // use Shizuku when available
     /** UI mode override: auto / force phone / force tablet. */
@@ -160,6 +162,22 @@ public final class Settings {
 
     public static void setClipboardSync(Context ctx, boolean v) {
         prefs(ctx).edit().putBoolean(CLIPBOARD, v).apply();
+    }
+
+    public static boolean stayAwake(Context ctx) {
+        return bool(ctx, STAY_AWAKE, false);
+    }
+
+    public static void setStayAwake(Context ctx, boolean v) {
+        prefs(ctx).edit().putBoolean(STAY_AWAKE, v).apply();
+    }
+
+    public static boolean screenOff(Context ctx) {
+        return bool(ctx, SCREEN_OFF, false);
+    }
+
+    public static void setScreenOff(Context ctx, boolean v) {
+        prefs(ctx).edit().putBoolean(SCREEN_OFF, v).apply();
     }
 
     public static boolean rootCaptureSecure(Context ctx) {

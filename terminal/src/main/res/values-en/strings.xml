@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="term_new_tab">New tab</string>
+    <string name="term_close_tab">Close tab</string>
+    <string name="term_favorites">Saved commands</string>
+    <string name="term_fav_add">Save current input</string>
+    <string name="term_fav_name">Name</string>
+    <string name="term_fav_command">Command</string>
+    <string name="term_fav_empty">No saved commands yet. Type a command at the prompt, then tap “Save current input”.</string>
+    <string name="term_fav_import">Import from clipboard</string>
+    <string name="term_fav_import_file">Import from file</string>
+    <string name="term_fav_export">Export (copy + save file)</string>
+    <string name="term_fav_imported">Imported %1$d</string>
+    <string name="term_fav_exported">Copied to the clipboard and saved to %1$s</string>
+    <string name="term_fav_deleted">Deleted</string>
+    <string name="term_fav_run">Run</string>
+    <string name="term_fav_insert">Insert</string>
+    <string name="term_fav_delete">Delete</string>
+    <string name="term_font_bigger">Larger text</string>
+    <string name="term_font_smaller">Smaller text</string>
+    <string name="term_clear">Clear (Ctrl-L)</string>
+    <string name="term_paste">Paste</string>
+    <string name="term_copy_all">Copy all output</string>
+    <string name="term_interrupt">Interrupt (Ctrl-C)</string>
+    <string name="term_keyboard">Keyboard</string>
+    <string name="term_more">More</string>
+    <string name="term_restart">Reconnect</string>
+    <string name="term_no_backends">No terminal available</string>
+    <string name="term_copied">Copied</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+</resources>

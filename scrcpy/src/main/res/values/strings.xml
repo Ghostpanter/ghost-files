@@ -345,4 +345,6 @@
     <string name="direct_howto_title">安卓 9/10 开启网络 ADB</string>
     <string name="direct_howto_body">安卓 9/10 没有「无线调试 / 配对码」，需要让被控端的 adbd 监听 TCP 端口：\n\n方式一（电脑 USB，一次即可，重启后失效）：\n1. 被控端：设置 → 开发者选项 → 打开「USB 调试」\n2. 用数据线连电脑，执行：\n   adb tcpip 5555\n3. 拔线，在本应用输入 被控端IP:5555 直连\n\n方式二（被控端已 Root，无需电脑）：\n在被控端终端（如 Termux）执行：\n   su -c \'setprop service.adb.tcp.port 5555; stop adbd; start adbd\'\n如需重启后仍生效，可用 Magisk 模块或在 /data/adb/service.d 加入上述 setprop 命令（persist.adb.tcp.port 在部分 ROM 有效）。\n\n连接时被控端会弹出「允许 USB 调试吗？」，点「允许」（勾选「一律允许」以后不再询问）。\n\n说明：\n• 本机（控制端）是否 Root / Shizuku 无关，不需要。\n• 安卓 9/10 被控端不支持声音转发（系统限制，安卓 11+ 才支持），画面、触控、键盘、剪贴板正常。\n• 网络 ADB 无加密，请只在可信局域网使用，用完可在被控端关闭 USB 调试。</string>
     <string name="android9_audio_unsupported">被控端为安卓 %1$d，系统不支持声音转发（需安卓 11+），已仅镜像画面</string>
+    <string name="stay_awake">控制时目标设备保持常亮（svc power stayon，断开后恢复）</string>
+    <string name="screen_off_mirror">投屏时关闭目标设备屏幕（息屏投屏）</string>
 </resources>

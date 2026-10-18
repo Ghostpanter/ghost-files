@@ -431,6 +431,20 @@
                 android:layout_height="wrap_content"
                 android:text="@string/clipboard_sync"/>
 
+            <CheckBox
+                android:id="@+id/stay_awake"
+                style="@style/RadioOption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/stay_awake"/>
+
+            <CheckBox
+                android:id="@+id/screen_off"
+                style="@style/RadioOption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/screen_off_mirror"/>
+
         </LinearLayout>
 
 

@@ -934,6 +934,11 @@ public final class Server {
         args.add("tunnel_forward=true");
         args.add("cleanup=true");
         args.add("power_on=true");
+        // Keep-awake while controlling: scrcpy sets stay_on_while_plugged_in
+        // (same as `svc power stayon true`) and restores it on cleanup.
+        if (Settings.stayAwake(ctx)) args.add("stay_awake=true");
+        // Screen-off mirroring: the target panel turns off, capture continues.
+        if (Settings.screenOff(ctx)) args.add("turn_screen_off=true");
         return String.join(" ", args);
     }
 

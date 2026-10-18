@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="term_new_tab">新建标签页</string>
+    <string name="term_close_tab">关闭标签页</string>
+    <string name="term_favorites">命令收藏</string>
+    <string name="term_fav_add">收藏当前输入</string>
+    <string name="term_fav_name">名称</string>
+    <string name="term_fav_command">命令</string>
+    <string name="term_fav_empty">还没有收藏。在提示符后输入命令，再点“收藏当前输入”。</string>
+    <string name="term_fav_import">从剪贴板导入</string>
+    <string name="term_fav_import_file">从文件导入</string>
+    <string name="term_fav_export">导出（复制 + 保存文件）</string>
+    <string name="term_fav_imported">已导入 %1$d 条</string>
+    <string name="term_fav_exported">已复制到剪贴板，并保存到 %1$s</string>
+    <string name="term_fav_deleted">已删除</string>
+    <string name="term_fav_run">执行</string>
+    <string name="term_fav_insert">填入</string>
+    <string name="term_fav_delete">删除</string>
+    <string name="term_font_bigger">字号放大</string>
+    <string name="term_font_smaller">字号缩小</string>
+    <string name="term_clear">清屏 (Ctrl-L)</string>
+    <string name="term_paste">粘贴</string>
+    <string name="term_copy_all">复制全部输出</string>
+    <string name="term_interrupt">中断 (Ctrl-C)</string>
+    <string name="term_keyboard">键盘</string>
+    <string name="term_more">更多</string>
+    <string name="term_restart">重新连接</string>
+    <string name="term_no_backends">没有可用的终端</string>
+    <string name="term_copied">已复制</string>
+    <string name="cancel">取消</string>
+    <string name="ok">确定</string>
+</resources>

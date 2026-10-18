@@ -22,6 +22,7 @@ class GhostApp : Application() {
     /** Embedded scrcpy-android: crash log + Shizuku listener, and in-app language for its View activities. */
     private fun installScrcpy() {
         com.ghostpanter.scrcpy.ScrcpyHost.install(this)
+        com.ghostpanter.adb.AdbPool.init(this)
         com.ghostpanter.scrcpy.ScrcpyHost.setLocaleHook { base -> com.ghostpanter.files.ui.LocaleCtx.wrap(base) }
     }
 

@@ -128,6 +128,10 @@ public final class SettingsActivity extends Activity {
             Log.i("settings: low_latency=%b", checked);
         });
 
+        CheckBox stayBox = findViewById(R.id.stay_awake);
+        stayBox.setOnCheckedChangeListener((b, checked) -> Settings.setStayAwake(this, checked));
+        CheckBox screenOffBox = findViewById(R.id.screen_off);
+        screenOffBox.setOnCheckedChangeListener((b, checked) -> Settings.setScreenOff(this, checked));
         CheckBox clipboardBox = findViewById(R.id.clipboard_sync);
         clipboardBox.setOnCheckedChangeListener((b, checked) -> {
             Settings.setClipboardSync(this, checked);
@@ -232,6 +236,8 @@ public final class SettingsActivity extends Activity {
         }
         ((CheckBox) findViewById(R.id.low_latency)).setChecked(Settings.lowLatency(this));
         ((CheckBox) findViewById(R.id.clipboard_sync)).setChecked(Settings.clipboardSync(this));
+        ((CheckBox) findViewById(R.id.stay_awake)).setChecked(Settings.stayAwake(this));
+        ((CheckBox) findViewById(R.id.screen_off)).setChecked(Settings.screenOff(this));
         ((CheckBox) findViewById(R.id.root_capture_secure)).setChecked(Settings.rootCaptureSecure(this));
         ((CheckBox) findViewById(R.id.prefer_shizuku)).setChecked(Settings.preferShizuku(this));
         switch (Settings.uiMode(this)) {

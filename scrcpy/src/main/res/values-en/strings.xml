@@ -330,4 +330,6 @@
     <string name="debug_bad_dpi">Enter a valid DPI (72–640)</string>
     <string name="zyt_title">Unsupported environment</string>
     <string name="zyt_exit">Exit</string>
+    <string name="stay_awake">Keep the target awake while controlling (svc power stayon, restored on disconnect)</string>
+    <string name="screen_off_mirror">Turn the target screen off while mirroring</string>
 </resources>

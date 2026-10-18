@@ -31,6 +31,10 @@ class FsManager(
 
     private val remotes = ConcurrentHashMap<String, VirtualFs>()
     private val safs = ConcurrentHashMap<String, SafFs>()
+    private val adbs = ConcurrentHashMap<String, VirtualFs>()
+
+    private fun adbLabel(serial: String, su: Boolean): String =
+        (com.ghostpanter.adb.AdbPool.name(serial) ?: serial) + if (su) " (Root)" else ""
 
     fun get(id: String): VirtualFs = when {
         id == LocalFs.ID -> local
@@ -44,6 +48,11 @@ class FsManager(
             RemoteFsFactory.create(cfg, hostKeys)
         }
         id.startsWith("saf:") -> safs.getOrPut(id) { SafFs(context, Uri.parse(id.removePrefix("saf:")), id) }
+        com.ghostpanter.adb.AdbFs.isAdbId(id) -> adbs.getOrPut(id) {
+            val serial = com.ghostpanter.adb.AdbFs.serialOf(id)
+            val su = id.startsWith(com.ghostpanter.adb.AdbFs.PREFIX_SU)
+            com.ghostpanter.adb.AdbFs(com.ghostpanter.adb.AdbPool.device(serial), id, adbLabel(serial, su), root = su)
+        }
         else -> throw FsException("unknown fs $id")
     }
 
@@ -52,6 +61,7 @@ class FsManager(
      * null for non-network backends. The caller closes it.
      */
     fun openDedicated(id: String): VirtualFs? {
+        // ADB: streams multiplex over the pooled connection; no dedicated session needed.
         if (!id.startsWith("net:")) return null
         val cfg = servers.get(id.removePrefix("net:")) ?: return null
         return RemoteFsFactory.create(cfg, hostKeys, dedicated = true)
@@ -63,11 +73,13 @@ class FsManager(
         id == SHIZUKU -> "Shizuku"
         id.startsWith("net:") -> servers.get(id.removePrefix("net:"))?.let { "${it.name} (${it.protocol.label})" } ?: id
         id.startsWith("saf:") -> "SAF: " + (Uri.parse(id.removePrefix("saf:")).lastPathSegment?.substringAfter(':') ?: "?")
+        com.ghostpanter.adb.AdbFs.isAdbId(id) -> "ADB · " + adbLabel(com.ghostpanter.adb.AdbFs.serialOf(id), id.startsWith(com.ghostpanter.adb.AdbFs.PREFIX_SU))
         else -> id
     }
 
     /** Drop a cached connection (after editing/removing a server). */
     fun invalidate(id: String) {
+        adbs.remove(id)?.let { fs -> Thread { runCatching { fs.close() } }.start() }
         remotes.remove(id)?.let { fs -> Thread { runCatching { fs.close() } }.start() }
     }
 
