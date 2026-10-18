@@ -329,8 +329,6 @@
     <string name="debug_error">设备调试失败：%1$s</string>
     <string name="debug_bad_size">请输入有效的宽高</string>
     <string name="debug_bad_dpi">请输入有效的 DPI（72–640）</string>
-    <string name="zyt_title">不支持的运行环境</string>
-    <string name="zyt_exit">退出</string>
     <string name="stay_awake">控制时目标设备保持常亮（svc power stayon，断开后恢复）</string>
     <string name="screen_off_mirror">投屏时关闭目标设备屏幕（息屏投屏）</string>
     <string name="device_open_tools">ADB 工具（应用 / 进程 / 日志 / 激活）</string>

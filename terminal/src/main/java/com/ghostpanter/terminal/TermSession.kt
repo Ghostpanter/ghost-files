@@ -58,14 +58,18 @@ class TermSession(val backend: TermBackend, var theme: TermTheme) {
         }.start()
         // Shells that ignore PS1 still get a usable terminal: show output after a short grace period.
         main.postDelayed({ if (!promptSeen && !exited) prompt(0, cwd) }, 4000)
-        try {
-            backend.start(object : TermSink {
-                override fun onOutput(text: String) { main.post { feed(text) } }
-                override fun onExit(reason: String?) { main.post { exitedWith(reason) } }
-            }, cols, rows)
-        } catch (e: Exception) {
-            exitedWith(e.message ?: e.javaClass.simpleName)
-        }
+        // Opening the shell may hit the network (ADB): never on the main thread.
+        Thread({
+            try {
+                backend.start(object : TermSink {
+                    override fun onOutput(text: String) { main.post { feed(text) } }
+                    override fun onExit(reason: String?) { main.post { exitedWith(reason) } }
+                }, cols, rows)
+            } catch (e: Throwable) {
+                val msg = e.message ?: e.javaClass.simpleName
+                main.post { exitedWith(msg) }
+            }
+        }, "term-start").start()
     }
 
     private inline fun edit(block: () -> Unit) {

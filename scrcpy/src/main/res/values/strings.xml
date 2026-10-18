@@ -329,8 +329,6 @@
     <string name="debug_error">设备调试失败：%1$s</string>
     <string name="debug_bad_size">请输入有效的宽高</string>
     <string name="debug_bad_dpi">请输入有效的 DPI（72–640）</string>
-    <string name="zyt_title">不支持的运行环境</string>
-    <string name="zyt_exit">退出</string>
     <string name="direct_connect_title">直连（IP:端口 · 安卓 9/10）</string>
     <string name="direct_connect_help">适用于没有「无线调试」的安卓 9/10 被控端（也适用于任何已执行 adb tcpip 的设备）。无需配对码，只填 IP 即默认端口 5555。首次连接请在被控端点击「允许 USB 调试」。</string>
     <string name="direct_address_hint">192.168.1.20:5555</string>

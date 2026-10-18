@@ -83,3 +83,8 @@
 -dontwarn io.github.muntashirakon.crypto.spake2.**
 # Shizuku UserService is instantiated reflectively by class name.
 -keep class com.ghostpanter.scrcpy.ShellUserService { *; }
+-keep class com.ghostpanter.scrcpy.IShellUserService { *; }
+-keep class com.ghostpanter.scrcpy.IShellUserService$* { *; }
+# libadb: keep the (small) library intact; TLS/pairing code touches hidden APIs and BC/Conscrypt by name.
+-keep class io.github.muntashirakon.adb.** { *; }
+-dontwarn io.github.muntashirakon.adb.**

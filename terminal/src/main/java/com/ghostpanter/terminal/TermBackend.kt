@@ -119,9 +119,17 @@ class StreamShellBackend(
 
     fun onPid(pid: Int) { shellPid = pid }
 
+    // Writes leave the caller's (main) thread: ADB streams are sockets (NetworkOnMainThread).
+    private val writer = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "term-write").apply { isDaemon = true } }
+
     private fun write(b: ByteArray) {
-        val o = out ?: return
-        try { synchronized(o) { o.write(b); o.flush() } } catch (_: Exception) { }
+        if (closed.get()) return
+        runCatching {
+            writer.execute {
+                val o = out ?: return@execute
+                try { synchronized(o) { o.write(b); o.flush() } } catch (_: Exception) { }
+            }
+        }
     }
 
     override fun sendLine(line: String) {
@@ -150,6 +158,8 @@ class StreamShellBackend(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        runCatching { closer?.close() }
+        val c = closer
+        Thread({ runCatching { c?.close() } }, "term-close").start()
+        writer.shutdown()
     }
 }
