@@ -1,0 +1,104 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>E-dark</title>
+<style>
+@font-face { font-family: 'NotoSC'; src: url('file:///usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'); font-weight: 400; }
+@font-face { font-family: 'NotoSC'; src: url('file:///usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc'); font-weight: 700; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #222; display: flex; justify-content: center; align-items: flex-start; padding: 24px; font-family: 'NotoSC', 'Noto Sans CJK SC', sans-serif; -webkit-font-smoothing: antialiased; }
+.phone { background: #000000; color: #FAFAFA; border-radius: 28px; overflow: hidden; position: relative; display: flex; flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+.phone.tablet { border-radius: 16px; }
+.status { height: 44px; padding: 12px 20px 0; display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; color: #FAFAFA; flex-shrink: 0; }
+.status .right { display: flex; gap: 6px; align-items: center; }
+.status .ico { width: 16px; height: 16px; display: inline-flex; }
+.status .ico svg { width: 16px; height: 16px; }
+.top { display: flex; align-items: center; gap: 4px; padding: 4px 10px 8px; flex-shrink: 0; }
+.title-wrap { flex: 1; min-width: 0; padding-left: 8px; }
+.title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+.dot-title { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; letter-spacing: 0.28em; color: #A1A1AA; margin-bottom: 2px; }
+.title-cn { font-size: 22px; font-weight: 700; }
+.icon-btn { width: 40px; height: 40px; border: 0; background: transparent; color: #FAFAFA; border-radius: 20px; display: flex; align-items: center; justify-content: center; }
+.icon-btn .ico, .icon-btn .ico svg { width: 22px; height: 22px; }
+.text-btn { border: 0; background: transparent; color: #3B82F6; font-weight: 600; font-size: 15px; padding: 8px 12px; font-family: inherit; }
+.chip { font-size: 12px; color: #3B82F6; background: #172554; padding: 4px 10px; border-radius: 999px; font-weight: 500; }
+.path { margin: 0 14px 10px; padding: 9px 12px; background: #18181B; border-radius: 12px; font-size: 13px; color: #A1A1AA; display: flex; gap: 6px; align-items: center; overflow: hidden; white-space: nowrap; flex-shrink: 0; }
+.path .crumb { color: #3B82F6; font-weight: 600; }
+.path .sep { opacity: .5; }
+.path .rest { overflow: hidden; text-overflow: ellipsis; color: #FAFAFA; }
+.body { flex: 1; min-height: 0; display: flex; padding: 0 10px; gap: 8px; }
+.rail { width: 72px; display: flex; flex-direction: column; gap: 4px; padding-top: 4px; flex-shrink: 0; }
+.rail-item { border: 0; background: transparent; color: #A1A1AA; border-radius: 14px; padding: 10px 4px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; font-family: inherit; }
+.rail-item.on { background: #172554; color: #3B82F6; }
+.rail-item .ico, .rail-item .ico svg { width: 22px; height: 22px; }
+.side { width: 200px; background: #0E0E10; border-radius: 12px; padding: 12px; overflow: auto; flex-shrink: 0; border: 1px solid #27272A; }
+.side-h { font-size: 11px; color: #A1A1AA; margin: 10px 0 6px; font-weight: 600; letter-spacing: .04em; }
+.side-item { padding: 8px 10px; border-radius: 10px; font-size: 13px; color: #FAFAFA; }
+.side-item.on { background: #172554; color: #3B82F6; font-weight: 600; }
+.panes { flex: 1; min-width: 0; display: flex; gap: 8px; min-height: 0; }
+.pane { flex: 1; min-width: 0; background: #050506; border-radius: 12px; border: 1px solid #27272A; display: flex; flex-direction: column; overflow: hidden; }
+.pane.focus { background: #0E0E10; border-color: #3B82F6; box-shadow: 0 0 0 1px #172554; }
+.pane-h { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 8px; font-size: 13px; font-weight: 600; color: #A1A1AA; flex-shrink: 0; }
+.pane.focus .pane-h { color: #3B82F6; }
+.pane-h .dot { width: 7px; height: 7px; border-radius: 50%; background: #3B82F6; }
+.list { overflow: auto; flex: 1; }
+.row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid #27272A; }
+.row:first-child { border-top: 0; }
+.row.sel { background: #172554; }
+.row .ico.type, .row .ico.type svg { width: 24px; height: 24px; flex-shrink: 0; }
+.thumb { width: 36px; height: 36px; border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.meta { min-width: 0; flex: 1; }
+.name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #FAFAFA; }
+.sub { font-size: 11px; color: #A1A1AA; margin-top: 1px; }
+.actions { flex-shrink: 0; padding: 8px 14px 6px; border-top: 1px solid #27272A; background: #0E0E10; }
+.selcount { display: block; font-size: 11px; color: #A1A1AA; margin-bottom: 6px; }
+.btns { display: flex; gap: 8px; }
+.btns button { flex: 1; border: 0; background: #18181B; color: #FAFAFA; font-weight: 600; font-size: 13px; padding: 10px 0; border-radius: 12px; font-family: inherit; }
+.btns button:first-child { color: #3B82F6; }
+.gesture { height: 20px; display: flex; justify-content: center; align-items: center; flex-shrink: 0; }
+.gesture i { width: 108px; height: 4px; border-radius: 2px; background: #FAFAFA; opacity: .2; }
+.page { flex: 1; overflow: auto; padding: 8px 14px 20px; }
+.dev { display: flex; align-items: center; gap: 12px; padding: 14px 4px 6px; }
+.dev-ico { width: 40px; height: 40px; border-radius: 12px; background: #18181B; display: flex; align-items: center; justify-content: center; color: #3B82F6; }
+.dev-ico .ico, .dev-ico .ico svg { width: 22px; height: 22px; }
+.dev-meta { flex: 1; min-width: 0; }
+.dev-meta .name { font-size: 15px; font-weight: 600; }
+.dev-meta .sub { font-size: 12px; color: #A1A1AA; }
+.badge { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #18181B; color: #A1A1AA; }
+.badge.on { background: #172554; color: #3B82F6; }
+.dev-actions { display: flex; gap: 8px; padding: 0 4px 12px 56px; border-bottom: 1px solid #27272A; }
+.dev-actions button { border: 0; background: #18181B; color: #FAFAFA; font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 999px; font-family: inherit; }
+.hint { margin-top: 16px; font-size: 12px; color: #A1A1AA; line-height: 1.5; }
+.term { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 12px 8px; background: #000000; border-radius: 12px; overflow: hidden; border: 1px solid #27272A; }
+.tabs { display: flex; gap: 8px; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.tab { font-size: 12px; color: #888; padding: 4px 10px; border-radius: 8px; }
+.tab.on { background: rgba(255,255,255,.08); color: #fff; }
+.scroll { flex: 1; padding: 12px; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.55; color: #E4E4E7; white-space: pre-wrap; overflow: auto; }
+.p-user { color: #34C759; } .p-at { color: #34C759; } .p-host { color: #34C759; }
+.p-dir { color: #0A84FF; } .p-pct { color: #E4E4E7; } .caret { color: #E4E4E7; }
+.keys { display: flex; gap: 6px; padding: 8px; overflow: auto; border-top: 1px solid rgba(255,255,255,.08); }
+.keys span { flex-shrink: 0; background: rgba(255,255,255,.08); color: #ddd; font-size: 12px; padding: 6px 10px; border-radius: 8px; font-family: ui-monospace, Menlo, monospace; }
+</style></head><body>
+    <div class="phone" style="width:412px;height:915px">
+      
+    <div class="status">
+      <span class="time">9:41</span>
+      <span class="right"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4.5 9.5a11 11 0 0115 0M7.5 12.5a7 7 0 019 0M10.5 15.5a3 3 0 013 0"/><circle cx="12" cy="18.5" r="1" fill="currentColor"/></svg></span><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="8" width="16" height="9" rx="1.5"/><path d="M19 11h1.5v3H19"/><rect x="5" y="10" width="10" height="5" rx="0.5" fill="currentColor"/></svg></span></span>
+    </div>
+      <header class="top">
+        <button class="icon-btn"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg></span></button>
+        <div class="title-wrap"><div class="title">终端</div></div>
+        <span class="chip">目标 · Xiaomi</span>
+      </header>
+      <div class="term">
+        <div class="tabs"><span class="tab on">shell</span><span class="tab">+</span></div>
+        <pre class="scroll"><span class="p-user">shell</span><span class="p-at">@</span><span class="p-host">Xiaomi</span> <span class="p-dir">sdcard</span> <span class="p-pct">%</span> ls
+DCIM   Download   Movies   Music   Pictures
+<span class="p-user">shell</span><span class="p-at">@</span><span class="p-host">Xiaomi</span> <span class="p-dir">sdcard</span> <span class="p-pct">%</span> getprop ro.product.model
+23049RAD8C
+<span class="p-user">shell</span><span class="p-at">@</span><span class="p-host">Xiaomi</span> <span class="p-dir">sdcard</span> <span class="p-pct">%</span> <span class="caret">█</span></pre>
+        <div class="keys"><span>Esc</span><span>Tab</span><span>Ctrl</span><span>Alt</span><span>↑</span><span>↓</span><span>←</span><span>→</span></div>
+      </div>
+      <div class="gesture"><i></i></div>
+    </div></body></html>

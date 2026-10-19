@@ -1,0 +1,150 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>D-light</title>
+<style>
+@font-face { font-family: 'NotoSC'; src: url('file:///usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'); font-weight: 400; }
+@font-face { font-family: 'NotoSC'; src: url('file:///usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc'); font-weight: 700; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #222; display: flex; justify-content: center; align-items: flex-start; padding: 24px; font-family: 'NotoSC', 'Noto Sans CJK SC', sans-serif; -webkit-font-smoothing: antialiased; }
+.phone { background: #F5F6F8; color: #1A1A1A; border-radius: 28px; overflow: hidden; position: relative; display: flex; flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+.phone.tablet { border-radius: 16px; }
+.status { height: 44px; padding: 12px 20px 0; display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; color: #1A1A1A; flex-shrink: 0; }
+.status .right { display: flex; gap: 6px; align-items: center; }
+.status .ico { width: 16px; height: 16px; display: inline-flex; }
+.status .ico svg { width: 16px; height: 16px; }
+.top { display: flex; align-items: center; gap: 4px; padding: 4px 10px 8px; flex-shrink: 0; }
+.title-wrap { flex: 1; min-width: 0; padding-left: 8px; }
+.title { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+.dot-title { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; letter-spacing: 0.28em; color: #8A8F98; margin-bottom: 2px; }
+.title-cn { font-size: 22px; font-weight: 700; }
+.icon-btn { width: 40px; height: 40px; border: 0; background: transparent; color: #1A1A1A; border-radius: 20px; display: flex; align-items: center; justify-content: center; }
+.icon-btn .ico, .icon-btn .ico svg { width: 22px; height: 22px; }
+.text-btn { border: 0; background: transparent; color: #3482FF; font-weight: 600; font-size: 15px; padding: 8px 12px; font-family: inherit; }
+.chip { font-size: 12px; color: #3482FF; background: #E8F1FF; padding: 4px 10px; border-radius: 999px; font-weight: 500; }
+.path { margin: 0 14px 10px; padding: 9px 12px; background: #EEF0F3; border-radius: 18px; font-size: 13px; color: #8A8F98; display: flex; gap: 6px; align-items: center; overflow: hidden; white-space: nowrap; flex-shrink: 0; }
+.path .crumb { color: #3482FF; font-weight: 600; }
+.path .sep { opacity: .5; }
+.path .rest { overflow: hidden; text-overflow: ellipsis; color: #1A1A1A; }
+.body { flex: 1; min-height: 0; display: flex; padding: 0 10px; gap: 8px; }
+.rail { width: 72px; display: flex; flex-direction: column; gap: 4px; padding-top: 4px; flex-shrink: 0; }
+.rail-item { border: 0; background: transparent; color: #8A8F98; border-radius: 14px; padding: 10px 4px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; font-family: inherit; }
+.rail-item.on { background: #E8F1FF; color: #3482FF; }
+.rail-item .ico, .rail-item .ico svg { width: 22px; height: 22px; }
+.side { width: 200px; background: #FFFFFF; border-radius: 18px; padding: 12px; overflow: auto; flex-shrink: 0; border: 1px solid #E6E8EC; }
+.side-h { font-size: 11px; color: #8A8F98; margin: 10px 0 6px; font-weight: 600; letter-spacing: .04em; }
+.side-item { padding: 8px 10px; border-radius: 10px; font-size: 13px; color: #1A1A1A; }
+.side-item.on { background: #E8F1FF; color: #3482FF; font-weight: 600; }
+.panes { flex: 1; min-width: 0; display: flex; gap: 8px; min-height: 0; }
+.pane { flex: 1; min-width: 0; background: #FAFBFC; border-radius: 18px; border: 1px solid #E6E8EC; display: flex; flex-direction: column; overflow: hidden; }
+.pane.focus { background: #FFFFFF; border-color: #3482FF; box-shadow: 0 0 0 1px #E8F1FF; }
+.pane-h { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 8px; font-size: 13px; font-weight: 600; color: #8A8F98; flex-shrink: 0; }
+.pane.focus .pane-h { color: #3482FF; }
+.pane-h .dot { width: 7px; height: 7px; border-radius: 50%; background: #3482FF; }
+.list { overflow: auto; flex: 1; }
+.row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid #E6E8EC; }
+.row:first-child { border-top: 0; }
+.row.sel { background: #E8F1FF; }
+.row .ico.type, .row .ico.type svg { width: 24px; height: 24px; flex-shrink: 0; }
+.thumb { width: 36px; height: 36px; border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.meta { min-width: 0; flex: 1; }
+.name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #1A1A1A; }
+.sub { font-size: 11px; color: #8A8F98; margin-top: 1px; }
+.actions { flex-shrink: 0; padding: 8px 14px 6px; border-top: 1px solid #E6E8EC; background: #FFFFFF; }
+.selcount { display: block; font-size: 11px; color: #8A8F98; margin-bottom: 6px; }
+.btns { display: flex; gap: 8px; }
+.btns button { flex: 1; border: 0; background: #EEF0F3; color: #1A1A1A; font-weight: 600; font-size: 13px; padding: 10px 0; border-radius: 12px; font-family: inherit; }
+.btns button:first-child { color: #3482FF; }
+.gesture { height: 20px; display: flex; justify-content: center; align-items: center; flex-shrink: 0; }
+.gesture i { width: 108px; height: 4px; border-radius: 2px; background: #1A1A1A; opacity: .2; }
+.page { flex: 1; overflow: auto; padding: 8px 14px 20px; }
+.dev { display: flex; align-items: center; gap: 12px; padding: 14px 4px 6px; }
+.dev-ico { width: 40px; height: 40px; border-radius: 12px; background: #EEF0F3; display: flex; align-items: center; justify-content: center; color: #3482FF; }
+.dev-ico .ico, .dev-ico .ico svg { width: 22px; height: 22px; }
+.dev-meta { flex: 1; min-width: 0; }
+.dev-meta .name { font-size: 15px; font-weight: 600; }
+.dev-meta .sub { font-size: 12px; color: #8A8F98; }
+.badge { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #EEF0F3; color: #8A8F98; }
+.badge.on { background: #E8F1FF; color: #3482FF; }
+.dev-actions { display: flex; gap: 8px; padding: 0 4px 12px 56px; border-bottom: 1px solid #E6E8EC; }
+.dev-actions button { border: 0; background: #EEF0F3; color: #1A1A1A; font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 999px; font-family: inherit; }
+.hint { margin-top: 16px; font-size: 12px; color: #8A8F98; line-height: 1.5; }
+.term { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 12px 8px; background: #1C1C1E; border-radius: 18px; overflow: hidden; border: 1px solid #E6E8EC; }
+.tabs { display: flex; gap: 8px; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.tab { font-size: 12px; color: #888; padding: 4px 10px; border-radius: 8px; }
+.tab.on { background: rgba(255,255,255,.08); color: #fff; }
+.scroll { flex: 1; padding: 12px; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.55; color: #E5E5EA; white-space: pre-wrap; overflow: auto; }
+.p-user { color: #34C759; } .p-at { color: #34C759; } .p-host { color: #34C759; }
+.p-dir { color: #0A84FF; } .p-pct { color: #E5E5EA; } .caret { color: #E5E5EA; }
+.keys { display: flex; gap: 6px; padding: 8px; overflow: auto; border-top: 1px solid rgba(255,255,255,.08); }
+.keys span { flex-shrink: 0; background: rgba(255,255,255,.08); color: #ddd; font-size: 12px; padding: 6px 10px; border-radius: 8px; font-family: ui-monospace, Menlo, monospace; }
+</style></head><body>
+    <div class="phone tablet" style="width:1280px;height:800px">
+      
+    <div class="status">
+      <span class="time">9:41</span>
+      <span class="right"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4.5 9.5a11 11 0 0115 0M7.5 12.5a7 7 0 019 0M10.5 15.5a3 3 0 013 0"/><circle cx="12" cy="18.5" r="1" fill="currentColor"/></svg></span><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="8" width="16" height="9" rx="1.5"/><path d="M19 11h1.5v3H19"/><rect x="5" y="10" width="10" height="5" rx="0.5" fill="currentColor"/></svg></span></span>
+    </div>
+      <header class="top">
+        
+        <div class="title-wrap"><div class="title">文件</div></div>
+        <button class="icon-btn"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span></button>
+        <button class="icon-btn"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="6" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="18" r="1.2" fill="currentColor"/></svg></span></button>
+      </header>
+      <div class="path"><span class="crumb">本机</span><span class="sep">/</span><span class="rest">存储/模拟的/0</span></div>
+      <div class="body">
+        <nav class="rail"><button class="rail-item on"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 10.5L12 4l8 6.5V20a1 1 0 01-1 1h-5v-6H10v6H5a1 1 0 01-1-1v-9.5z"/></svg></span><span>文件</span></button><button class="rail-item"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 7h11M14 3l4 4-4 4M17 17H6M10 13l-4 4 4 4"/></svg></span><span>传输</span></button><button class="rail-item"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="6" height="6" rx="1.2"/><rect x="14" y="4" width="6" height="6" rx="1.2"/><rect x="4" y="14" width="6" height="6" rx="1.2"/><rect x="14" y="14" width="6" height="6" rx="1.2"/></svg></span><span>应用</span></button><button class="rail-item"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 15.5a7.5 7.5 0 017.5 7.5M3 11a12 12 0 0112 12M3 6.5V4.5A1.5 1.5 0 014.5 3h15A1.5 1.5 0 0121 4.5v15a1.5 1.5 0 01-1.5 1.5H14"/><circle cx="3.8" cy="20.2" r="1.1" fill="currentColor"/></svg></span><span>设备</span></button><button class="rail-item"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/></svg></span><span>终端</span></button><button class="rail-item"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 8h14M9 8V6a1 1 0 011-1h4a1 1 0 011 1v2M7 8l1 12h8l1-12"/></svg></span><span>回收站</span></button></nav><aside class="side">
+          <div class="side-h">位置</div>
+          <div class="side-item on">本机存储</div>
+          <div class="side-item">Download</div>
+          <div class="side-item">DCIM</div>
+          <div class="side-h">网络</div>
+          <div class="side-item">NAS · 影视</div>
+          <div class="side-item">ADB · Xiaomi</div>
+          <div class="side-h">书签</div>
+          <div class="side-item">工作文档</div>
+        </aside>
+        <div class="panes">
+          <section class="pane focus">
+            <div class="pane-h"><span>本机</span><i class="dot"></i></div>
+            <div class="list"><div class="row"><span class="ico type" style="color:#3482FF"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 7.5A2 2 0 015.5 5.5h3.2l1.6 1.8H18.5a2 2 0 012 2V17.5a2 2 0 01-2 2h-13a2 2 0 01-2-2v-10z" opacity=".9"/></svg></span>
+          <div class="meta"><div class="name">DCIM</div><div class="sub">128 项</div></div></div>
+<div class="row"><span class="ico type" style="color:#3482FF"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 7.5A2 2 0 015.5 5.5h3.2l1.6 1.8H18.5a2 2 0 012 2V17.5a2 2 0 01-2 2h-13a2 2 0 01-2-2v-10z" opacity=".9"/></svg></span>
+          <div class="meta"><div class="name">Download</div><div class="sub">42 项</div></div></div>
+<div class="row"><span class="ico type" style="color:#3482FF"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 7.5A2 2 0 015.5 5.5h3.2l1.6 1.8H18.5a2 2 0 012 2V17.5a2 2 0 01-2 2h-13a2 2 0 01-2-2v-10z" opacity=".9"/></svg></span>
+          <div class="meta"><div class="name">Movies</div><div class="sub">18 项</div></div></div>
+<div class="row"><span class="ico type" style="color:#3482FF"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 7.5A2 2 0 015.5 5.5h3.2l1.6 1.8H18.5a2 2 0 012 2V17.5a2 2 0 01-2 2h-13a2 2 0 01-2-2v-10z" opacity=".9"/></svg></span>
+          <div class="meta"><div class="name">音乐</div><div class="sub">56 项</div></div></div>
+<div class="row sel"><span class="ico type" style="color:#F5A524"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 3.5h6.5L19 9v11.5a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 016 20.5v-15A1.5 1.5 0 017.5 4"/><path d="M13.5 3.5V9H19M10 7h2M10 10h2M10 13h2M11 13v4"/></svg></span>
+          <div class="meta"><div class="name">旅行照片.zip</div><div class="sub">700 MB · 昨天</div></div></div>
+<div class="row"><span class="ico type" style="color:#8A8F98"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 3.5h6.5L19 9v11.5a1.5 1.5 0 01-1.5 1.5h-10A1.5 1.5 0 016 20.5v-15A1.5 1.5 0 017.5 4"/><path d="M13.5 3.5V9H19"/></svg></span>
+          <div class="meta"><div class="name">会议纪要.txt</div><div class="sub">12 KB · 今天</div></div></div>
+<div class="row"><span class="thumb"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABhUlEQVR4nO3cvW3DQBAF4ZPhOvyT2f0Xo1BQJw42tgcwyNu3xEwBpPDh3Snj7e3ja9nvvXT/gPQEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCGoCej/v+l/67ngU9H/cpTJ1HbIRR8x2UP6WISzqZKQKoyjQKAlqRU8oCqqKYEoGqEKZcoKrdKB1odU9pAFDVxTQGqNpvNAxobZ/SPKBqG9NUoGqD0Wygdf6UxgNV5zFdBKg6g+lSQNWxRhcEWodO6fWQp6T1/vl91KMuuKADddbFFnQsTXURoDNoqvFA59FUs++gs3XW3AVtoKnmAW2jqYYdsc06a9CC9tNUA4C6aKr0I9ars5IX1E5TJQKF0FRZQFE0VdAdFKizQhaUSVM1AyXTVJ1HLF9ndS1oBE118yNvfxf0L5aZQJBAkECQQJBAkECQQJBAkECQQJBAkECQQJBAkECQQJBAkECQQJBAkECQQJBAkECQQNAP09hkgNqMILYAAAAASUVORK5CYII=" alt=""/></span>
+          <div class="meta"><div class="name">演示视频 1080p.mp4</div><div class="sub">3.0 GB · 10-12</div></div></div>
+<div class="row"><span class="thumb"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAACAElEQVR4nO3YTU4iURSG4QNhGToQh6gTdwHG9bgct2ARexWKPeietSaC+ygHTuwffVvuqdQZvE/uwAQoDiXfd6uY/Lq+Cn1s1vdjj1DbdOwBqpv5BfrcLGIy9gylGTFgSQMjBixpYAcBIwYsaWDEgCUN7CBgxIAlDYwYGLCkF8vjjx76+e1xsLdNNks/4ifn5e/n1D9T04hJ4vqfs/PeYnmcO0D6Sivpk9V8vxculvOI+HH7lDNHtpxtfu+zk3iEgUz7iMaV9dlOVvP2YdJXtW2+1DAR7RE7XR2lzDHE0VKUu5KuNk/TNn92kf8PP7s4Gn1r/32bT/+IzUqN5N08qLaLvSk0UrmSjmI93RSx7+vnrDkGPWaLciVdbZ7Wu/mH9TZxmof1dvR9/Y/lLgamfR+Na9PlfIk23bZ9mPSV84PZpts1n53d6Gn650or6ftuFxHnl4f7vbCs5A766qctfnZiiCvp++7l7Y/zywN8Tvq7pxvwSvru5oWfVJ7bPCh3JV1Nzbv5QowYqPhzRylGDFjSwA4CRgxY0sCIAUsa2EHAiAFLGhgxYEkDOwgYMWBJAyMGLGlgBwEjBixpYMSAJQ3sIGDEgCUNjBiwpIEdBIwYsKSBEQOWNLCDgBEDljQwYsCSBnYQMGLAkgZGDFjSwA4CRgxY0sCIAUsa2EHAiIFXFg5JljEVoZIAAAAASUVORK5CYII=" alt=""/></span>
+          <div class="meta"><div class="name">IMG_20261003.jpg</div><div class="sub">4.8 MB · 10-03</div></div></div>
+<div class="row"><span class="ico type" style="color:#34C759"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M10 17h4"/><circle cx="12" cy="9" r="2.5"/></svg></span>
+          <div class="meta"><div class="name">app-release.apk</div><div class="sub">15 MB · 今天</div></div></div></div>
+          </section>
+          <section class="pane">
+            <div class="pane-h"><span>NAS · 影视</span></div>
+            <div class="list"><div class="row"><span class="ico type" style="color:#3482FF"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 7.5A2 2 0 015.5 5.5h3.2l1.6 1.8H18.5a2 2 0 012 2V17.5a2 2 0 01-2 2h-13a2 2 0 01-2-2v-10z" opacity=".9"/></svg></span>
+          <div class="meta"><div class="name">纪录片</div><div class="sub">目录</div></div></div>
+<div class="row"><span class="ico type" style="color:#3482FF"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 7.5A2 2 0 015.5 5.5h3.2l1.6 1.8H18.5a2 2 0 012 2V17.5a2 2 0 01-2 2h-13a2 2 0 01-2-2v-10z" opacity=".9"/></svg></span>
+          <div class="meta"><div class="name">动画</div><div class="sub">目录</div></div></div>
+<div class="row"><span class="ico type" style="color:#3482FF"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 7.5A2 2 0 015.5 5.5h3.2l1.6 1.8H18.5a2 2 0 012 2V17.5a2 2 0 01-2 2h-13a2 2 0 01-2-2v-10z" opacity=".9"/></svg></span>
+          <div class="meta"><div class="name">蓝光原盘</div><div class="sub">目录</div></div></div>
+<div class="row"><span class="thumb"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABhUlEQVR4nO3cvW3DQBAF4ZPhOvyT2f0Xo1BQJw42tgcwyNu3xEwBpPDh3Snj7e3ja9nvvXT/gPQEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCGoCej/v+l/67ngU9H/cpTJ1HbIRR8x2UP6WISzqZKQKoyjQKAlqRU8oCqqKYEoGqEKZcoKrdKB1odU9pAFDVxTQGqNpvNAxobZ/SPKBqG9NUoGqD0Wygdf6UxgNV5zFdBKg6g+lSQNWxRhcEWodO6fWQp6T1/vl91KMuuKADddbFFnQsTXURoDNoqvFA59FUs++gs3XW3AVtoKnmAW2jqYYdsc06a9CC9tNUA4C6aKr0I9ars5IX1E5TJQKF0FRZQFE0VdAdFKizQhaUSVM1AyXTVJ1HLF9ndS1oBE118yNvfxf0L5aZQJBAkECQQJBAkECQQJBAkECQQJBAkECQQJBAkECQQJBAkECQQJBAkECQQJBAkECQQNAP09hkgNqMILYAAAAASUVORK5CYII=" alt=""/></span>
+          <div class="meta"><div class="name">流浪地球2.mkv</div><div class="sub">28 GB</div></div></div>
+<div class="row"><span class="thumb"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABhUlEQVR4nO3cvW3DQBAF4ZPhOvyT2f0Xo1BQJw42tgcwyNu3xEwBpPDh3Snj7e3ja9nvvXT/gPQEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCBIIEggSCGoCej/v+l/67ngU9H/cpTJ1HbIRR8x2UP6WISzqZKQKoyjQKAlqRU8oCqqKYEoGqEKZcoKrdKB1odU9pAFDVxTQGqNpvNAxobZ/SPKBqG9NUoGqD0Wygdf6UxgNV5zFdBKg6g+lSQNWxRhcEWodO6fWQp6T1/vl91KMuuKADddbFFnQsTXURoDNoqvFA59FUs++gs3XW3AVtoKnmAW2jqYYdsc06a9CC9tNUA4C6aKr0I9ars5IX1E5TJQKF0FRZQFE0VdAdFKizQhaUSVM1AyXTVJ1HLF9ndS1oBE118yNvfxf0L5aZQJBAkECQQJBAkECQQJBAkECQQJBAkECQQJBAkECQQJBAkECQQJBAkECQQJBAkECQQNAP09hkgNqMILYAAAAASUVORK5CYII=" alt=""/></span>
+          <div class="meta"><div class="name">三体.S01E01.mkv</div><div class="sub">4.2 GB</div></div></div></div>
+          </section>
+        </div>
+      </div>
+      <footer class="actions">
+        <span class="selcount">已选 1 项 · 700 MB</span>
+        <div class="btns"><button>复制</button><button>移动</button><button>删除</button><button>更多</button></div>
+      </footer>
+      <div class="gesture"><i></i></div>
+    </div></body></html>
