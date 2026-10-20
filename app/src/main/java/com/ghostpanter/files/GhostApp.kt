@@ -30,6 +30,7 @@ class GhostApp : Application() {
         graph = AppGraph(this)
         installScrcpy()
         com.ghostpanter.files.core.Lang.apply(graph.settings.language)
+        com.ghostpanter.files.data.Settings.applyNightMode(this, graph.settings.themeMode)
         Thread { com.ghostpanter.files.ui.Thumbnails.trimDisk() }.start()
     }
 

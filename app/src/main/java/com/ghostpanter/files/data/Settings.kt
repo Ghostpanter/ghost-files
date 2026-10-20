@@ -21,6 +21,25 @@ interface ViewPrefs {
 }
 
 class Settings(context: Context) : ViewPrefs {
+    private val appCtx: Context = context.applicationContext
+
+    companion object {
+        /**
+         * Mirrors the in-app theme to the platform (API 31+) so the View-based mirror / tools
+         * screens (values-night palette) follow the same light / dark choice as the Compose UI.
+         */
+        fun applyNightMode(ctx: Context, mode: String) {
+            if (android.os.Build.VERSION.SDK_INT < 31) return
+            val um = ctx.getSystemService(android.app.UiModeManager::class.java) ?: return
+            val want = when (mode) {
+                "light" -> android.app.UiModeManager.MODE_NIGHT_NO
+                "dark" -> android.app.UiModeManager.MODE_NIGHT_YES
+                else -> android.app.UiModeManager.MODE_NIGHT_AUTO
+            }
+            runCatching { um.setApplicationNightMode(want) }
+        }
+    }
+
     private val p = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     private fun bool(key: String, def: Boolean) = mutableStateOf(p.getBoolean(key, def))
@@ -102,7 +121,7 @@ class Settings(context: Context) : ViewPrefs {
     private val _themeMode = mutableStateOf(p.getString("theme_mode", "system") ?: "system")
     var themeMode: String
         get() = _themeMode.value
-        set(v) { _themeMode.value = v; p.edit().putString("theme_mode", v).apply() }
+        set(v) { _themeMode.value = v; p.edit().putString("theme_mode", v).apply(); applyNightMode(appCtx, v) }
 
     /** When true and dark theme is active, use pure black (#000000) surfaces for OLED. Default off. */
     private val _language = mutableStateOf(p.getString("language", "system") ?: "system")

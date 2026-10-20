@@ -7,8 +7,8 @@
     <dimen name="space_lg">24dp</dimen>
     <dimen name="space_xl">32dp</dimen>
 
-    <dimen name="card_radius">16dp</dimen>
-    <dimen name="field_radius">10dp</dimen>
+    <dimen name="card_radius">20dp</dimen>
+    <dimen name="field_radius">12dp</dimen>
     <dimen name="button_radius">12dp</dimen>
 
     <dimen name="card_padding">20dp</dimen>
