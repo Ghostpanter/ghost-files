@@ -127,7 +127,7 @@ class UiScreenshotTest(private val name: String, private val device: DeviceConfi
     }
 
     @Composable
-    private fun Frame(h: FakeHost, dark: Boolean) = GhostTheme(dark = dark) {
+    private fun Frame(h: FakeHost, dark: Boolean, oled: Boolean = false) = GhostTheme(dark = dark, oledBlack = oled) {
         MainFrame(
             host = h, activeJobs = 2, ratio = 0.5f, onRatio = {}, onRatioDone = {}, canForward = false,
             onDrawer = {}, onSearch = {}, onTransfers = {}, onSwap = {}, onTool = {}, onToolLong = {},
@@ -160,6 +160,13 @@ class UiScreenshotTest(private val name: String, private val device: DeviceConfi
     @Test fun browse() {
         val h = host(selecting = false)
         paparazzi.snapshot { Frame(h, device.nightMode == NightMode.NIGHT) }
+    }
+
+    /** OLED pure-black variant (only meaningful in the dark configuration). */
+    @Test fun multiSelectOled() {
+        if (device.nightMode != NightMode.NIGHT) return
+        val h = host(selecting = true)
+        paparazzi.snapshot { Frame(h, true, oled = true) }
     }
 
     @Test fun multiSelect() {
