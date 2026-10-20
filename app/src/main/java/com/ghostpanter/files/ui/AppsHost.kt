@@ -34,6 +34,7 @@ fun RemoteAppsScreen(vm: MainViewModel, serial: String, header: @Composable () -
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
                 title = { Text(t("应用管理 · ", "Apps · ") + adbLabel(serial)) },
                 navigationIcon = { IconButton(onClick = { vm.screen = Screen.Main }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = { IconButton(onClick = { vm.screen = Screen.AdbTools(serial) }) { Icon(Icons.Filled.Build, t("设备工具", "Device tools")) } },

@@ -82,6 +82,7 @@ fun PlayerScreen(vm: MainViewModel, s: Screen.Player) {
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
                 title = { Text(VPath.name(path), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = {
                     IconButton(onClick = { player.stop(); vm.screen = Screen.Main }) {

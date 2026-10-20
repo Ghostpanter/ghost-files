@@ -128,7 +128,7 @@ fun CompressDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>, d
                     suffix = { Text(Archives.extensionOf(kind)) }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (k in Archives.creatable) FilterChip(kind == k, { kind = k }, label = { Text(Archives.extensionOf(k).removePrefix(".")) })
+                    for (k in Archives.creatable) GhostFilterChip(kind == k, { kind = k }, label = { Text(Archives.extensionOf(k).removePrefix(".")) })
                 }
                 if (kind == Archives.Kind.ZIP || kind == Archives.Kind.SEVEN_Z) {
                     Spacer(Modifier.height(8.dp))
@@ -192,7 +192,7 @@ fun BatchRenameDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     for ((label, v) in listOf(t("原名", "Original") to "{name}.{ext}", t("序号", "Number") to "{n:3}.{ext}",
                         t("名称+序号", "Name+No.") to "{name}_{n:2}.{ext}", t("日期", "Date") to "{date}_{time}.{ext}")) {
-                        AssistChip({ template = v }, { Text(label) })
+                        GhostChip({ template = v }, { Text(label) })
                     }
                 }
                 Row {
@@ -206,9 +206,9 @@ fun BatchRenameDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>
                     OutlinedTextField(start, { start = it.filter(Char::isDigit).take(6) }, singleLine = true, label = { Text(t("起始序号", "Start")) }, modifier = Modifier.width(110.dp))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(case == BatchRename.Case.KEEP, { case = BatchRename.Case.KEEP }, { Text(t("原大小写", "Keep")) })
-                    FilterChip(case == BatchRename.Case.LOWER, { case = BatchRename.Case.LOWER }, { Text("abc") })
-                    FilterChip(case == BatchRename.Case.UPPER, { case = BatchRename.Case.UPPER }, { Text("ABC") })
+                    GhostFilterChip(case == BatchRename.Case.KEEP, { case = BatchRename.Case.KEEP }, { Text(t("原大小写", "Keep")) })
+                    GhostFilterChip(case == BatchRename.Case.LOWER, { case = BatchRename.Case.LOWER }, { Text("abc") })
+                    GhostFilterChip(case == BatchRename.Case.UPPER, { case = BatchRename.Case.UPPER }, { Text("ABC") })
                 }
                 HorizontalDivider(Modifier.padding(vertical = 6.dp))
                 Text(t("预览", "Preview") + if (bad > 0) t("（$bad 项有问题，将跳过）", " ($bad skipped)") else "", fontSize = 12.sp)
@@ -291,6 +291,7 @@ fun HexScreen(vm: MainViewModel, s: Screen.Hex) {
     }
     Scaffold(topBar = {
         TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
             title = { Text(VPath.name(s.path) + "  (HEX)" + if (dirty) " *" else "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             navigationIcon = { IconButton(onClick = { vm.screen = Screen.Main }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
             actions = {
@@ -495,6 +496,7 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
                 title = {
                     Text(
                         if (selecting) t("已选 ${selectedPkgs.size}", "${selectedPkgs.size} selected")
@@ -518,7 +520,7 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
                             if (selectedPkgs.isEmpty()) selecting = false
                         }) { Text(if (selectedPkgs.size >= shown.size && shown.isNotEmpty()) t("取消全选", "None") else t("全选", "All")) }
                     } else {
-                        FilterChip(showSystem, { showSystem = !showSystem }, { Text(t("系统应用", "System")) })
+                        GhostFilterChip(showSystem, { showSystem = !showSystem }, { Text(t("系统应用", "System")) })
                         IconButton(onClick = { selecting = true }) {
                             Icon(Icons.Filled.Checklist, contentDescription = t("多选", "Select"))
                         }

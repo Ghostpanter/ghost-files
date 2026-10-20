@@ -47,6 +47,7 @@ fun ServersScreen(vm: MainViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
                 title = {
                     Column {
                         Text(t("本机服务", "Hosted services"))
@@ -187,7 +188,7 @@ private fun ServiceCard(
                         },
                     )
                 }
-                Switch(checked = running, onCheckedChange = onToggle)
+                GhostSwitch(checked = running, onCheckedChange = onToggle)
             }
             Text(
                 t("共享目录：${cfg.rootPath.ifBlank { "（默认下载目录）" }}", "Share root: ${cfg.rootPath.ifBlank { "(Downloads)" }}"),

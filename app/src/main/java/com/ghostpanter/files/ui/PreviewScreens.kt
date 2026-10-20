@@ -54,6 +54,7 @@ fun PreviewScreen(vm: MainViewModel, s: Screen.Preview) {
     }
     Scaffold(topBar = {
         TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
             title = { Text(com.ghostpanter.files.core.VPath.name(s.path), maxLines = 1) },
             navigationIcon = { IconButton(onClick = { vm.screen = Screen.Main }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
         )
@@ -222,6 +223,7 @@ fun MusicTagScreen(vm: MainViewModel, s: Screen.MusicTag) {
     }
     Scaffold(topBar = {
         TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
             title = { Text(t("音乐标签", "Music tags")) },
             navigationIcon = { IconButton(onClick = { vm.screen = Screen.Main }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
             actions = {

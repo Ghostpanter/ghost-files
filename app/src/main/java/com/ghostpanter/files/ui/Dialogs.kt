@@ -330,7 +330,7 @@ fun ServerEditor(vm: MainViewModel, existing: ServerConfig?, dismiss: () -> Unit
                         Row(Modifier.horizontalScroll(rememberScrollState())) {
                             list.forEach { name ->
                                 val cur = path.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-                                FilterChip(
+                                GhostFilterChip(
                                     selected = name in cur,
                                     onClick = { path = (if (name in cur) cur - name else cur + name).joinToString(",") },
                                     label = { Text(name) }, modifier = Modifier.padding(end = 4.dp),
@@ -437,7 +437,7 @@ fun RemountDialog(vm: MainViewModel, dismiss: () -> Unit) {
                 Text(t("危险操作：可能导致无法开机。改完文件后请尽快改回只读。", "Dangerous — remount ro afterwards."), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 OutlinedTextField(mp, { mp = it }, singleLine = true, label = { Text(t("挂载点", "Mount point")) }, modifier = Modifier.fillMaxWidth())
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (p in listOf("/system", "/vendor", "/product", "/odm", "/data")) AssistChip({ mp = p }, { Text(p) })
+                    for (p in listOf("/system", "/vendor", "/product", "/odm", "/data")) GhostChip({ mp = p }, { Text(p) })
                 }
             }
         },

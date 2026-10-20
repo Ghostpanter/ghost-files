@@ -44,6 +44,7 @@ fun LanScanScreen(vm: MainViewModel, onEditServer: (ServerConfig) -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
                 title = {
                     Column {
                         Text(t("扫描局域网", "Scan LAN"), fontSize = 17.sp)

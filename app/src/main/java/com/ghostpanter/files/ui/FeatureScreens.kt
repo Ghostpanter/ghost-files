@@ -83,6 +83,7 @@ fun ContentSearchScreen(vm: MainViewModel, s: Screen.ContentSearch) {
     }
     Scaffold(topBar = {
         TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
             title = { Text(t("内容搜索", "Content search")) },
             navigationIcon = { IconButton(onClick = { job?.cancel(); vm.screen = Screen.Main }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
         )
@@ -154,6 +155,7 @@ fun CompareScreen(vm: MainViewModel, s: Screen.Compare) {
     }
     Scaffold(topBar = {
         TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
             title = { Text(t("对比", "Compare")) },
             navigationIcon = { IconButton(onClick = { vm.screen = Screen.Main }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
             actions = {
