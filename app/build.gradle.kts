@@ -16,8 +16,8 @@ android {
         applicationId = "com.ghostpanter.files"
         minSdk = 28
         targetSdk = 34
-        versionCode = 19
-        versionName = "0.7.0-test"
+        versionCode = 20
+        versionName = "0.7.1-test"
         // Universal APK: every ABI shipped by conscrypt-android.
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
