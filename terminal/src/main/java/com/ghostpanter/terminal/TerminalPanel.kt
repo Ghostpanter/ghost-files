@@ -186,7 +186,7 @@ class TerminalPanel(
             setTextColor(theme.keyFg)
             minWidth = (44 * dp).toInt()
             setPadding((10 * dp).toInt(), (9 * dp).toInt(), (10 * dp).toInt(), (9 * dp).toInt())
-            background = GradientDrawable().apply { cornerRadius = 6 * dp; setColor(theme.keyBg) }
+            background = GradientDrawable().apply { cornerRadius = 8 * dp; setColor(theme.keyBg) }
             setOnClickListener { current()?.let(action) }
             keys.addView(this, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { setMargins((3 * dp).toInt(), (4 * dp).toInt(), (3 * dp).toInt(), (4 * dp).toInt()) })
         }
