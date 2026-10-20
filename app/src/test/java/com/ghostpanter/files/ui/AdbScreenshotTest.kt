@@ -3,6 +3,7 @@ package com.ghostpanter.files.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
@@ -155,7 +156,9 @@ class AdbScreenshotTest(private val name: String, private val device: DeviceConf
     @Test fun terminal() = paparazzi.snapshot {
         Shell(Screen.Terminal) {
             val theme = TermTheme.of(dark, false)
-            AndroidView({ c ->
+            TerminalChrome(onBack = {}, target = {
+                com.ghostpanter.files.ui.adb.TargetSwitch(current = S1, onPick = {}, modifier = Modifier.fillMaxWidth(), devices = listOf(S1))
+            }) { m -> AndroidView({ c ->
                 val sessions = TermSessions()
                 var s: com.ghostpanter.terminal.TermSession? = null
                 s = com.ghostpanter.terminal.TermSession(FakeBackend { s!!.feedNow(it) }, theme)
@@ -164,7 +167,7 @@ class AdbScreenshotTest(private val name: String, private val device: DeviceConf
                 for (cmd in listOf("ls", "getprop ro.product.model", "pm list packages -3 | head -3", "ls /data")) { s.setInput(cmd); s.submit() }
                 s.setInput("cd Dow")
                 TerminalPanel(c, sessions, { emptyList() }, theme)
-            }, Modifier.fillMaxSize())
+            }, m) }
         }
     }
 }

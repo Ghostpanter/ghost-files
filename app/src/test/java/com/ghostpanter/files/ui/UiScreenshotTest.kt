@@ -63,6 +63,37 @@ class UiScreenshotTest(private val name: String, private val device: DeviceConfi
         override fun selectTab(pane: PaneState, i: Int) {}
         override fun closeTab(pane: PaneState, i: Int) {}
         override fun reload(tab: TabState) {}
+        override fun cachedThumbnail(fsId: String, e: FileEntry, sizePx: Int) = thumbnail(fsId, e, sizePx) { false }
+        /** Fake media thumbnails / APK icon so the snapshots show the thumbnail path. */
+        override fun thumbnail(fsId: String, e: FileEntry, sizePx: Int, cancelled: () -> Boolean): android.graphics.Bitmap? {
+            val ext = e.extension.lowercase()
+            val colors = when (ext) {
+                "jpg", "png" -> intArrayOf(0xFFF6B48B.toInt(), 0xFF8E7CC3.toInt())
+                "mp4", "mkv" -> intArrayOf(0xFF2B3A55.toInt(), 0xFF0F1420.toInt())
+                "apk" -> null
+                else -> return null
+            }
+            val n = 96
+            val b = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
+            val c = android.graphics.Canvas(b)
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            if (colors == null) {
+                paint.color = 0xFF2FBF71.toInt()
+                c.drawRoundRect(8f, 8f, 88f, 88f, 22f, 22f, paint)
+                paint.color = 0xFFFFFFFF.toInt()
+                c.drawCircle(48f, 48f, 18f, paint)
+            } else {
+                paint.shader = android.graphics.LinearGradient(0f, 0f, 0f, n.toFloat(), colors[0], colors[1], android.graphics.Shader.TileMode.CLAMP)
+                c.drawRect(0f, 0f, n.toFloat(), n.toFloat(), paint)
+                paint.shader = null
+                if (ext == "jpg" || ext == "png") {
+                    paint.color = 0xFFFFE6A8.toInt(); c.drawCircle(30f, 30f, 12f, paint)
+                    paint.color = 0xFF5B6E8C.toInt()
+                    c.drawPath(android.graphics.Path().apply { moveTo(0f, 96f); lineTo(38f, 52f); lineTo(64f, 76f); lineTo(80f, 60f); lineTo(96f, 96f); close() }, paint)
+                }
+            }
+            return b
+        }
     }
 
     private fun host(selecting: Boolean): FakeHost {
@@ -77,7 +108,7 @@ class UiScreenshotTest(private val name: String, private val device: DeviceConfi
                     fe(l, "app-release.apk", false, 15_437_330, 1), fe(l, "IMG_20261003_181522.jpg", false, 4_812_331, 8),
                     fe(l, "演示视频 1080p.mp4", false, 3_221_225_472, 5), fe(l, "notes.md", false, 2_048, 6),
                 )
-                if (selecting) { multiSelect = true; selected = setOf("$l/旅行照片.zip", "$l/演示视频 1080p.mp4") }
+                if (selecting) { multiSelect = true; selected = setOf("$l/旅行照片.zip", "$l/IMG_20261003_181522.jpg") }
             })
         }
         val r = "/public/影视"
