@@ -19,6 +19,22 @@ private val dateFmt = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd HH:
 fun formatTime(ms: Long): String = if (ms <= 0) "" else dateFmt.get()!!.format(Date(ms))
 private val shortFmt = ThreadLocal.withInitial { SimpleDateFormat("yy-MM-dd HH:mm", Locale.getDefault()) }
 fun formatTimeShort(ms: Long): String = if (ms <= 0) "" else shortFmt.get()!!.format(Date(ms))
+private val hmFmt = ThreadLocal.withInitial { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+private val mdFmt = ThreadLocal.withInitial { SimpleDateFormat("MM-dd", Locale.getDefault()) }
+private val ymdFmt = ThreadLocal.withInitial { SimpleDateFormat("yy-MM-dd", Locale.getDefault()) }
+
+/** Narrow-pane date: today → HH:mm, this year → MM-dd, else yy-MM-dd. */
+fun formatTimeCompact(ms: Long, now: Long = System.currentTimeMillis()): String {
+    if (ms <= 0) return ""
+    val a = java.util.Calendar.getInstance().apply { timeInMillis = ms }
+    val b = java.util.Calendar.getInstance().apply { timeInMillis = now }
+    val d = Date(ms)
+    return when {
+        a.get(java.util.Calendar.YEAR) == b.get(java.util.Calendar.YEAR) && a.get(java.util.Calendar.DAY_OF_YEAR) == b.get(java.util.Calendar.DAY_OF_YEAR) -> hmFmt.get()!!.format(d)
+        a.get(java.util.Calendar.YEAR) == b.get(java.util.Calendar.YEAR) -> mdFmt.get()!!.format(d)
+        else -> ymdFmt.get()!!.format(d)
+    }
+}
 
 val TEXT_EXT = setOf(
     "txt", "log", "json", "xml", "yml", "yaml", "ini", "conf", "cfg", "prop", "properties", "sh", "py",

@@ -1,5 +1,12 @@
 package com.ghostpanter.files.ui.adb
 
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -108,12 +115,13 @@ fun DevicesContent(saved: List<String>, preview: List<Pair<String, DevState>>?, 
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
                 title = { Text(t("设备 / 投屏", "Devices / Mirror")) },
                 navigationIcon = { IconButton(onClick = cb.back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = {
                     IconButton(onClick = { refresh++ }) { Icon(Icons.Filled.Refresh, t("刷新", "Refresh")) }
-                    Button(onClick = cb.pair, modifier = Modifier.padding(end = 8.dp)) {
-                        Icon(Icons.Filled.Add, null); Spacer(Modifier.width(6.dp)); Text(t("配对 / 连接", "Pair / connect"))
+                    TextButton(onClick = cb.pair, modifier = Modifier.padding(end = 4.dp)) {
+                        Icon(Icons.Filled.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text(t("配对 / 连接", "Pair / connect"))
                     }
                 },
             )
@@ -166,37 +174,61 @@ private fun EmptyHint(onPair: () -> Unit) {
 @Composable
 private fun DeviceCard(cb: DeviceCallbacks, serial: String, state: DevState) {
     var paneMenu by remember { mutableStateOf(false) }
-    Card(Modifier.fillMaxWidth()) {
+    val cs = MaterialTheme.colorScheme
+    Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.PhoneAndroid, null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
+                Box(
+                    Modifier.size(44.dp).background(cs.surfaceVariant, RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Rounded.PhoneAndroid, null, Modifier.size(24.dp), tint = cs.primary) }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(AdbPool.name(serial) ?: t("未知设备", "Unknown device"), fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Text(serial, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                    Text(AdbPool.name(serial) ?: t("未知设备", "Unknown device"), fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
+                    Text(serial, fontSize = 12.sp, color = cs.outline, maxLines = 1)
                 }
-                val (c, l) = when (state) {
-                    DevState.ONLINE -> Color(0xFF34C759) to t("在线", "Online")
-                    DevState.OFFLINE -> Color(0xFFFF3B30) to t("离线", "Offline")
-                    DevState.CHECKING -> Color(0xFFFF9F0A) to t("检测中", "Checking")
+                val online = state == DevState.ONLINE
+                val l = when (state) {
+                    DevState.ONLINE -> t("在线", "Online")
+                    DevState.OFFLINE -> t("离线", "Offline")
+                    DevState.CHECKING -> t("检测中", "Checking")
                 }
-                Surface(shape = CircleShape, color = c, modifier = Modifier.size(10.dp)) {}
-                Spacer(Modifier.width(6.dp)); Text(l, fontSize = 12.sp)
+                Text(
+                    l, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                    color = if (online) cs.primary else cs.outline,
+                    modifier = Modifier.background(if (online) cs.primaryContainer else cs.surfaceVariant, CircleShape).padding(horizontal = 10.dp, vertical = 3.dp),
+                )
             }
-            Spacer(Modifier.size(12.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip({ cb.mirror(serial) }, { Text(t("投屏控制", "Mirror")) }, leadingIcon = { Icon(Icons.Filled.Cast, null) })
+            Spacer(Modifier.size(14.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SoftChip(t("投屏控制", "Mirror"), Icons.Rounded.Cast, accent = true) { cb.mirror(serial) }
                 Box {
-                    AssistChip({ paneMenu = true }, { Text(t("浏览文件", "Files")) }, leadingIcon = { Icon(Icons.Filled.Folder, null) })
+                    SoftChip(t("浏览文件", "Files"), Icons.Rounded.Folder) { paneMenu = true }
                     DropdownMenu(paneMenu, { paneMenu = false }) {
                         DropdownMenuItem({ Text(t("在左栏打开", "Open in left pane")) }, { paneMenu = false; cb.browse(serial, 0, false) })
                         DropdownMenuItem({ Text(t("在右栏打开", "Open in right pane")) }, { paneMenu = false; cb.browse(serial, 1, false) })
                         DropdownMenuItem({ Text(t("以 Root 浏览（目标需 su）", "Browse as root (target su)")) }, { paneMenu = false; cb.browse(serial, null, true) })
                     }
                 }
-                AssistChip({ cb.tools(serial) }, { Text(t("工具", "Tools")) }, leadingIcon = { Icon(Icons.Filled.Build, null) })
-                AssistChip({ cb.shell(serial) }, { Text(t("终端", "Shell")) }, leadingIcon = { Icon(Icons.Filled.Terminal, null) })
+                SoftChip(t("工具", "Tools"), Icons.Rounded.Build) { cb.tools(serial) }
+                SoftChip(t("终端", "Shell"), Icons.Rounded.Terminal) { cb.shell(serial) }
             }
         }
+    }
+}
+
+/** Soft pill action (HyperOS style): tinted fill, no outline. */
+@Composable
+fun SoftChip(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, accent: Boolean = false, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val fg = if (accent) cs.primary else cs.onSurface
+    Row(
+        Modifier.height(36.dp).clip(CircleShape).background(if (accent) cs.primaryContainer else cs.surfaceVariant)
+            .clickable(onClick = onClick).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, Modifier.size(17.dp), tint = if (accent) cs.primary else cs.onSurfaceVariant)
+        Spacer(Modifier.width(6.dp))
+        Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = fg)
     }
 }

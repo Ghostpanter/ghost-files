@@ -1,5 +1,9 @@
 package com.ghostpanter.files.ui
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
 import com.ghostpanter.files.t
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -101,20 +105,13 @@ fun rememberTermTheme(vm: MainViewModel): TermTheme {
     return TermTheme.of(dark, dark && st.oledBlack)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TerminalScreen(vm: MainViewModel) {
     val theme = rememberTermTheme(vm)
     val holder = remember { arrayOfNulls<TerminalPanel>(1) }
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(t("终端", "Terminal")) },
-                navigationIcon = { IconButton(onClick = { vm.screen = Screen.Main }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
-            )
-        },
-    ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize().imePadding()) {
+    TerminalChrome(
+        onBack = { vm.screen = Screen.Main },
+        target = {
             TargetSwitch(
                 current = vm.termTarget,
                 onPick = { serial ->
@@ -123,15 +120,42 @@ fun TerminalScreen(vm: MainViewModel) {
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
-            AndroidView(
-                factory = { c ->
-                    TerminalPanel(c, TerminalHub.sessions, { TerminalHub.factories() }, theme).also { p ->
-                        holder[0] = p
-                        vm.pendingTerminal?.let { serial -> vm.pendingTerminal = null; p.openAndFocus(TerminalHub.adb(serial)) }
-                    }
-                },
-                update = { it.applyTheme(theme) },
-                modifier = Modifier.fillMaxWidth().weight(1f),
+        },
+    ) { m ->
+        AndroidView(
+            factory = { c ->
+                TerminalPanel(c, TerminalHub.sessions, { TerminalHub.factories() }, theme).also { p ->
+                    holder[0] = p
+                    vm.pendingTerminal?.let { serial -> vm.pendingTerminal = null; p.openAndFocus(TerminalHub.adb(serial)) }
+                }
+            },
+            update = { it.applyTheme(theme) },
+            modifier = m,
+        )
+    }
+}
+
+/** Page chrome of the terminal: bold title, target switch, and the console as a rounded card. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TerminalChrome(onBack: () -> Unit, target: @Composable () -> Unit, terminal: @Composable (Modifier) -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
+                title = { Text(t("终端", "Terminal"), style = MaterialTheme.typography.headlineSmall) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
+            )
+        },
+    ) { pad ->
+        Column(Modifier.padding(pad).fillMaxSize().imePadding()) {
+            target()
+            val shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+            terminal(
+                Modifier.fillMaxWidth().weight(1f)
+                    .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 12.dp)
+                    .clip(shape)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
             )
         }
     }

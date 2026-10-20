@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -112,17 +113,17 @@ val LocalDensitySpec = compositionLocalOf { densitySpec("normal") }
 data class RailDest(val label: String, val icon: ImageVector, val screen: Screen, val matches: (Screen) -> Boolean)
 
 fun railDestinations(): List<RailDest> = listOf(
-    RailDest(t("文件", "Files"), Icons.Filled.Folder, Screen.Main) {
+    RailDest(t("文件", "Files"), Icons.Rounded.Folder, Screen.Main) {
         it !is Screen.Transfers && it !is Screen.Servers && it !is Screen.LanScan && it !is Screen.Apps && it !is Screen.Trash && it !is Screen.Terminal &&
             it !is Screen.Devices && it !is Screen.AdbTools
     },
-    RailDest(t("传输", "Transfers"), Icons.Filled.SwapVert, Screen.Transfers) { it == Screen.Transfers },
-    RailDest(t("本机服务", "Hosting"), Icons.Filled.CloudUpload, Screen.Servers) { it == Screen.Servers },
-    RailDest(t("局域网", "LAN"), Icons.Filled.Radar, Screen.LanScan) { it == Screen.LanScan },
-    RailDest(t("应用", "Apps"), Icons.Filled.Apps, Screen.Apps) { it == Screen.Apps },
-    RailDest(t("回收站", "Trash"), Icons.Filled.DeleteSweep, Screen.Trash) { it == Screen.Trash },
-    RailDest(t("终端", "Terminal"), Icons.Filled.Terminal, Screen.Terminal) { it == Screen.Terminal },
-    RailDest(t("设备/投屏", "Devices"), Icons.Filled.Cast, Screen.Devices) { it == Screen.Devices || it is Screen.AdbTools },
+    RailDest(t("传输", "Transfers"), Icons.Rounded.SwapVert, Screen.Transfers) { it == Screen.Transfers },
+    RailDest(t("本机服务", "Hosting"), Icons.Rounded.CloudUpload, Screen.Servers) { it == Screen.Servers },
+    RailDest(t("局域网", "LAN"), Icons.Rounded.Radar, Screen.LanScan) { it == Screen.LanScan },
+    RailDest(t("应用", "Apps"), Icons.Rounded.Apps, Screen.Apps) { it == Screen.Apps },
+    RailDest(t("回收站", "Trash"), Icons.Rounded.DeleteSweep, Screen.Trash) { it == Screen.Trash },
+    RailDest(t("终端", "Terminal"), Icons.Rounded.Terminal, Screen.Terminal) { it == Screen.Terminal },
+    RailDest(t("设备/投屏", "Devices"), Icons.Rounded.Cast, Screen.Devices) { it == Screen.Devices || it is Screen.AdbTools },
 )
 
 /**
@@ -143,7 +144,7 @@ fun GhostNavRail(
 ) {
     NavigationRail(
         modifier = Modifier.width(RAIL_WIDTH_DP.dp).fillMaxHeight(),
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        containerColor = MaterialTheme.colorScheme.background,
         header = {
             IconButton(onClick = onMenu) {
                 Icon(if (panelOpen) Icons.Filled.MenuOpen else Icons.Filled.Menu, t("侧栏", "Side panel"))
@@ -156,11 +157,18 @@ fun GhostNavRail(
                 NavigationRailItem(
                     selected = d.matches(current),
                     onClick = { onPick(d.screen) },
+                    colors = NavigationRailItemDefaults.colors(
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
                     icon = {
                         if (d.screen == Screen.Transfers && activeJobs > 0) BadgedBox(badge = { Badge { Text("$activeJobs") } }) { Icon(d.icon, d.label) }
                         else Icon(d.icon, d.label)
                     },
-                    label = { Text(d.label, fontSize = 11.sp, maxLines = 1) },
+                    label = { Text(d.label, fontSize = 11.sp, maxLines = 1, fontWeight = FontWeight.Medium) },
                 )
             }
         }
@@ -169,17 +177,17 @@ fun GhostNavRail(
 
 /** Vertical splitter: drag to resize, double-tap to reset; shows a resize cursor with a mouse. */
 @Composable
-fun SplitHandle(onDelta: (Float) -> Unit, onDone: () -> Unit, onReset: () -> Unit, width: Dp = 6.dp) {
+fun SplitHandle(onDelta: (Float) -> Unit, onDone: () -> Unit, onReset: () -> Unit, width: Dp = 6.dp, subtle: Boolean = true) {
     val state = rememberDraggableState(onDelta)
     Box(
         Modifier.width(width).fillMaxHeight()
-            .background(MaterialTheme.colorScheme.outlineVariant)
+            .then(if (subtle) Modifier else Modifier.background(MaterialTheme.colorScheme.outlineVariant))
             .pointerHoverIcon(PointerIcon(android.view.PointerIcon.TYPE_HORIZONTAL_DOUBLE_ARROW))
             .draggable(state, Orientation.Horizontal, onDragStopped = { onDone() })
             .pointerInput(Unit) { detectTapGestures(onDoubleTap = { onReset() }) },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.width(2.dp).height(28.dp).clip(RoundedCornerShape(1.dp)).background(MaterialTheme.colorScheme.outline))
+        Box(Modifier.width(3.dp).height(32.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)))
     }
 }
 
@@ -196,9 +204,12 @@ fun DetailsPanel(host: PaneHost, modifier: Modifier = Modifier) {
     val pane = host.panes[host.activePane]
     val tab = pane.tab
     val e = previewTarget(tab)
-    Surface(modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    Surface(
+        modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(PANE_RADIUS),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
-            Text(t("详情", "Details"), fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+            Text(t("详情", "Details"), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
             if (e == null) {
                 val dirs = tab.entries.count { it.isDirectory }
@@ -230,7 +241,7 @@ private fun EntryDetails(host: PaneHost, pane: PaneState, tab: TabState, e: File
             }
             val (icon, tint) = iconFor(e)
             Box(
-                Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {
                 val tb = thumb

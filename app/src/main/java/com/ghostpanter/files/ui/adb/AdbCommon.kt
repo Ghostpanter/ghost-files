@@ -1,5 +1,6 @@
 package com.ghostpanter.files.ui.adb
 
+import com.ghostpanter.files.ui.GhostFilterChip
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.horizontalScroll
@@ -48,17 +49,16 @@ fun rememberSavedDevices(): List<String> {
 
 /** 本机 / 目标设备 switch shown on the Apps and Terminal pages. `null` = this device. */
 @Composable
-fun TargetSwitch(current: String?, onPick: (String?) -> Unit, modifier: Modifier = Modifier) {
-    val devices = rememberSavedDevices()
+fun TargetSwitch(current: String?, onPick: (String?) -> Unit, modifier: Modifier = Modifier, devices: List<String> = rememberSavedDevices()) {
     Row(
         modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FilterChip(current == null, { onPick(null) }, { Text(t("本机", "This device")) },
+        GhostFilterChip(current == null, { onPick(null) }, { Text(t("本机", "This device")) },
             leadingIcon = { Icon(Icons.Filled.Smartphone, null) })
         devices.forEach { s ->
-            FilterChip(current == s, { onPick(s) }, { Text(t("目标：", "Target: ") + adbLabel(s)) },
+            GhostFilterChip(current == s, { onPick(s) }, { Text(t("目标：", "Target: ") + adbLabel(s)) },
                 leadingIcon = { Icon(Icons.Filled.PhoneAndroid, null) })
         }
         if (devices.isEmpty()) Text(t("（在「设备/投屏」中配对目标设备）", "(pair a target in Devices)"), modifier = Modifier.padding(start = 4.dp))

@@ -23,6 +23,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -94,7 +97,7 @@ fun DualPane(
         val density = LocalDensity.current
         val totalPx = with(density) { total.toPx() }.coerceAtLeast(1f)
         val r = ratio.coerceIn(0.2f, 0.8f)
-        val divider = if (perPaneHeader) 8.dp else 6.dp
+        val divider = 8.dp
         val leftW = (total - divider) * r
         val rightW = total - divider - leftW
         Row(Modifier.fillMaxSize()) {
@@ -104,6 +107,7 @@ fun DualPane(
                 onDone = onRatioDone,
                 onReset = { onRatio(0.5f); onRatioDone() },
                 width = divider,
+                subtle = true,
             )
             PaneView(host, host.panes[1], rightW, Modifier.width(rightW), perPaneHeader, dragAndDrop)
         }
@@ -137,8 +141,13 @@ fun PaneView(host: PaneHost, pane: PaneState, width: Dp, modifier: Modifier, per
             }
         }
     }
+    val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(PANE_RADIUS)
     Column(
         modifier.fillMaxHeight()
+            .clip(shape)
+            .background(if (active) cs.surface else Ghost.colors.paneIdle)
+            .border(if (active || dropHover) 1.5.dp else 1.dp, if (active || dropHover) cs.primary else cs.outlineVariant, shape)
             // Any touch inside a pane makes it the active one (MT behaviour), without consuming the event.
             .pointerInput(pane.index) {
                 awaitEachGesture {
@@ -147,12 +156,10 @@ fun PaneView(host: PaneHost, pane: PaneState, width: Dp, modifier: Modifier, per
                 }
             }
             .then(if (dragAndDrop) Modifier.dragAndDropTarget(shouldStartDragAndDrop = { true }, target = dropTarget) else Modifier)
-            .then(if (dropHover) Modifier.border(2.dp, MaterialTheme.colorScheme.primary) else Modifier),
+            .then(if (dropHover) Modifier.background(cs.primary.copy(alpha = 0.06f)) else Modifier),
     ) {
-        if (pane.tabs.size > 1) TabStrip(host, pane, active)
         val tab = pane.tab
-        // Focus indicator: the path row moved to the top bar, so mark the focused pane with a thin accent line.
-        Box(Modifier.fillMaxWidth().height(2.dp).background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent))
+        if (pane.tabs.size > 1) TabStrip(host, pane, active) else PaneHeader(host, pane, active)
         if (perPaneHeader) {
             Surface(color = if (active) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow) {
                 PathCrumbs(host, pane, showSide = false, modifier = Modifier.fillMaxWidth().height(34.dp).padding(start = 6.dp))
@@ -167,17 +174,42 @@ fun PaneView(host: PaneHost, pane: PaneState, width: Dp, modifier: Modifier, per
 /** Keeps the latest cross-app drop grant alive while the import copies the files. */
 private var heldDropPermissions: android.view.DragAndDropPermissions? = null
 
+/** Corner radius of the pane cards. */
+val PANE_RADIUS = 16.dp
+
+/** Small header of a pane card: backend · folder; the focused pane gets the accent + a dot. */
+@Composable
+private fun PaneHeader(host: PaneHost, pane: PaneState, active: Boolean) {
+    val cs = MaterialTheme.colorScheme
+    val tab = pane.tab
+    Row(
+        Modifier.fillMaxWidth().height(30.dp).padding(start = 12.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            host.fsLabel(tab.fsId), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+            color = if (active) cs.primary else cs.onSurfaceVariant,
+        )
+        Text(
+            "  ·  " + tab.title, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            color = cs.outline, modifier = Modifier.weight(1f),
+        )
+        if (active) Box(Modifier.size(6.dp).clip(androidx.compose.foundation.shape.CircleShape).background(cs.primary))
+    }
+}
+
 @Composable
 private fun TabStrip(host: PaneHost, pane: PaneState, active: Boolean) {
+    val cs = MaterialTheme.colorScheme
     Row(
-        Modifier.fillMaxWidth().height(26.dp).background(MaterialTheme.colorScheme.surfaceContainer).horizontalScroll(rememberScrollState()),
+        Modifier.fillMaxWidth().height(34.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         pane.tabs.forEachIndexed { i, tb ->
             val sel = i == pane.activeTab
             Row(
-                Modifier.fillMaxHeight()
-                    .background(if (sel) MaterialTheme.colorScheme.surface else Color.Transparent)
+                Modifier.padding(end = 4.dp).height(24.dp).clip(RoundedCornerShape(8.dp))
+                    .background(if (sel) (if (active) cs.primaryContainer else cs.surfaceVariant) else Color.Transparent)
                     .clickable { host.selectTab(pane, i) }
                     .padding(start = 8.dp, end = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -185,10 +217,10 @@ private fun TabStrip(host: PaneHost, pane: PaneState, active: Boolean) {
                 Text(
                     tb.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.widthIn(max = 96.dp),
-                    color = if (sel && active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = if (sel) FontWeight.Medium else FontWeight.Normal,
+                    color = if (sel && active) cs.primary else cs.onSurfaceVariant,
+                    fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Normal,
                 )
-                Icon(Icons.Filled.Close, t("关闭", "Close"), Modifier.size(18.dp).clickable { host.closeTab(pane, i) }.padding(3.dp))
+                Icon(Icons.Rounded.Close, t("关闭", "Close"), Modifier.size(18.dp).clickable { host.closeTab(pane, i) }.padding(3.dp), tint = cs.outline)
             }
         }
     }
@@ -214,28 +246,21 @@ object PaneUi {
 @Composable
 fun TopPathBar(host: PaneHost, modifier: Modifier = Modifier) = PathCrumbs(host, host.panes[host.activePane], showSide = true, modifier = modifier)
 
-/** Backend chip + breadcrumb of [pane]; [showSide] adds the 左/右 tag (single top bar mode). */
+/** Backend + breadcrumb of [pane] as one rounded pill (HyperOS search-field look). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PathCrumbs(host: PaneHost, pane: PaneState, showSide: Boolean, modifier: Modifier = Modifier) {
     val tab = pane.tab
-    val active = host.activePane == pane.index
     val scroll = rememberScrollState()
     LaunchedEffect(host.activePane, tab.fsId, tab.path, scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
-    val fg = MaterialTheme.colorScheme.onSurface
-    val accent = if (active || showSide) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        if (showSide) {
-            Text(
-                if (pane.index == 0) t("左", "L") else t("右", "R"), fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.background(accent, RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp),
-            )
-            Spacer(Modifier.width(3.dp))
-        }
+    val cs = MaterialTheme.colorScheme
+    Row(
+        modifier.height(38.dp).clip(RoundedCornerShape(12.dp)).background(cs.surfaceVariant).padding(start = 12.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
-            host.fsLabel(tab.fsId), fontSize = 10.sp, color = accent, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.widthIn(max = 72.dp)
-                .background(accent.copy(alpha = 0.14f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp),
+            host.fsLabel(tab.fsId), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = cs.primary,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 110.dp),
         )
         Row(
             Modifier.weight(1f).horizontalScroll(scroll).padding(start = 2.dp)
@@ -243,23 +268,30 @@ fun PathCrumbs(host: PaneHost, pane: PaneState, showSide: Boolean, modifier: Mod
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val parts = tab.path.trim('/').split('/').filter { it.isNotEmpty() }
-            Text("/", Modifier.clickable { host.navigateTo(pane, "/") }.padding(horizontal = 3.dp, vertical = 8.dp), fontSize = 13.sp, color = fg)
+            Sep()
+            Text("/", Modifier.clickable { host.navigateTo(pane, "/") }.padding(horizontal = 2.dp, vertical = 9.dp), fontSize = 13.sp,
+                color = if (parts.isEmpty()) cs.onSurface else cs.onSurfaceVariant)
             var acc = ""
             parts.forEachIndexed { i, part ->
                 acc += "/$part"
                 val target = acc
                 val last = i == parts.size - 1
+                if (i > 0) Sep()
                 Text(
-                    part + if (!last) " /" else "",
-                    Modifier.clickable { host.navigateTo(pane, target) }.padding(horizontal = 2.dp, vertical = 8.dp),
-                    fontSize = 13.sp, maxLines = 1, color = if (last) accent else fg,
+                    part,
+                    Modifier.clickable { host.navigateTo(pane, target) }.padding(horizontal = 2.dp, vertical = 9.dp),
+                    fontSize = 13.sp, maxLines = 1,
+                    color = if (last) cs.onSurface else cs.onSurfaceVariant,
                     fontWeight = if (last) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(6.dp))
         }
     }
 }
+
+@Composable
+private fun Sep() = Text("/", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f), modifier = Modifier.padding(horizontal = 3.dp))
 
 @Composable
 private fun BasicFilterField(tab: TabState, active: Boolean) {
@@ -268,7 +300,7 @@ private fun BasicFilterField(tab: TabState, active: Boolean) {
         if (PaneUi.filterFocusPending && active) { PaneUi.filterFocusPending = false; runCatching { focus.requestFocus() } }
     }
     DisposableEffect(Unit) { onDispose { PaneUi.textFocused = false } }
-    Surface(color = MaterialTheme.colorScheme.surface) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(10.dp), modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
         androidx.compose.foundation.text.BasicTextField(
             value = tab.filter, onValueChange = { tab.filter = it }, singleLine = true,
             textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface),
@@ -294,8 +326,8 @@ private fun StatusLine(host: PaneHost, tab: TabState, active: Boolean) {
     }
     Text(
         text, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-        modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer).padding(horizontal = 6.dp, vertical = 2.dp),
+        color = MaterialTheme.colorScheme.outline,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp),
     )
 }
 
@@ -367,6 +399,7 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
                         onLongClick = { host.onEntryLongPress(pane, e) },
                         onSwipe = { host.onEntrySwipe(pane, e) },
                         thumb = { c -> host.thumbnail(tab.fsId, e, spec.gridThumbPx, c) },
+                        cachedThumb = { host.cachedThumbnail(tab.fsId, e, spec.gridThumbPx) },
                         iconSize = spec.gridIcon, showThumbs = showThumbs, spec = spec,
                         dragData = if (dragAndDrop) ({ dragData(e) }) else null,
                         touchDrag = dragAndDrop && tab.selecting && sel,
@@ -382,6 +415,7 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
                 val sel = e.path in tab.selected
                 FileRow(
                     e = e,
+                    divider = i > 0 || tab.path != "/",
                     selecting = tab.selecting,
                     selected = sel,
                     highlighted = e.path == tab.highlight,
@@ -390,6 +424,7 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
                     onLongClick = { host.onEntryLongPress(pane, e) },
                     onSwipe = { host.onEntrySwipe(pane, e) },
                     thumb = { c -> host.thumbnail(tab.fsId, e, spec.thumbPx, c) },
+                    cachedThumb = { host.cachedThumbnail(tab.fsId, e, spec.thumbPx) },
                     iconSize = spec.icon, showThumbs = showThumbs, spec = spec,
                     dragData = if (dragAndDrop) ({ dragData(e) }) else null,
                     touchDrag = dragAndDrop && tab.selecting && sel,
@@ -415,12 +450,12 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
 @Composable
 private fun ParentRow(onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 5.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Filled.DriveFolderUpload, null, tint = Color(0xFFF2B732), modifier = Modifier.size(26.dp))
-        Spacer(Modifier.width(6.dp))
-        Text("..", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Icon(Icons.Rounded.DriveFolderUpload, null, tint = Ghost.colors.folder.copy(alpha = 0.8f), modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(t("上一级", "Up"), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -429,6 +464,8 @@ private fun ParentRow(onClick: () -> Unit) {
 fun FileRow(
     e: FileEntry,
     selecting: Boolean,
+    /** Hairline above the row (list mode, all but the first row). */
+    divider: Boolean = false,
     selected: Boolean,
     highlighted: Boolean,
     wide: Boolean,
@@ -436,6 +473,7 @@ fun FileRow(
     onLongClick: () -> Unit,
     onSwipe: () -> Unit,
     thumb: ((cancelled: () -> Boolean) -> android.graphics.Bitmap?)? = null,
+    cachedThumb: (() -> android.graphics.Bitmap?)? = null,
     iconSize: Dp = 28.dp,
     showThumbs: Boolean = true,
     spec: DensitySpec = densitySpec("normal"),
@@ -443,17 +481,24 @@ fun FileRow(
     dragData: (() -> DragAndDropTransferData?)? = null,
     touchDrag: Boolean = false,
 ) {
+    val cs = MaterialTheme.colorScheme
     val bg = when {
-        selected -> MaterialTheme.colorScheme.primaryContainer
-        highlighted -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+        selected -> cs.primaryContainer
+        highlighted -> cs.surfaceVariant
         else -> Color.Transparent
     }
+    val line = cs.outlineVariant
+    val inset = with(LocalDensity.current) { (iconSize + 20.dp).toPx() }
     val swipePx = with(LocalDensity.current) { 40.dp.toPx() }
     val shadow = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
     val latestLong by rememberUpdatedState(onLongClick)
     val latestDrag by rememberUpdatedState(dragData)
     Row(
-        Modifier.fillMaxWidth().background(bg)
+        Modifier.fillMaxWidth()
+            .then(if (divider && !selected) Modifier.drawBehind {
+                drawLine(line, androidx.compose.ui.geometry.Offset(inset, 0f), androidx.compose.ui.geometry.Offset(size.width, 0f), 1f)
+            } else Modifier)
+            .background(bg)
             // Mouse right-click: same as long-press (context menu).
             .pointerInput(e.path) {
                 awaitPointerEventScope {
@@ -498,13 +543,16 @@ fun FileRow(
                     }
                 }
             })
-            .padding(start = 6.dp, end = 4.dp, top = spec.rowPad, bottom = spec.rowPad),
+            .padding(start = 10.dp, end = 8.dp, top = spec.rowPad + 2.dp, bottom = spec.rowPad + 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val (icon, tint) = iconFor(e)
-        var thumbBmp by remember(e.path, e.lastModified, showThumbs) { mutableStateOf<android.graphics.Bitmap?>(null) }
+        var thumbBmp by remember(e.path, e.lastModified, showThumbs) {
+            mutableStateOf(if (showThumbs && !e.isDirectory) cachedThumb?.invoke() else null)
+        }
         LaunchedEffect(e.path, e.lastModified, showThumbs) {
             if (!showThumbs || e.isDirectory || thumb == null) { thumbBmp = null; return@LaunchedEffect }
+            if (thumbBmp != null) return@LaunchedEffect
             thumbBmp = withContext(Dispatchers.IO) {
                 val job = coroutineContext[kotlinx.coroutines.Job]
                 runCatching { thumb { job?.isActive == false } }.getOrNull()
@@ -512,30 +560,47 @@ fun FileRow(
         }
         Box(Modifier.size(iconSize)) {
             val tb = thumbBmp
-            if (tb != null) Image(tb.asImageBitmap(), null, Modifier.size(iconSize).clip(RoundedCornerShape(3.dp)), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-            else Icon(icon, null, tint = tint, modifier = Modifier.size(iconSize))
-            if (e.isLink) Icon(Icons.Filled.Link, null, Modifier.size(12.dp).align(Alignment.BottomEnd), tint = MaterialTheme.colorScheme.tertiary)
+            if (tb != null) {
+                val apk = e.extension.lowercase() in setOf("apk", "apks", "xapk")
+                Image(
+                    tb.asImageBitmap(), null,
+                    Modifier.size(iconSize).clip(RoundedCornerShape(if (apk) 0.dp else iconSize / 4)),
+                    contentScale = if (apk) androidx.compose.ui.layout.ContentScale.Fit else androidx.compose.ui.layout.ContentScale.Crop,
+                )
+                if (e.extension.lowercase() in VIDEO_EXT) Icon(
+                    Icons.Rounded.PlayArrow, null,
+                    Modifier.size(iconSize * 0.5f).align(Alignment.Center).clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(Color.Black.copy(alpha = 0.35f)).padding(1.dp),
+                    tint = Color.White,
+                )
+            } else Icon(icon, null, tint = tint, modifier = Modifier.size(iconSize))
+            if (e.isLink) Icon(Icons.Rounded.Link, null, Modifier.size(12.dp).align(Alignment.BottomEnd), tint = cs.tertiary)
         }
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                e.name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = spec.nameSp.sp, lineHeight = (spec.nameSp + 2).sp,
-                color = if (e.isHidden) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f) else MaterialTheme.colorScheme.onSurface,
+                e.name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = spec.nameSp.sp, lineHeight = (spec.nameSp + 3).sp,
+                fontWeight = FontWeight.Medium,
+                color = if (e.isHidden) cs.onSurface.copy(alpha = 0.5f) else cs.onSurface,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(formatTimeShort(e.lastModified), fontSize = spec.metaSp.sp, color = MaterialTheme.colorScheme.outline, maxLines = 1)
-                Spacer(Modifier.weight(1f))
+                Text(
+                    run {
+                        val time = if (wide) formatTimeShort(e.lastModified) else formatTimeCompact(e.lastModified)
+                        if (e.isDirectory) time else formatSize(e.size) + " · " + time
+                    },
+                    fontSize = spec.metaSp.sp, color = cs.outline, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                )
                 if (wide) e.permissions?.takeIf { it.isNotEmpty() }?.let {
-                    Text(it, fontSize = spec.metaSp.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(end = 6.dp), maxLines = 1)
+                    Text(it, fontSize = spec.metaSp.sp, color = cs.outline, maxLines = 1, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                 }
-                if (!e.isDirectory) Text(formatSize(e.size), fontSize = spec.metaSp.sp, color = MaterialTheme.colorScheme.outline, maxLines = 1)
             }
         }
         if (selecting) {
             Icon(
-                if (selected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank, null,
-                Modifier.padding(start = 2.dp).size(18.dp),
-                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, null,
+                Modifier.padding(start = 4.dp).size(20.dp),
+                tint = if (selected) cs.primary else cs.outline.copy(alpha = 0.6f),
             )
         }
     }
@@ -543,15 +608,16 @@ fun FileRow(
 
 @Composable
 fun iconFor(e: FileEntry): Pair<ImageVector, Color> {
-    if (e.isDirectory) return Icons.Filled.Folder to Color(0xFFF2B732)
-    return when (e.extension) {
-        in IMAGE_EXT -> Icons.Filled.Image to Color(0xFF4CAF50)
-        in VIDEO_EXT -> Icons.Filled.Movie to Color(0xFFE53935)
-        in AUDIO_EXT -> Icons.Filled.MusicNote to Color(0xFF8E24AA)
-        "apk", "apks", "xapk" -> Icons.Filled.Android to Color(0xFF3DDC84)
-        "zip", "7z", "rar", "tar", "gz", "xz", "bz2", "tgz" -> Icons.Filled.FolderZip to Color(0xFF795548)
-        in TEXT_EXT -> Icons.Filled.Description to Color(0xFF1E88E5)
-        "pdf" -> Icons.Filled.PictureAsPdf to Color(0xFFD32F2F)
-        else -> Icons.AutoMirrored.Filled.InsertDriveFile to MaterialTheme.colorScheme.outline
+    val c = Ghost.colors
+    if (e.isDirectory) return Icons.Rounded.Folder to c.folder
+    return when (e.extension.lowercase()) {
+        in IMAGE_EXT -> Icons.Rounded.Image to c.image
+        in VIDEO_EXT -> Icons.Rounded.Movie to c.video
+        in AUDIO_EXT -> Icons.Rounded.MusicNote to c.audio
+        "apk", "apks", "xapk" -> Icons.Rounded.Android to c.apk
+        "zip", "7z", "rar", "tar", "gz", "xz", "bz2", "tgz" -> Icons.Rounded.FolderZip to c.archive
+        in TEXT_EXT, in PREVIEW_MD -> Icons.Rounded.Description to c.text
+        "pdf" -> Icons.Rounded.PictureAsPdf to c.pdf
+        else -> Icons.AutoMirrored.Rounded.InsertDriveFile to c.other
     }
 }

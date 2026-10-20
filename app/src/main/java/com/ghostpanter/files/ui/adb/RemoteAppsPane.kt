@@ -1,5 +1,7 @@
 package com.ghostpanter.files.ui.adb
 
+import com.ghostpanter.files.ui.GhostFilterChip
+import com.ghostpanter.files.ui.GhostChip
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
@@ -38,7 +40,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.InstallMobile
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -287,7 +288,7 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
         }
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(t("用户", "User"), t("系统", "System"), t("全部", "All"), t("已停用", "Disabled"), t("已卸载(可恢复)", "Uninstalled (restorable)"))
-                .forEachIndexed { i, l -> FilterChip(filter == i, { filter = i; selected = emptySet() }, { Text(l) }) }
+                .forEachIndexed { i, l -> GhostFilterChip(filter == i, { filter = i; selected = emptySet() }, { Text(l) }) }
         }
         progress?.let { (title, i, n) ->
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -300,14 +301,14 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
         if (selected.isNotEmpty()) {
             FlowRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(t("已选 ${sel.size}", "${sel.size} selected"), Modifier.align(Alignment.CenterVertically), fontWeight = FontWeight.Bold)
-                AssistChip({ selected = if (sel.size == shown.size) emptySet() else shown.map { it.pkg }.toSet() }, { Text(t("全选/取消", "All/none")) })
-                AssistChip({ batch(t("强行停止", "Force stop"), sel) { RemoteApps.forceStop(it.pkg) } }, { Text(t("强行停止", "Force stop")) })
-                AssistChip({ confirm = t("停用 ${sel.size} 个应用？", "Disable ${sel.size} apps?") to { batch(t("停用", "Disable"), sel) { RemoteApps.disable(it.pkg) } } }, { Text(t("停用", "Disable")) })
-                AssistChip({ batch(t("启用", "Enable"), sel) { RemoteApps.enable(it.pkg) } }, { Text(t("启用", "Enable")) })
-                AssistChip({ confirm = t("清除 ${sel.size} 个应用的数据？", "Clear data of ${sel.size} apps?") to { batch(t("清除数据", "Clear data"), sel) { RemoteApps.clear(it.pkg) } } }, { Text(t("清除数据", "Clear data")) })
-                AssistChip({ confirm = t("卸载 ${sel.size} 个应用？系统应用仅对用户 0 卸载，可在「已卸载」中恢复。", "Uninstall ${sel.size} apps? System apps are removed for user 0 only and can be restored.") to { batch(t("卸载", "Uninstall"), sel) { RemoteApps.uninstall(it) } } }, { Text(t("卸载", "Uninstall")) })
-                if (filter == 4) AssistChip({ batch(t("恢复", "Restore"), sel) { RemoteApps.restore(it.pkg) } }, { Text(t("恢复", "Restore")) })
-                AssistChip({ export(sel) }, { Text(t("导出 APK", "Export APK")) })
+                GhostChip({ selected = if (sel.size == shown.size) emptySet() else shown.map { it.pkg }.toSet() }, { Text(t("全选/取消", "All/none")) })
+                GhostChip({ batch(t("强行停止", "Force stop"), sel) { RemoteApps.forceStop(it.pkg) } }, { Text(t("强行停止", "Force stop")) })
+                GhostChip({ confirm = t("停用 ${sel.size} 个应用？", "Disable ${sel.size} apps?") to { batch(t("停用", "Disable"), sel) { RemoteApps.disable(it.pkg) } } }, { Text(t("停用", "Disable")) })
+                GhostChip({ batch(t("启用", "Enable"), sel) { RemoteApps.enable(it.pkg) } }, { Text(t("启用", "Enable")) })
+                GhostChip({ confirm = t("清除 ${sel.size} 个应用的数据？", "Clear data of ${sel.size} apps?") to { batch(t("清除数据", "Clear data"), sel) { RemoteApps.clear(it.pkg) } } }, { Text(t("清除数据", "Clear data")) })
+                GhostChip({ confirm = t("卸载 ${sel.size} 个应用？系统应用仅对用户 0 卸载，可在「已卸载」中恢复。", "Uninstall ${sel.size} apps? System apps are removed for user 0 only and can be restored.") to { batch(t("卸载", "Uninstall"), sel) { RemoteApps.uninstall(it) } } }, { Text(t("卸载", "Uninstall")) })
+                if (filter == 4) GhostChip({ batch(t("恢复", "Restore"), sel) { RemoteApps.restore(it.pkg) } }, { Text(t("恢复", "Restore")) })
+                GhostChip({ export(sel) }, { Text(t("导出 APK", "Export APK")) })
                 IconButton(onClick = { selected = emptySet() }) { Icon(Icons.Filled.Close, null) }
             }
         }
@@ -358,15 +359,15 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
                     if (a.apkPath.isNotEmpty()) Text(a.apkPath, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                     Spacer(Modifier.size(10.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (a.uninstalled) AssistChip({ one(t("恢复", "Restore"), RemoteApps.restore(a.pkg)) }, { Text(t("恢复安装", "Restore")) })
+                        if (a.uninstalled) GhostChip({ one(t("恢复", "Restore"), RemoteApps.restore(a.pkg)) }, { Text(t("恢复安装", "Restore")) })
                         else {
-                            AssistChip({ one(t("启动", "Launch"), RemoteApps.launch(a.pkg)) }, { Text(t("启动", "Launch")) })
-                            AssistChip({ one(t("强行停止", "Force stop"), RemoteApps.forceStop(a.pkg)) }, { Text(t("强行停止", "Force stop")) })
-                            if (a.disabled) AssistChip({ one(t("启用", "Enable"), RemoteApps.enable(a.pkg)) }, { Text(t("启用", "Enable")) })
-                            else AssistChip({ detail = null; confirm = t("停用 $label？", "Disable $label?") to { batch(t("停用", "Disable"), listOf(a)) { RemoteApps.disable(it.pkg) } } }, { Text(t("停用", "Disable")) })
-                            AssistChip({ detail = null; confirm = t("清除 $label 的全部数据？", "Clear all data of $label?") to { batch(t("清除数据", "Clear data"), listOf(a)) { RemoteApps.clear(it.pkg) } } }, { Text(t("清除数据", "Clear data")) })
-                            AssistChip({ detail = null; confirm = (if (a.system) t("对用户 0 卸载系统应用 $label？（可恢复）", "Uninstall system app $label for user 0? (restorable)") else t("卸载 $label？", "Uninstall $label?")) to { batch(t("卸载", "Uninstall"), listOf(a)) { RemoteApps.uninstall(it) } } }, { Text(t("卸载", "Uninstall")) })
-                            AssistChip({ detail = null; export(listOf(a)) }, { Text(t("导出 APK", "Export APK")) })
+                            GhostChip({ one(t("启动", "Launch"), RemoteApps.launch(a.pkg)) }, { Text(t("启动", "Launch")) })
+                            GhostChip({ one(t("强行停止", "Force stop"), RemoteApps.forceStop(a.pkg)) }, { Text(t("强行停止", "Force stop")) })
+                            if (a.disabled) GhostChip({ one(t("启用", "Enable"), RemoteApps.enable(a.pkg)) }, { Text(t("启用", "Enable")) })
+                            else GhostChip({ detail = null; confirm = t("停用 $label？", "Disable $label?") to { batch(t("停用", "Disable"), listOf(a)) { RemoteApps.disable(it.pkg) } } }, { Text(t("停用", "Disable")) })
+                            GhostChip({ detail = null; confirm = t("清除 $label 的全部数据？", "Clear all data of $label?") to { batch(t("清除数据", "Clear data"), listOf(a)) { RemoteApps.clear(it.pkg) } } }, { Text(t("清除数据", "Clear data")) })
+                            GhostChip({ detail = null; confirm = (if (a.system) t("对用户 0 卸载系统应用 $label？（可恢复）", "Uninstall system app $label for user 0? (restorable)") else t("卸载 $label？", "Uninstall $label?")) to { batch(t("卸载", "Uninstall"), listOf(a)) { RemoteApps.uninstall(it) } } }, { Text(t("卸载", "Uninstall")) })
+                            GhostChip({ detail = null; export(listOf(a)) }, { Text(t("导出 APK", "Export APK")) })
                         }
                     }
                 }

@@ -1,5 +1,8 @@
 package com.ghostpanter.files.ui.adb
 
+import com.ghostpanter.files.ui.GhostFilterChip
+import com.ghostpanter.files.ui.GhostSwitch
+import com.ghostpanter.files.ui.GhostChip
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.media.MediaScannerConnection
@@ -41,7 +44,6 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -155,6 +157,7 @@ fun AdbToolsFrame(
         topBar = {
             Column {
                 TopAppBar(
+                colors = com.ghostpanter.files.ui.ghostTopBarColors(),
                     title = {
                         Column {
                             Text(adbLabel(serial), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -167,7 +170,7 @@ fun AdbToolsFrame(
                         IconButton(onClick = onShell) { Icon(Icons.Filled.Terminal, t("终端", "Shell")) }
                     },
                 )
-                ScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
+                ScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp, containerColor = MaterialTheme.colorScheme.background, divider = {}) {
                     TOOL_TABS.forEachIndexed { i, (zh, en) -> Tab(tab == i, { tab = i }, text = { Text(t(zh, en)) }) }
                 }
             }
@@ -284,20 +287,20 @@ fun OverviewPane(toast: (String) -> Unit, serial: String, previewInfo: List<Info
                     Text(t("常用工具", "Quick tools"), fontWeight = FontWeight.Bold)
                     Spacer(Modifier.size(8.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AssistChip({ screenshot() }, { Text(t("截图", "Screenshot")) }, leadingIcon = { Icon(Icons.Filled.PhotoCamera, null) })
-                        if (rec == null) AssistChip({ startRecord() }, { Text(t("录屏", "Record")) }, leadingIcon = { Icon(Icons.Filled.FiberManualRecord, null) })
-                        else AssistChip({ stopRecord() }, { Text(t("停止录屏 ", "Stop ") + "%d:%02d".format(recSec / 60, recSec % 60)) }, leadingIcon = { Icon(Icons.Filled.Stop, null) })
-                        AssistChip({ confirm = t("开启网络 ADB（tcpip 5555）？目标的 adbd 会重启并监听 5555 端口，同一局域网内任何人都可尝试连接（仍需授权）。", "Enable network ADB (tcpip 5555)? adbd restarts listening on 5555; anyone on the LAN can try to connect (authorization still required).") to { tcpip() } },
+                        GhostChip({ screenshot() }, { Text(t("截图", "Screenshot")) }, leadingIcon = { Icon(Icons.Filled.PhotoCamera, null) })
+                        if (rec == null) GhostChip({ startRecord() }, { Text(t("录屏", "Record")) }, leadingIcon = { Icon(Icons.Filled.FiberManualRecord, null) })
+                        else GhostChip({ stopRecord() }, { Text(t("停止录屏 ", "Stop ") + "%d:%02d".format(recSec / 60, recSec % 60)) }, leadingIcon = { Icon(Icons.Filled.Stop, null) })
+                        GhostChip({ confirm = t("开启网络 ADB（tcpip 5555）？目标的 adbd 会重启并监听 5555 端口，同一局域网内任何人都可尝试连接（仍需授权）。", "Enable network ADB (tcpip 5555)? adbd restarts listening on 5555; anyone on the LAN can try to connect (authorization still required).") to { tcpip() } },
                             { Text(t("无线 ADB 5555", "TCP/IP 5555")) }, leadingIcon = { Icon(Icons.Filled.Wifi, null) })
                         Box {
-                            AssistChip({ rebootMenu = true }, { Text(t("高级重启", "Reboot…")) }, leadingIcon = { Icon(Icons.Filled.PowerSettingsNew, null) })
+                            GhostChip({ rebootMenu = true }, { Text(t("高级重启", "Reboot…")) }, leadingIcon = { Icon(Icons.Filled.PowerSettingsNew, null) })
                             DropdownMenu(rebootMenu, { rebootMenu = false }) {
                                 Reboot.targets().forEach { (label, svc) ->
                                     DropdownMenuItem({ Text(label) }, { rebootMenu = false; confirm = "$label？" to { reboot(svc) } })
                                 }
                             }
                         }
-                        AssistChip({ reload++ }, { Text(t("刷新信息", "Refresh")) }, leadingIcon = { Icon(Icons.Filled.Refresh, null) })
+                        GhostChip({ reload++ }, { Text(t("刷新信息", "Refresh")) }, leadingIcon = { Icon(Icons.Filled.Refresh, null) })
                     }
                     busy?.let { Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text(it, fontSize = 13.sp) } }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -346,7 +349,7 @@ fun OverviewPane(toast: (String) -> Unit, serial: String, previewInfo: List<Info
 fun ToggleRow(label: String, on: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().clickable { onChange(!on) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), fontSize = 14.sp)
-        Switch(on, onChange)
+        GhostSwitch(on, onChange)
     }
 }
 
@@ -402,9 +405,9 @@ fun ProcessesPane(toast: (String) -> Unit, serial: String, preview: List<ProcInf
             IconButton(onClick = { reload++ }) { Icon(Icons.Filled.Refresh, t("刷新", "Refresh")) }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(t("CPU", "CPU"), t("内存", "Memory"), t("名称", "Name"), "PID").forEachIndexed { i, l -> FilterChip(sort == i, { sort = i }, { Text(l) }) }
-            FilterChip(appsOnly, { appsOnly = !appsOnly }, { Text(t("仅应用", "Apps only")) })
-            FilterChip(auto, { auto = !auto }, { Text(t("自动刷新", "Auto refresh")) })
+            listOf(t("CPU", "CPU"), t("内存", "Memory"), t("名称", "Name"), "PID").forEachIndexed { i, l -> GhostFilterChip(sort == i, { sort = i }, { Text(l) }) }
+            GhostFilterChip(appsOnly, { appsOnly = !appsOnly }, { Text(t("仅应用", "Apps only")) })
+            GhostFilterChip(auto, { auto = !auto }, { Text(t("自动刷新", "Auto refresh")) })
         }
         error?.let { ErrorCard(it) { reload++ } }
         val shown = list.orEmpty().filter { p ->

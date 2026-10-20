@@ -1,5 +1,6 @@
 package com.ghostpanter.files.ui.adb
 
+import com.ghostpanter.files.ui.GhostFilterChip
 import android.os.Environment
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -138,7 +139,7 @@ fun LogcatPane(toast: (String) -> Unit, serial: String, preview: List<LogLine>? 
             OutlinedTextField(text, { text = it }, Modifier.weight(1f).padding(start = 6.dp), singleLine = true, placeholder = { Text(t("内容", "Text")) })
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Logcat.LEVELS.forEach { l -> FilterChip(minLevel == l, { minLevel = l }, { Text(l.toString(), color = levelColor(l)) }) }
+            Logcat.LEVELS.forEach { l -> GhostFilterChip(minLevel == l, { minLevel = l }, { Text(l.toString(), color = levelColor(l)) }) }
             IconButton(onClick = { paused = !paused; if (!paused) rev++ }) {
                 Icon(if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, if (paused) t("继续", "Resume") else t("暂停", "Pause"))
             }

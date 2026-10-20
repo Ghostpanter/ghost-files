@@ -303,6 +303,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
 
     override fun fsLabel(fsId: String) = fsm.label(fsId)
 
+    override fun cachedThumbnail(fsId: String, e: FileEntry, sizePx: Int): android.graphics.Bitmap? =
+        if (e.isDirectory) null else Thumbnails.cached(fsId, e, sizePx)
+
     override fun thumbnail(fsId: String, e: FileEntry, sizePx: Int, cancelled: () -> Boolean): android.graphics.Bitmap? {
         val fs = runCatching { fsm.get(fsId) }.getOrNull() ?: return null
         // Root / Shizuku browse real paths: if the app itself can read the file (e.g. /storage/emulated/0/...),

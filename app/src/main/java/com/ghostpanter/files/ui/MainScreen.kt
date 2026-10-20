@@ -13,6 +13,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -96,7 +100,11 @@ private fun PhoneShell(vm: MainViewModel, activity: MainActivity, editServer: (S
         // Only close-by-swipe: an edge swipe must not steal the MT "swipe a row to select" gesture.
         gesturesEnabled = drawer.isOpen,
         drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.widthIn(max = 320.dp), drawerShape = androidx.compose.ui.graphics.RectangleShape) {
+            ModalDrawerSheet(
+                modifier = Modifier.widthIn(max = 320.dp),
+                drawerShape = androidx.compose.foundation.shape.RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
+                drawerContainerColor = MaterialTheme.colorScheme.background,
+            ) {
                 DrawerContent(vm, activity, close = { scope.launch { drawer.close() } }, editServer = { editServer(it); scope.launch { drawer.close() } })
             }
         },
@@ -124,12 +132,16 @@ private fun TabletShell(vm: MainViewModel, activity: MainActivity, layout: Windo
         drawerState = drawer,
         gesturesEnabled = drawer.isOpen,
         drawerContent = {
-            ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp), drawerShape = androidx.compose.ui.graphics.RectangleShape) {
+            ModalDrawerSheet(
+                modifier = Modifier.widthIn(max = 340.dp),
+                drawerShape = androidx.compose.foundation.shape.RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
+                drawerContainerColor = MaterialTheme.colorScheme.background,
+            ) {
                 DrawerContent(vm, activity, close = { scope.launch { drawer.close() } }, editServer = { editServer(it); scope.launch { drawer.close() } })
             }
         },
     ) {
-        Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             if (!vm.screen.immersive()) {
                 GhostNavRail(
                     current = vm.screen, activeJobs = activeJobs, panelOpen = panelShown || drawer.isOpen,
@@ -140,12 +152,11 @@ private fun TabletShell(vm: MainViewModel, activity: MainActivity, layout: Windo
                     onPick = { vm.screen = it },
                 )
                 if (panelShown) {
-                    Surface(Modifier.width(SIDE_PANEL_WIDTH_DP.dp).fillMaxHeight(), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    Surface(Modifier.width(SIDE_PANEL_WIDTH_DP.dp).fillMaxHeight(), color = MaterialTheme.colorScheme.background) {
                         Box(Modifier.statusBarsPadding().navigationBarsPadding()) {
                             DrawerContent(vm, activity, close = {}, editServer = editServer)
                         }
                     }
-                    VerticalDivider()
                 }
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -304,43 +315,108 @@ fun MainFrame(
 ) {
     val tab = host.panes[host.activePane].tab
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
-                Row(
-                    Modifier.fillMaxWidth().statusBarsPadding().height(44.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = onDrawer) { Icon(Icons.Filled.Menu, t("菜单", "Menu")) }
-                    if (tab.selecting) {
-                        Text(
-                            t("已选 ${tab.selected.size} 项", "${tab.selected.size} selected"),
-                            fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, modifier = Modifier.weight(1f),
-                        )
-                    } else {
-                        TopPathBar(host, Modifier.weight(1f))
+            Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
+                Row(Modifier.fillMaxWidth().height(52.dp).padding(start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDrawer) { Icon(Icons.Rounded.Menu, t("菜单", "Menu")) }
+                    FrameTitle(tab, Modifier.weight(1f))
+                    if (!tab.selecting) {
+                        val filterOn = PaneUi.filterOpen || tab.filter.isNotEmpty()
                         IconButton(onClick = {
-                            val open = !(PaneUi.filterOpen || tab.filter.isNotEmpty())
+                            val open = !filterOn
                             PaneUi.filterOpen = open
                             if (!open) host.panes.forEach { p -> p.tab.filter = "" }
                         }) {
-                            Icon(Icons.Filled.FilterList, t("筛选", "Filter"),
-                                tint = if (PaneUi.filterOpen || tab.filter.isNotEmpty()) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+                            Icon(Icons.Rounded.FilterList, t("筛选", "Filter"), tint = if (filterOn) MaterialTheme.colorScheme.primary else LocalContentColor.current)
                         }
                     }
-                    IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, t("搜索", "Search")) }
-                    IconButton(onClick = onSwap) { Icon(Icons.Filled.SwapHoriz, t("交换窗口", "Swap panes")) }
+                    IconButton(onClick = onSearch) { Icon(Icons.Rounded.Search, t("搜索", "Search")) }
+                    IconButton(onClick = onSwap) { Icon(Icons.Rounded.SwapHoriz, t("交换窗口", "Swap panes")) }
                     IconButton(onClick = onTransfers) {
-                        BadgedBox(badge = { if (activeJobs > 0) Badge { Text("$activeJobs") } }) { Icon(Icons.Filled.SwapVert, t("传输队列", "Transfers")) }
+                        BadgedBox(badge = { if (activeJobs > 0) Badge(containerColor = MaterialTheme.colorScheme.primary) { Text("$activeJobs") } }) {
+                            Icon(Icons.Rounded.SwapVert, t("传输队列", "Transfers"))
+                        }
                     }
                 }
+                TopPathBar(host, Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp))
             }
         },
-        bottomBar = { BottomToolbar(tab.selecting, tab.history.isNotEmpty() || tab.path != "/", canForward, onTool, onToolLong) },
+        bottomBar = {
+            if (tab.selecting) SelectionBar(tab, onTool)
+            else BottomToolbar(false, tab.history.isNotEmpty() || tab.path != "/", canForward, onTool, onToolLong)
+        },
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             banner?.invoke()
-            DualPane(host, ratio, onRatio, onRatioDone, Modifier.weight(1f))
+            DualPane(host, ratio, onRatio, onRatioDone, Modifier.weight(1f).padding(horizontal = 8.dp).padding(bottom = 6.dp))
         }
+    }
+}
+
+/** Big bold page title; while selecting it becomes the selection count. */
+@Composable
+private fun FrameTitle(tab: TabState, modifier: Modifier) {
+    Text(
+        if (tab.selecting) t("已选 ${tab.selected.size} 项", "${tab.selected.size} selected") else t("文件", "Files"),
+        style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        modifier = modifier.padding(start = 4.dp),
+    )
+}
+
+/**
+ * Selection action bar (direction D): count + size on the left with the select helpers, then the
+ * four main actions as soft pills (复制 / 移动 / 删除 / 更多). Used by the phone and tablet frames.
+ */
+@Composable
+fun SelectionBar(tab: TabState, onTool: (Tool) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val sel = tab.selectedEntries()
+    val bytes = sel.filter { !it.isDirectory }.sumOf { it.size }
+    Surface(color = cs.surface) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
+            HorizontalDivider(color = cs.outlineVariant)
+            Row(Modifier.fillMaxWidth().height(36.dp).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    t("已选 ${tab.selected.size} 项", "${tab.selected.size} selected") + if (bytes > 0) "  ·  " + formatSize(bytes) else "",
+                    fontSize = 12.sp, color = cs.outline, modifier = Modifier.weight(1f), maxLines = 1,
+                )
+                SmallTextAction(t("全选", "All")) { onTool(Tool.SELECT_ALL) }
+                SmallTextAction(t("反选", "Invert")) { onTool(Tool.INVERT) }
+                SmallTextAction(t("类选", "Type")) { onTool(Tool.SELECT_TYPE) }
+                SmallTextAction(t("完成", "Done"), accent = true) { onTool(Tool.DONE) }
+            }
+            Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PillAction(t("复制", "Copy"), Icons.Rounded.ContentCopy, Modifier.weight(1f), accent = true) { onTool(Tool.COPY_OTHER) }
+                PillAction(t("移动", "Move"), Icons.AutoMirrored.Rounded.DriveFileMove, Modifier.weight(1f)) { onTool(Tool.MOVE_OTHER) }
+                PillAction(t("删除", "Delete"), Icons.Rounded.DeleteOutline, Modifier.weight(1f)) { onTool(Tool.DELETE) }
+                PillAction(t("更多", "More"), Icons.Rounded.MoreHoriz, Modifier.weight(1f)) { onTool(Tool.SEL_MORE) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmallTextAction(label: String, accent: Boolean = false, onClick: () -> Unit) {
+    Text(
+        label, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+        color = if (accent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 6.dp),
+    )
+}
+
+@Composable
+private fun PillAction(label: String, icon: ImageVector, modifier: Modifier, accent: Boolean = false, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val fg = if (accent) cs.primary else cs.onSurface
+    Row(
+        modifier.height(44.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .background(if (accent) cs.primaryContainer else cs.surfaceVariant).clickable(onClick = onClick),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, Modifier.size(18.dp), tint = fg)
+        Spacer(Modifier.width(5.dp))
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = fg, maxLines = 1)
     }
 }
 
@@ -349,14 +425,14 @@ private data class ToolSpec(val tool: Tool, val icon: ImageVector, val label: St
 @Composable
 fun BottomToolbar(selecting: Boolean, canBack: Boolean, canForward: Boolean, onTool: (Tool) -> Unit, onToolLong: (Tool) -> Unit) {
     val specs = if (!selecting) listOf(
-        ToolSpec(Tool.BACK, Icons.AutoMirrored.Filled.ArrowBack, t("后退", "Back"), canBack),
-        ToolSpec(Tool.FORWARD, Icons.AutoMirrored.Filled.ArrowForward, t("前进", "Fwd"), canForward),
-        ToolSpec(Tool.REFRESH, Icons.Filled.Refresh, t("刷新", "Refresh")),
-        ToolSpec(Tool.SYNC, Icons.Filled.SyncAlt, t("同步", "Sync")),
-        ToolSpec(Tool.MULTI, Icons.Filled.Checklist, t("多选", "Select")),
-        ToolSpec(Tool.NEW, Icons.Filled.Add, t("新建", "New")),
-        ToolSpec(Tool.UP, Icons.Filled.ArrowUpward, t("上级", "Up")),
-        ToolSpec(Tool.MORE, Icons.Filled.MoreHoriz, t("更多", "More")),
+        ToolSpec(Tool.BACK, Icons.AutoMirrored.Rounded.ArrowBack, t("后退", "Back"), canBack),
+        ToolSpec(Tool.FORWARD, Icons.AutoMirrored.Rounded.ArrowForward, t("前进", "Fwd"), canForward),
+        ToolSpec(Tool.REFRESH, Icons.Rounded.Refresh, t("刷新", "Refresh")),
+        ToolSpec(Tool.SYNC, Icons.Rounded.SyncAlt, t("同步", "Sync")),
+        ToolSpec(Tool.MULTI, Icons.Rounded.Checklist, t("多选", "Select")),
+        ToolSpec(Tool.NEW, Icons.Rounded.Add, t("新建", "New")),
+        ToolSpec(Tool.UP, Icons.Rounded.ArrowUpward, t("上级", "Up")),
+        ToolSpec(Tool.MORE, Icons.Rounded.MoreHoriz, t("更多", "More")),
     ) else listOf(
         ToolSpec(Tool.SELECT_ALL, Icons.Filled.SelectAll, t("全选", "All")),
         ToolSpec(Tool.INVERT, Icons.Filled.Flip, t("反选", "Invert")),
@@ -367,8 +443,8 @@ fun BottomToolbar(selecting: Boolean, canBack: Boolean, canForward: Boolean, onT
         ToolSpec(Tool.SEL_MORE, Icons.Filled.MoreHoriz, t("更多", "More")),
         ToolSpec(Tool.DONE, Icons.Filled.Close, t("取消", "Done")),
     )
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 2.dp) {
-        Row(Modifier.fillMaxWidth().navigationBarsPadding().height(50.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Row(Modifier.fillMaxWidth().navigationBarsPadding().height(54.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             specs.forEach { s -> ToolButton(s, Modifier.weight(1f), { onTool(s.tool) }, { onToolLong(s.tool) }) }
         }
     }
@@ -377,14 +453,16 @@ fun BottomToolbar(selecting: Boolean, canBack: Boolean, canForward: Boolean, onT
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ToolButton(s: ToolSpec, modifier: Modifier, onClick: () -> Unit, onLong: () -> Unit) {
-    val color = if (s.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+    val color = if (s.enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
     Column(
-        modifier.fillMaxHeight().combinedClickable(enabled = s.enabled, onClick = onClick, onLongClick = onLong),
+        modifier.fillMaxHeight().padding(vertical = 4.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .combinedClickable(enabled = s.enabled, onClick = onClick, onLongClick = onLong),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(s.icon, s.label, Modifier.size(21.dp), tint = color)
-        Text(s.label, fontSize = 10.sp, maxLines = 1, color = color)
+        Icon(s.icon, s.label, Modifier.size(22.dp), tint = color)
+        Spacer(Modifier.height(2.dp))
+        Text(s.label, fontSize = 10.sp, maxLines = 1, color = color, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -397,7 +475,7 @@ fun ActionMenuDialog(menu: ActionMenu, dismiss: () -> Unit) {
         dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
         title = {
             Column {
-                Text(menu.title, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(menu.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 menu.subtitle?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
         },
@@ -405,11 +483,12 @@ fun ActionMenuDialog(menu: ActionMenu, dismiss: () -> Unit) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 menu.actions.forEach { a ->
                     Row(
-                        Modifier.fillMaxWidth().clickable(enabled = a.enabled, onClick = a.run).padding(vertical = 9.dp),
+                        Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                            .clickable(enabled = a.enabled, onClick = a.run).padding(horizontal = 4.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(a.icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(14.dp))
+                        Icon(a.icon, null, Modifier.size(20.dp), tint = if (a.enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+                        Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) {
                             Text(a.label, fontSize = 14.sp)
                             a.hint?.let { Text(it, fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -509,64 +588,59 @@ fun TabletMainFrame(
 ) {
     val tab = host.panes[host.activePane].tab
     val canBack = tab.history.isNotEmpty() || tab.path != "/"
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) { Column(Modifier.fillMaxSize()) {
-        Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxWidth().statusBarsPadding()) {
             Row(
-                Modifier.fillMaxWidth().statusBarsPadding().height(48.dp).padding(horizontal = 4.dp),
+                Modifier.fillMaxWidth().height(56.dp).padding(start = 12.dp, end = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Which pane the toolbar acts on.
-                Text(
-                    if (host.activePane == 0) t("左", "L") else t("右", "R"), fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.padding(start = 6.dp, end = 4.dp)
-                        .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.RoundedCornerShape(3.dp))
-                        .padding(horizontal = 5.dp, vertical = 1.dp),
-                )
-                // Narrow windows (forced tablet mode on a phone, split screen): the left tool group
-                // scrolls horizontally so the right-hand group (More / Done) never gets pushed off.
+                FrameTitle(tab, Modifier.widthIn(min = 72.dp).padding(end = 12.dp))
+                // Narrow windows (forced tablet mode on a phone, split screen): the tool group scrolls
+                // horizontally so the right-hand group (More / Done) never gets pushed off.
                 val toolScroll = rememberScrollState()
-                if (tab.selecting) Row(Modifier.weight(1f).horizontalScroll(toolScroll), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        t("已选 ${tab.selected.size} 项", "${tab.selected.size} selected"),
-                        fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, modifier = Modifier.padding(horizontal = 6.dp),
-                    )
-                    BarTool(Icons.Filled.SelectAll, t("全选 (Ctrl+A)", "Select all (Ctrl+A)")) { onTool(Tool.SELECT_ALL) }
-                    BarTool(Icons.Filled.Flip, t("反选", "Invert")) { onTool(Tool.INVERT) }
-                    BarTool(Icons.Filled.Category, t("类选", "Same type")) { onTool(Tool.SELECT_TYPE) }
-                    BarDivider()
-                    BarTool(Icons.Filled.FileCopy, t("复制到对面", "Copy to other pane")) { onTool(Tool.COPY_OTHER) }
-                    BarTool(Icons.AutoMirrored.Filled.DriveFileMove, t("移动到对面", "Move to other pane")) { onTool(Tool.MOVE_OTHER) }
-                    BarTool(Icons.Filled.Delete, t("删除 (Delete)", "Delete (Del)")) { onTool(Tool.DELETE) }
-                } else Row(Modifier.weight(1f).horizontalScroll(toolScroll), verticalAlignment = Alignment.CenterVertically) {
-                    BarTool(Icons.AutoMirrored.Filled.ArrowBack, t("后退 (Alt+←)", "Back (Alt+←)"), enabled = canBack) { onTool(Tool.BACK) }
-                    BarTool(Icons.AutoMirrored.Filled.ArrowForward, t("前进 (Alt+→)", "Forward (Alt+→)"), enabled = canForward) { onTool(Tool.FORWARD) }
-                    BarTool(Icons.Filled.ArrowUpward, t("上级 (Backspace，长按跳转)", "Up (Backspace, hold: go to)"), onLong = { onToolLong(Tool.UP) }) { onTool(Tool.UP) }
-                    BarTool(Icons.Filled.Refresh, t("刷新 (F5)", "Refresh (F5)")) { onTool(Tool.REFRESH) }
-                    BarDivider()
-                    BarTool(Icons.Filled.Add, t("新建", "New")) { onTool(Tool.NEW) }
-                    BarTool(Icons.Filled.Checklist, t("多选", "Select")) { onTool(Tool.MULTI) }
-                    if (hasClip) BarTool(Icons.Filled.ContentPaste, t("粘贴 (Ctrl+V)", "Paste (Ctrl+V)")) { onTool(Tool.PASTE) }
-                    BarTool(Icons.Filled.SyncAlt, t("同步到对面（长按反向）", "Sync other pane (hold: reverse)"), onLong = { onToolLong(Tool.SYNC) }) { onTool(Tool.SYNC) }
-                    BarTool(Icons.Filled.SwapHoriz, t("交换窗口", "Swap panes")) { onSwap() }
+                Row(
+                    Modifier.weight(1f).horizontalScroll(toolScroll, reverseScrolling = true),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End,
+                ) {
+                    if (tab.selecting) {
+                        BarTool(Icons.Rounded.SelectAll, t("全选 (Ctrl+A)", "Select all (Ctrl+A)")) { onTool(Tool.SELECT_ALL) }
+                        BarTool(Icons.Rounded.Flip, t("反选", "Invert")) { onTool(Tool.INVERT) }
+                        BarTool(Icons.Rounded.Category, t("类选", "Same type")) { onTool(Tool.SELECT_TYPE) }
+                    } else {
+                        BarTool(Icons.AutoMirrored.Rounded.ArrowBack, t("后退 (Alt+←)", "Back (Alt+←)"), enabled = canBack) { onTool(Tool.BACK) }
+                        BarTool(Icons.AutoMirrored.Rounded.ArrowForward, t("前进 (Alt+→)", "Forward (Alt+→)"), enabled = canForward) { onTool(Tool.FORWARD) }
+                        BarTool(Icons.Rounded.ArrowUpward, t("上级 (Backspace，长按跳转)", "Up (Backspace, hold: go to)"), onLong = { onToolLong(Tool.UP) }) { onTool(Tool.UP) }
+                        BarTool(Icons.Rounded.Refresh, t("刷新 (F5)", "Refresh (F5)")) { onTool(Tool.REFRESH) }
+                        BarDivider()
+                        BarTool(Icons.Rounded.Add, t("新建", "New")) { onTool(Tool.NEW) }
+                        BarTool(Icons.Rounded.Checklist, t("多选", "Select")) { onTool(Tool.MULTI) }
+                        if (hasClip) BarTool(Icons.Rounded.ContentPaste, t("粘贴 (Ctrl+V)", "Paste (Ctrl+V)")) { onTool(Tool.PASTE) }
+                        BarTool(Icons.Rounded.SyncAlt, t("同步到对面（长按反向）", "Sync other pane (hold: reverse)"), onLong = { onToolLong(Tool.SYNC) }) { onTool(Tool.SYNC) }
+                        BarTool(Icons.Rounded.SwapHoriz, t("交换窗口", "Swap panes")) { onSwap() }
+                        BarDivider()
+                    }
                 }
                 if (tab.selecting) {
-                    BarTool(Icons.Filled.MoreVert, t("更多", "More")) { onTool(Tool.SEL_MORE) }
-                    BarTool(Icons.Filled.Close, t("取消选择 (Esc)", "Done (Esc)")) { onTool(Tool.DONE) }
+                    BarTool(Icons.Rounded.Close, t("取消选择 (Esc)", "Done (Esc)")) { onTool(Tool.DONE) }
                 } else {
                     val filterOn = PaneUi.filterOpen || tab.filter.isNotEmpty()
-                    BarTool(Icons.Filled.FilterList, t("筛选 (Ctrl+F)", "Filter (Ctrl+F)"), tint = if (filterOn) MaterialTheme.colorScheme.primary else null) {
+                    BarTool(Icons.Rounded.FilterList, t("筛选 (Ctrl+F)", "Filter (Ctrl+F)"), tint = if (filterOn) MaterialTheme.colorScheme.primary else null) {
                         val open = !filterOn
                         PaneUi.filterOpen = open
                         if (!open) host.panes.forEach { p -> p.tab.filter = "" } else PaneUi.filterFocusPending = true
                     }
-                    BarTool(Icons.Filled.Search, t("搜索", "Search")) { onSearch() }
-                    BarTool(Icons.Filled.MoreVert, t("更多", "More")) { onTool(Tool.MORE) }
+                    BarTool(Icons.Rounded.Search, t("搜索", "Search")) { onSearch() }
+                    BarTool(Icons.Rounded.MoreVert, t("更多", "More")) { onTool(Tool.MORE) }
                 }
             }
+            TopPathBar(host, Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp))
         }
         banner?.invoke()
-        Row(Modifier.weight(1f).fillMaxWidth().navigationBarsPadding()) {
-            DualPane(host, ratio, onRatio, onRatioDone, Modifier.weight(1f), perPaneHeader = true, dragAndDrop = true)
+        Row(
+            Modifier.weight(1f).fillMaxWidth().then(if (tab.selecting) Modifier else Modifier.navigationBarsPadding())
+                .padding(start = 8.dp, end = 12.dp, bottom = 10.dp),
+        ) {
+            DualPane(host, ratio, onRatio, onRatioDone, Modifier.weight(1f), perPaneHeader = false, dragAndDrop = true)
             if (showPreview) {
                 val density = androidx.compose.ui.platform.LocalDensity.current
                 SplitHandle(
@@ -578,6 +652,7 @@ fun TabletMainFrame(
                 DetailsPanel(host, Modifier.width(previewWidth.dp))
             }
         }
+        if (tab.selecting) SelectionBar(tab, onTool)
     } }
 }
 
@@ -589,7 +664,7 @@ private fun BarTool(icon: ImageVector, label: String, enabled: Boolean = true, t
         tooltip = { PlainTooltip { Text(label) } },
         state = rememberTooltipState(),
     ) {
-        val color = tint ?: if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+        val color = tint ?: if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
         Box(
             Modifier.size(44.dp).clip(androidx.compose.foundation.shape.CircleShape)
                 .combinedClickable(enabled = enabled, onClick = onClick, onLongClick = onLong),
@@ -600,5 +675,5 @@ private fun BarTool(icon: ImageVector, label: String, enabled: Boolean = true, t
 
 @Composable
 private fun BarDivider() {
-    VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
+    VerticalDivider(Modifier.height(20.dp).padding(horizontal = 6.dp), color = MaterialTheme.colorScheme.outlineVariant)
 }

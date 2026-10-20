@@ -14,6 +14,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -63,26 +65,30 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
     var safTrees by remember { mutableStateOf(settings.safTrees()) }
 
     fun go(fsId: String, path: String? = null) { vm.openFs(fsId, path); close() }
+    var rootGranted by remember { mutableStateOf(RootRunner.granted()) }
 
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
-        Text(t("双栏文件管理器", "TwinPane File Manager"), fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(16.dp, 6.dp))
-        Text("v${BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(horizontal = 16.dp))
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 8.dp)) {
+        Text(t("双栏文件管理器", "TwinPane File Manager"), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(start = 20.dp, end = 16.dp, top = 8.dp))
+        Text("v${BuildConfig.VERSION_NAME}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(start = 20.dp, top = 2.dp, bottom = 4.dp))
 
-        Section(t("本地存储", "Local storage"))
+        Group(t("本地存储", "Local storage")) {
         volumes.forEach { v ->
-            Column(Modifier.fillMaxWidth().clickable { go(LocalFs.ID, v.path) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Column(Modifier.fillMaxWidth().clickable { go(LocalFs.ID, v.path) }.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Storage, null); Spacer(Modifier.width(12.dp))
-                    Text(v.label, Modifier.weight(1f))
+                    Icon(Icons.Filled.Storage, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(14.dp))
+                    Text(v.label, Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 }
                 if (v.total > 0) {
-                    LinearProgressIndicator(progress = { 1f - v.free.toFloat() / v.total }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+                    LinearProgressIndicator(
+                        progress = { 1f - v.free.toFloat() / v.total },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp).height(4.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp)),
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant, drawStopIndicator = {}, gapSize = 0.dp,
+                    )
                     Text(t("已用 ${formatSize(v.total - v.free)} / ${formatSize(v.total)}，可用 ${formatSize(v.free)}",
                         "${formatSize(v.total - v.free)} used of ${formatSize(v.total)}"), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                 }
             }
         }
-        var rootGranted by remember { mutableStateOf(RootRunner.granted()) }
 
         // `/` is not readable via LocalFs; always request/use Root ShellFs.
         Item(Icons.Filled.Folder, t("系统根目录 /", "System root /")) {
@@ -110,7 +116,8 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         }
         Item(Icons.Filled.Download, t("下载", "Downloads")) { go(LocalFs.ID, vm.fsm.storageRoot + "/Download") }
 
-        Section(t("提权访问（隐藏 / 系统文件）", "Elevated access"))
+        }
+        Group(t("提权访问（隐藏 / 系统文件）", "Elevated access")) {
         // Always clickable — never greyed out. Granting Magisk/KernelSU refreshes the subtitle.
         Item(
             Icons.Filled.Security,
@@ -160,7 +167,8 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
             }
         }
 
-        Section(t("书签", "Bookmarks"))
+        }
+        Group(t("书签", "Bookmarks")) {
         if (vm.g.bookmarks.items.isEmpty()) Text(t("长按文件夹或在“更多”中添加书签", "Long-press a folder → Bookmark"), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(horizontal = 16.dp))
         vm.g.bookmarks.items.toList().forEach { b ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -169,7 +177,8 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
             }
         }
 
-        Section(t("网络（局域网 / 远程）", "Network"))
+        }
+        Group(t("网络（局域网 / 远程）", "Network")) {
         vm.g.servers.servers.forEach { s ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
@@ -182,7 +191,8 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         Item(Icons.Filled.CloudUpload, t("本机服务（FTP / WebDAV / SFTP / SMB）", "Hosted services (FTP / WebDAV / SFTP / SMB)")) { vm.screen = Screen.Servers; close() }
         Item(Icons.Filled.Add, t("手动添加服务器（SMB/FTP/SFTP/WebDAV）", "Add server")) { editServer(null); close() }
 
-        Section(t("ADB 设备", "ADB devices"))
+        }
+        Group(t("ADB 设备", "ADB devices")) {
         com.ghostpanter.files.ui.adb.rememberSavedDevices().forEach { serial ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
@@ -193,12 +203,14 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         }
         Item(Icons.Filled.Cast, t("设备 / 投屏（配对、投屏、工具）", "Devices / mirror (pair, mirror, tools)")) { vm.screen = Screen.Devices; close() }
 
-        Section(t("工具", "Tools"))
+        }
+        Group(t("工具", "Tools")) {
         Item(Icons.Filled.DeleteSweep, t("回收站", "Recycle bin")) { vm.screen = Screen.Trash; close() }
         Item(Icons.Filled.Apps, t("应用管理", "App manager")) { vm.screen = Screen.Apps; close() }
         Item(Icons.Filled.SwapVert, t("传输队列", "Transfers")) { vm.screen = Screen.Transfers; close() }
 
-        Section(t("设置", "Settings"))
+        }
+        Group(t("设置", "Settings")) {
         Toggle(t("显示隐藏文件", "Show hidden files"), settings.showHidden) { settings.showHidden = it }
         Toggle(t("列表缩略图", "List thumbnails"), settings.showThumbnails) { settings.showThumbnails = it }
         LanguagePicker(settings.language) { v ->
@@ -250,6 +262,7 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
             Text("$perServer")
             IconButton(onClick = { perServer = (perServer + 1).coerceAtMost(4); settings.jobsPerServer = perServer }) { Icon(Icons.Filled.Add, null) }
         }
+        }
         Spacer(Modifier.height(24.dp))
     }
 }
@@ -261,16 +274,23 @@ fun protocolIcon(p: Protocol): ImageVector = when (p) {
     Protocol.WEBDAV, Protocol.WEBDAVS -> Icons.Filled.Cloud
 }
 
+/** A titled, rounded white group (HyperOS settings style). */
 @Composable
-private fun Section(title: String) {
-    HorizontalDivider(Modifier.padding(top = 8.dp))
-    Text(title, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(16.dp, 8.dp, 16.dp, 4.dp))
+private fun Group(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Text(
+        title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.outline,
+        modifier = Modifier.padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 6.dp),
+    )
+    Surface(
+        color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+    ) { Column(Modifier.padding(vertical = 4.dp), content = content) }
 }
 
 @Composable
 private fun Item(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(14.dp))
@@ -280,9 +300,9 @@ private fun Item(icon: ImageVector, label: String, onClick: () -> Unit) {
 
 @Composable
 private fun Toggle(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onChange(!value) }.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickable { onChange(!value) }.padding(start = 14.dp, end = 10.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), fontSize = 14.sp)
-        Switch(value, onChange)
+        GhostSwitch(value, onChange, modifier = Modifier.scale(0.85f))
     }
 }
 
@@ -290,11 +310,11 @@ private fun Toggle(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
 @Composable
 private fun LanguagePicker(current: String, onPick: (String) -> Unit) {
     val opts = listOf("system" to t("跟随系统", "Follow system"), "zh" to "简体中文", "en" to "English")
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+    Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
         Text(t("语言 / Language", "Language / 语言"), fontSize = 14.sp)
         Row {
             opts.forEach { (v, label) ->
-                FilterChip(selected = current == v, onClick = { if (current != v) onPick(v) }, label = { Text(label, fontSize = 12.sp) }, modifier = Modifier.padding(end = 6.dp))
+                GhostFilterChip(selected = current == v, onClick = { if (current != v) onPick(v) }, label = { Text(label, fontSize = 12.sp) }, modifier = Modifier.padding(end = 6.dp))
             }
         }
     }
@@ -303,11 +323,11 @@ private fun LanguagePicker(current: String, onPick: (String) -> Unit) {
 
 @Composable
 private fun ChipPicker(title: String, opts: List<Pair<String, String>>, current: String, hint: String? = null, onPick: (String) -> Unit) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+    Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
         Text(title, fontSize = 14.sp)
         Row {
             opts.forEach { (v, label) ->
-                FilterChip(selected = current == v, onClick = { if (current != v) onPick(v) }, label = { Text(label, fontSize = 12.sp) }, modifier = Modifier.padding(end = 6.dp))
+                GhostFilterChip(selected = current == v, onClick = { if (current != v) onPick(v) }, label = { Text(label, fontSize = 12.sp) }, modifier = Modifier.padding(end = 6.dp))
             }
         }
         hint?.let { Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline) }

@@ -59,6 +59,8 @@ interface PaneHost {
     fun reload(tab: TabState)
     /** Thumbnail for [e] on [fsId] (blocking; call off the main thread). */
     fun thumbnail(fsId: String, e: FileEntry, sizePx: Int = 96, cancelled: () -> Boolean = { false }): android.graphics.Bitmap? = null
+    /** Memory-cached thumbnail, read synchronously so rows that scroll back in don't flash the type icon. */
+    fun cachedThumbnail(fsId: String, e: FileEntry, sizePx: Int = 96): android.graphics.Bitmap? = null
     /** Right-click / secondary click on empty pane area. */
     fun onPaneContextMenu(pane: PaneState) {}
     /** Entries dragged from pane [fromPane] were dropped on [toPane]. */
