@@ -6,6 +6,7 @@ import com.android.resources.NightMode
 import com.android.resources.ScreenOrientation
 import com.ghostpanter.files.core.space.AppStat
 import com.ghostpanter.files.core.space.CategoryTotals
+import com.ghostpanter.files.core.space.DuplicateFinder
 import com.ghostpanter.files.core.space.NodeFlags
 import com.ghostpanter.files.core.space.SpaceFilter
 import com.ghostpanter.files.core.space.SpaceNode
@@ -16,6 +17,9 @@ import com.ghostpanter.files.core.space.SpacePolicy
 import com.ghostpanter.files.space.SpaceNotice
 import com.ghostpanter.files.space.SpaceSummary
 import com.ghostpanter.files.space.SpaceTier
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -173,6 +177,110 @@ class SpaceScreenshotTest(private val name: String, private val device: DeviceCo
         render(SpaceUi(
             scopeLabel = "内部存储", tier = SpaceTier.BASIC, tree = b.tree, current = b.root, selected = null,
             filter = SpaceFilter(category = com.ghostpanter.files.core.space.FileCategory.VIDEO), tab = SpaceTab.TOP, version = 1, scannedAt = now - 86_400_000, now = now,
+        ))
+    }
+
+    // ------------------------------------------------------------------ 0.7.4: duplicates
+
+    private fun photo(seed: Int): android.graphics.Bitmap {
+        val b = android.graphics.Bitmap.createBitmap(96, 96, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(b)
+        val cols = listOf(0xFF5B8DEF to 0xFFF6C177, 0xFF2E7D5B to 0xFFA6E3A1, 0xFF8E5BD8 to 0xFFF5A3C7)[seed % 3]
+        val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        p.shader = android.graphics.LinearGradient(0f, 0f, 0f, 96f, cols.first.toInt(), cols.second.toInt(), android.graphics.Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, 96f, 96f, p); p.shader = null
+        p.color = 0x66FFFFFF; c.drawRoundRect(14f, 18f, 82f, 30f, 6f, 6f, p); c.drawRoundRect(14f, 40f, 66f, 50f, 6f, 6f, p); c.drawRoundRect(14f, 60f, 74f, 70f, 6f, 6f, p)
+        return b
+    }
+
+    private val S = "/storage/emulated/0"
+    private fun dupTree(): Pair<SpaceTree, List<DuplicateFinder.Group>> {
+        val b = SpaceTreeBuilder(S); storage(b, S)
+        val qs = "Download/Quick Share"
+        fun f(p: String, size: Long, age: Int) { b.addFile("$S/$p", size, now - age * day) }
+        val apk = 88 * MB + 412_000
+        f("$qs/墨迹天气_9.0932.02_官方正式版.apk", apk, 9); f("$qs/墨迹天气_9.0932.02_官方正式版 (1).apk", apk, 2)
+        val shot = 4 * MB + 120_000
+        f("$qs/Screenshot_2026-02-12-13-21-13-417_com.tencent.mm.png", shot, 6)
+        f("MT2/apks/Screenshot_2026-02-12-13-21-13-417_com.tencent.mm.png", shot, 5)
+        f("Pictures/Screenshots/Screenshot_2026-02-12-13-21-13-417_com.tencent.mm.png", shot, 8)
+        val vid = 312 * MB
+        f("DCIM/Camera/VID_20260301_183244.mp4", vid, 40); f("$qs/VID_20260301_183244.mp4", vid, 12)
+        val zip = 26 * MB
+        f("Download/年度报告-终版_copy.zip", zip, 3); f("Documents/工作/2026/年度报告-终版.zip", zip, 20)
+        val img = 6 * MB
+        f("Pictures/WeiXin/mmexport1771234567890.jpg", img, 30); f("Android/media/com.tencent.mm/WeiXin/mmexport1771234567890.jpg", img, 30)
+        val groups = listOf(
+            DuplicateFinder.Group(vid, listOf("$S/$qs/VID_20260301_183244.mp4", "$S/DCIM/Camera/VID_20260301_183244.mp4")),
+            DuplicateFinder.Group(apk, listOf("$S/$qs/墨迹天气_9.0932.02_官方正式版 (1).apk", "$S/$qs/墨迹天气_9.0932.02_官方正式版.apk")),
+            DuplicateFinder.Group(zip, listOf("$S/Download/年度报告-终版_copy.zip", "$S/Documents/工作/2026/年度报告-终版.zip")),
+            DuplicateFinder.Group(shot, listOf("$S/$qs/Screenshot_2026-02-12-13-21-13-417_com.tencent.mm.png", "$S/MT2/apks/Screenshot_2026-02-12-13-21-13-417_com.tencent.mm.png", "$S/Pictures/Screenshots/Screenshot_2026-02-12-13-21-13-417_com.tencent.mm.png")),
+            DuplicateFinder.Group(img, listOf("$S/Android/media/com.tencent.mm/WeiXin/mmexport1771234567890.jpg", "$S/Pictures/WeiXin/mmexport1771234567890.jpg")),
+        )
+        return b.tree to groups
+    }
+
+    private val thumbs = object : SpaceThumbs {
+        override fun cached(path: String, dir: Boolean): android.graphics.Bitmap? = when {
+            path.endsWith(".apk") -> icon(0xFF2F80ED, "墨")
+            path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".mp4") -> photo(path.length)
+            else -> null
+        }
+        override fun load(path: String, dir: Boolean) = cached(path, dir)
+    }
+
+    private fun dupsUi(scroll: Int = 0): SpaceUi {
+        val (tree, groups) = dupTree()
+        return SpaceUi(
+            scopeLabel = "内部存储", tier = SpaceTier.BASIC, tree = tree, current = tree.root, selected = null, filter = SpaceFilter(),
+            tab = SpaceTab.DUPS, version = 1, scannedAt = now - 600_000, now = now, dups = groups, thumbs = thumbs, pathScroll = scroll,
+        )
+    }
+
+    /** 重复 tab: 「保留」 badge on the ranked keep, per-group and 「全部一键处理」 buttons, scrolling full paths. */
+    @Test fun duplicates() = render(dupsUi())
+
+    /** Same page with every path line scrolled to its end (left fade instead of right). */
+    @Test fun duplicatesPathScrolled() = render(dupsUi(scroll = 100_000))
+
+    /** After deleting one of the two 墨迹天气 APKs the group is gone and the header recounts. */
+    @Test fun duplicatesAfterDelete() {
+        val ui = dupsUi()
+        val gone = listOf("$S/Download/Quick Share/墨迹天气_9.0932.02_官方正式版 (1).apk")
+        com.ghostpanter.files.core.space.SpaceEdits.remove(ui.tree!!, gone)
+        render(SpaceUi(
+            scopeLabel = ui.scopeLabel, tier = ui.tier, tree = ui.tree, current = ui.current, selected = null, filter = ui.filter,
+            tab = SpaceTab.DUPS, version = 2, scannedAt = ui.scannedAt, now = now, dups = com.ghostpanter.files.core.space.DupGroups.remove(ui.dups!!, gone), thumbs = thumbs,
+        ))
+    }
+
+    @Test fun duplicatesConfirm() {
+        val ui = dupsUi()
+        val plan = com.ghostpanter.files.core.space.DupGroups.plan(ui.dups!!, emptySet()) { p -> ui.tree!!.find(p)?.mtime ?: 0 }
+        paparazzi.snapshot {
+            GhostTheme(dark = dark, oledBlack = oled) {
+                androidx.compose.foundation.layout.Box {
+                    SpaceContent(ui, SpaceCallbacks())
+                    androidx.compose.foundation.layout.Box(
+                        androidx.compose.ui.Modifier.matchParentSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)),
+                        contentAlignment = androidx.compose.ui.Alignment.Center,
+                    ) {
+                        androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.padding(horizontal = 28.dp)) {
+                            DupConfirmCard(DupConfirm(all = true, groups = plan.groups, files = plan.delete.size, bytes = plan.bytes, trash = DupConfirm.Trash.ON,
+                                names = plan.delete.map { com.ghostpanter.files.core.VPath.name(it) }, keeps = emptyList()))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** 大文件 and 空文件夹 use the same name + scrolling path rows (with thumbnails). */
+    @Test fun largestWithPaths() {
+        val (tree, _) = dupTree()
+        render(SpaceUi(
+            scopeLabel = "内部存储", tier = SpaceTier.BASIC, tree = tree, current = tree.root, selected = null, filter = SpaceFilter(),
+            tab = SpaceTab.TOP, version = 1, scannedAt = now - 600_000, now = now, thumbs = thumbs,
         ))
     }
 }
