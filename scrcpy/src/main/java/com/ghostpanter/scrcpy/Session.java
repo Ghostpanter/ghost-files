@@ -534,6 +534,8 @@ public final class Session {
 
     private boolean shouldRediscover(Devices.Device endpoint, Exception err) {
         if (endpoint == null || err == null) return false;
+        // USB targets have no network endpoint to rediscover.
+        if (com.ghostpanter.adb.usb.UsbAdb.isUsbHost(endpoint.host)) return false;
         // Legacy `adb tcpip` endpoint (Android 9/10): fixed port, no
         // _adb-tls-connect mDNS service exists, so never rescan.
         if (endpoint.port == Adb.LEGACY_TCPIP_PORT) return false;

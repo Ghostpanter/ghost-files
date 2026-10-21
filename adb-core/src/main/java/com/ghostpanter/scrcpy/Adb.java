@@ -86,6 +86,8 @@ public final class Adb {
     private volatile AdbConnection connection;
     private volatile AdbConnection connecting;
     private volatile String connectedHost;
+    // USB targets share one connection with AdbPool (one claim per interface): never closed here.
+    private volatile boolean connectionShared;
     private volatile int connectedPort;
 
     private Adb(Context ctx) throws Exception {
@@ -178,6 +180,15 @@ public final class Adb {
             throws Exception {
         validateEndpoint(host, port);
         disconnect();
+        if (com.ghostpanter.adb.usb.UsbAdb.isUsbHost(host)) {
+            AdbConnection usb = com.ghostpanter.adb.usb.UsbAdb.sharedConnection(host, onPrompt);
+            lastLegacyAuth = usb.isLegacyAuth();
+            connection = usb;
+            connectionShared = true;
+            connectedHost = host;
+            connectedPort = port;
+            return;
+        }
         AdbConnection next = establish(host, port, onPrompt, true);
         lastLegacyAuth = next.isLegacyAuth();
         connection = next;
@@ -192,6 +203,9 @@ public final class Adb {
     public AdbConnection newConnection(String host, int port, AuthPromptListener onPrompt)
             throws Exception {
         validateEndpoint(host, port);
+        if (com.ghostpanter.adb.usb.UsbAdb.isUsbHost(host)) {
+            return com.ghostpanter.adb.usb.UsbAdb.sharedConnection(host, onPrompt);
+        }
         return establish(host, port, onPrompt, false);
     }
 
@@ -207,12 +221,32 @@ public final class Adb {
     // "Allow USB debugging?"; extend the wait to USER_AUTH_WAIT_MS then.
     private AdbConnection establish(String host, int port, AuthPromptListener onPrompt,
             boolean trackPending) throws Exception {
-        AdbConnection next = null;
+        return handshake(new AdbConnection.Builder(host, port)
+                .setPrivateKey(privateKey)
+                .setCertificate(certificate)
+                .build(), host, port, onPrompt, trackPending);
+    }
+
+    /**
+     * ADB handshake over a non-socket link (USB host). Same RSA AUTH flow as `adb tcpip`: the
+     * target shows "Allow USB debugging?" for a new key and we wait up to USER_AUTH_WAIT_MS.
+     */
+    public AdbConnection establishLink(io.github.muntashirakon.adb.AdbLink link, String label,
+            AuthPromptListener onPrompt) throws Exception {
+        AdbConnection c;
         try {
-            next = new AdbConnection.Builder(host, port)
-                    .setPrivateKey(privateKey)
-                    .setCertificate(certificate)
-                    .build();
+            c = AdbConnection.overLink(link, privateKey, certificate);
+        } catch (RuntimeException e) {
+            try { link.close(); } catch (IOException ignored) {}
+            throw e;
+        }
+        return handshake(c, label, com.ghostpanter.adb.usb.UsbAdb.PORT, onPrompt, false);
+    }
+
+    private AdbConnection handshake(AdbConnection built, String host, int port,
+            AuthPromptListener onPrompt, boolean trackPending) throws Exception {
+        AdbConnection next = built;
+        try {
             if (trackPending) connecting = next;
             if (Thread.currentThread().isInterrupted()) {
                 throw new InterruptedException("ADB connect cancelled");
@@ -259,10 +293,12 @@ public final class Adb {
 
     public synchronized void disconnect() throws IOException {
         AdbConnection current = connection;
+        boolean shared = connectionShared;
         connection = null;
+        connectionShared = false;
         connectedHost = null;
         connectedPort = 0;
-        if (current != null) current.close();
+        if (current != null && !shared) current.close();
     }
 
     // Cancel a blocked connect, open, read, or write without waiting for this
@@ -271,7 +307,9 @@ public final class Adb {
         AdbConnection pending = connecting;
         AdbConnection current = connection;
         closeQuietly(pending);
-        if (current != pending) closeQuietly(current);
+        // A shared USB connection also carries file browsing / tools; the session closes its own
+        // streams, so only network connections are torn down here.
+        if (current != pending && !connectionShared) closeQuietly(current);
     }
 
     private static void closeAfterFailure(AdbConnection candidate, Exception failure) {

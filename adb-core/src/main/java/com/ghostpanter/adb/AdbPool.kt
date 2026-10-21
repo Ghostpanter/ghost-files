@@ -3,6 +3,7 @@ package com.ghostpanter.adb
 import android.content.Context
 import com.ghostpanter.scrcpy.Adb
 import com.ghostpanter.scrcpy.Devices
+import com.ghostpanter.adb.usb.UsbAdb
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
@@ -18,7 +19,7 @@ object AdbPool {
     /** Test hook: replaces the real connection factory. */
     @Volatile var factory: ((serial: String) -> AdbTransport)? = null
 
-    fun init(ctx: Context) { appCtx = ctx.applicationContext }
+    fun init(ctx: Context) { appCtx = ctx.applicationContext; runCatching { UsbAdb.init(ctx) } }
 
     fun serialOf(d: Devices.Device): String = d.toString()
 
@@ -35,6 +36,8 @@ object AdbPool {
     fun transport(serial: String): AdbTransport {
         factory?.let { f -> return owned[serial]?.takeIf { it.alive } ?: f(serial).also { owned[serial] = it } }
         val ctx = appCtx ?: throw IOException("AdbPool not initialised")
+        // USB: one shared connection per device (the interface can only be claimed once).
+        if (UsbAdb.isUsbSerial(serial)) return LibAdbTransport(UsbAdb.sharedConnection(parse(serial).host, null), owned = false)
         val d = parse(serial)
         val adb = Adb.getInstance(ctx)
         adb.liveConnectionFor(d.host, d.port)?.let { return LibAdbTransport(it, owned = false) }
@@ -49,6 +52,7 @@ object AdbPool {
     }
 
     fun isConnected(serial: String): Boolean {
+        if (UsbAdb.isUsbSerial(serial)) return UsbAdb.isLive(serial)
         if (owned[serial]?.alive == true) return true
         val ctx = appCtx ?: return false
         val d = Devices.parseAddress(serial) ?: return false

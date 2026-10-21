@@ -762,6 +762,10 @@ public final class Mirror extends Activity {
     // Missing rows fail closed. A stale notification, restored task, or
     // malformed internal intent must not create a session for an unsaved row.
     private Devices.Device resolveTarget(String host, int port) {
+        // USB targets are never saved: they exist while attached.
+        if (com.ghostpanter.adb.usb.UsbAdb.isUsbHost(host) && port == com.ghostpanter.adb.usb.UsbAdb.PORT) {
+            return new Devices.Device(host, port);
+        }
         try {
             Devices.Device exact = Devices.find(this, host, port);
             if (exact != null) return exact;

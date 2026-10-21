@@ -36,8 +36,12 @@ public class AdbConnection implements Closeable, AdbStream.Transport {
     /**
      * The underlying socket that this class uses to communicate with the target device.
      */
-    @NonNull
+    @Nullable
     private final Socket mSocket;
+
+    /** LOCAL ADDITION: non-socket link (USB). Exactly one of mSocket / mLink is set. */
+    @Nullable
+    private final AdbLink mLink;
 
     @NonNull
     private final String mHost;
@@ -171,12 +175,49 @@ public class AdbConnection implements Closeable, AdbStream.Transport {
             throw (IOException) new IOException("cannot initialize ADB socket").initCause(e);
         }
         this.mSocket = socket;
+        this.mLink = null;
         this.mPlainInputStream = plainInput;
         this.mPlainOutputStream = plainOutput;
 
         this.mOpenedStreams = new ConcurrentHashMap<>();
         this.mLastLocalId = 0;
         this.mConnectionThread = createConnectionThread();
+    }
+
+    @WorkerThread
+    private AdbConnection(@NonNull AdbLink link, @NonNull KeyPair keyPair) {
+        this.mHost = "usb";
+        this.mPort = 0;
+        this.mLocalProtocolVersion = AdbProtocol.getProtocolVersion(Build.VERSION_CODES.R);
+        this.mLocalMaxData = AdbProtocol.getMaxData(Build.VERSION_CODES.R);
+        this.mProtocolVersion = mLocalProtocolVersion;
+        this.mMaxData = mLocalMaxData;
+        this.mKeyPair = Objects.requireNonNull(keyPair);
+        this.mSocket = null;
+        this.mLink = Objects.requireNonNull(link);
+        this.mPlainInputStream = link.getInputStream();
+        this.mPlainOutputStream = new OutputStream() {
+            @Override public void write(int b) throws IOException { throw new IOException("use writePacket"); }
+        };
+        this.mOpenedStreams = new ConcurrentHashMap<>();
+        this.mLastLocalId = 0;
+        this.mConnectionThread = createConnectionThread();
+    }
+
+    /** LOCAL ADDITION: an ADB connection over a non-socket link (USB host). Call {@link #connect} next. */
+    @NonNull
+    public static AdbConnection overLink(@NonNull AdbLink link, @NonNull PrivateKey privateKey,
+            @NonNull Certificate certificate) {
+        return new AdbConnection(link, new KeyPair(privateKey, certificate));
+    }
+
+    /** True when this connection runs over a non-socket link (USB). */
+    public boolean isLink() {
+        return mLink != null;
+    }
+
+    private boolean transportClosed() {
+        return mLink != null ? mLink.isClosed() : Objects.requireNonNull(mSocket).isClosed();
     }
 
     @GuardedBy("lock")
@@ -246,7 +287,7 @@ public class AdbConnection implements Closeable, AdbStream.Transport {
                             break;
                         }
                         case AdbProtocol.A_STLS: {
-                            if (mIsTls || mConnectionEstablished
+                            if (mLink != null || mIsTls || mConnectionEstablished
                                     || msg.arg0 < AdbProtocol.A_STLS_VERSION_MIN) {
                                 throw new IOException("Invalid or repeated STLS request");
                             }
@@ -296,7 +337,7 @@ public class AdbConnection implements Closeable, AdbStream.Transport {
                             break;
                         }
                         case AdbProtocol.A_CNXN: {
-                            if (!mIsTls && !mLegacyAuth) {
+                            if (!mIsTls && !mLegacyAuth && !(mLink != null && mLink.allowsNoAuth())) {
                                 throw new IOException("ADB peer did not negotiate TLS or RSA AUTH");
                             }
                             if (msg.arg0 < AdbProtocol.A_VERSION_MIN || msg.arg1 <= 0) {
@@ -321,7 +362,7 @@ public class AdbConnection implements Closeable, AdbStream.Transport {
                                     "Unexpected ADB command 0x%x", msg.command));
                     }
                 } catch (Exception e) {
-                    if (!mSocket.isClosed()) {
+                    if (!transportClosed()) {
                         mConnectionException = e;
                         Log.e(TAG, "ADB connection failed", e);
                     }
@@ -527,7 +568,8 @@ public class AdbConnection implements Closeable, AdbStream.Transport {
     @Override
     public void close() throws IOException {
         // Closing the socket will kick the connection thread
-        mSocket.close();
+        if (mLink != null) mLink.close();
+        else Objects.requireNonNull(mSocket).close();
 
         // Wait for the connection thread to die
         mConnectionThread.interrupt();
@@ -553,6 +595,10 @@ public class AdbConnection implements Closeable, AdbStream.Transport {
     @Override
     public void sendPacket(byte[] packet) throws IOException {
         synchronized (mLock) {
+            if (mLink != null) {
+                mLink.writePacket(packet);
+                return;
+            }
             OutputStream os = getOutputStream();
             os.write(packet);
             os.flush();
@@ -562,6 +608,7 @@ public class AdbConnection implements Closeable, AdbStream.Transport {
     @Override
     public void flushPacket() throws IOException {
         synchronized (mLock) {
+            if (mLink != null) return;
             getOutputStream().flush();
         }
     }
