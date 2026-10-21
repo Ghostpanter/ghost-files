@@ -808,13 +808,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                 screen = Screen.Player(tab.fsId, e.path, sibs, audioOnly = ext in AUDIO_EXT)
             }
             !chooser && ext == "apk" -> withFile(tab, e) { f -> screen = Screen.Apk(f, e.name) }
-            !chooser && com.ghostpanter.files.core.ops.ApksOps.isBundle(e.name) -> withFile(tab, e) { f -> extractApksBundle(tab, f) }
+            !chooser && com.ghostpanter.files.core.ops.ApksOps.isBundle(e.name) -> withFile(tab, e) { f -> bundleInstall = BundleRequest(f, e.name, tab) }
             !chooser && Archives.isArchive(e.name) -> pendingExtract = tab to e
             else -> withFile(tab, e) { f -> _events.tryEmit(UiEvent.OpenFile(f, mimeOf(e.name), chooser)) }
         }
     }
 
     var pendingExtract by mutableStateOf<Pair<TabState, FileEntry>?>(null)
+
+    /** Split-APK bundle (or folder of splits) waiting in the install sheet. */
+    var bundleInstall by mutableStateOf<BundleRequest?>(null)
+
+    /** Long-press "解包": unpack instead of installing. */
+    fun extractBundleEntry(tab: TabState, e: FileEntry) = withFile(tab, e) { f -> extractApksBundle(tab, f) }
 
     /** Loopback HTTP proxy that lets libVLC stream (and seek) files from any backend. */
     val streamProxy: com.ghostpanter.files.core.server.FsStreamProxy by lazy { com.ghostpanter.files.core.server.FsStreamProxy() }

@@ -168,7 +168,19 @@ object RemoteIcons {
     }
 }
 
-private fun localApks(ctx: Context, uris: List<Uri>): List<RemoteApps.Apk> {
+/** ABI / density / languages of the ADB target, for picking splits out of a bundle. */
+private fun remoteDevice(dev: com.ghostpanter.adb.AdbDevice): com.ghostpanter.files.core.apk.ApkBundle.Device {
+    val out = runCatching {
+        dev.text("getprop ro.product.cpu.abilist; echo @@; wm density 2>/dev/null | tail -n1; echo @@; getprop persist.sys.locale; getprop ro.product.locale")
+    }.getOrDefault("")
+    val parts = out.split("@@")
+    val abis = parts.getOrNull(0)?.trim()?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty().ifEmpty { listOf("arm64-v8a", "armeabi-v7a") }
+    val dpi = Regex("""(\d{2,4})""").find(parts.getOrNull(1).orEmpty())?.value?.toIntOrNull() ?: 420
+    val langs = parts.getOrNull(2)?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+    return com.ghostpanter.files.core.apk.ApkBundle.Device(abis, dpi, langs)
+}
+
+private fun localApks(ctx: Context, uris: List<Uri>, dev: com.ghostpanter.adb.AdbDevice): List<RemoteApps.Apk> {
     val cr = ctx.contentResolver
     val out = ArrayList<RemoteApps.Apk>()
     for (u in uris) {
@@ -180,9 +192,13 @@ private fun localApks(ctx: Context, uris: List<Uri>): List<RemoteApps.Apk> {
         if (lower.endsWith(".apks") || lower.endsWith(".xapk") || lower.endsWith(".apkm") || lower.endsWith(".zip")) {
             val tmp = File(ctx.cacheDir, "bundle-${System.nanoTime()}.zip")
             cr.openInputStream(u)!!.use { i -> tmp.outputStream().use { i.copyTo(it) } }
+            // Same parser / split choice as local installs, but for the target's ABI, density and locale.
+            val b = com.ghostpanter.files.core.apk.ApkBundle.read(tmp)
+            val pick = b.select(remoteDevice(dev))
             val z = ZipFile(tmp)
-            z.entries().asSequence().filter { !it.isDirectory && it.name.lowercase().endsWith(".apk") }.forEach { e ->
-                out += RemoteApps.Apk(e.name.substringAfterLast('/'), e.size) { z.getInputStream(e) }
+            b.splits.filter { it.entry in pick }.forEach { sp ->
+                val e = z.getEntry(sp.entry)
+                out += RemoteApps.Apk(sp.name, e.size) { z.getInputStream(e) }
             }
         } else {
             if (size < 0) size = cr.openFileDescriptor(u, "r")?.use { it.statSize } ?: 0
@@ -230,7 +246,7 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) scope.launch {
-            io { localApks(ctx, uris) }.onSuccess { install(it, it.firstOrNull()?.name ?: "APK") }.onFailure { toast(it.message ?: "error") }
+            io { localApks(ctx, uris, dev) }.onSuccess { install(it, it.firstOrNull()?.name ?: "APK") }.onFailure { toast(it.message ?: "error") }
         }
     }
 

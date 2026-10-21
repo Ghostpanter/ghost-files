@@ -570,7 +570,7 @@ fun FileRow(
         Box(Modifier.size(iconSize)) {
             val tb = thumbBmp
             if (tb != null) {
-                val apk = e.extension.lowercase() in setOf("apk", "apks", "xapk")
+                val apk = e.extension.lowercase() in setOf("apk", "apks", "xapk", "apkm")
                 Image(
                     tb.asImageBitmap(), null,
                     Modifier.size(iconSize).clip(RoundedCornerShape(if (apk) 0.dp else iconSize / 4)),
@@ -623,7 +623,7 @@ fun iconFor(e: FileEntry): Pair<ImageVector, Color> {
         in IMAGE_EXT -> Icons.Rounded.Image to c.image
         in VIDEO_EXT -> Icons.Rounded.Movie to c.video
         in AUDIO_EXT -> Icons.Rounded.MusicNote to c.audio
-        "apk", "apks", "xapk" -> Icons.Rounded.Android to c.apk
+        "apk", "apks", "xapk", "apkm" -> Icons.Rounded.Android to c.apk
         "zip", "7z", "rar", "tar", "gz", "xz", "bz2", "tgz" -> Icons.Rounded.FolderZip to c.archive
         in TEXT_EXT, in PREVIEW_MD -> Icons.Rounded.Description to c.text
         "pdf" -> Icons.Rounded.PictureAsPdf to c.pdf

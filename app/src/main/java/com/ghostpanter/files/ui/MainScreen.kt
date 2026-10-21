@@ -86,6 +86,7 @@ fun MainScreen(vm: MainViewModel, activity: MainActivity) {
     vm.pendingExtract?.let { (tab, e) -> ExtractDialog(e, onDismiss = { vm.pendingExtract = null }) { sub, pw ->
         vm.pendingExtract = null; vm.extract(tab, e, sub, pw)
     } }
+    vm.bundleInstall?.let { r -> InstallSheet(r, vm) { vm.bundleInstall = null } }
     vm.busy?.let { BusyDialog(it) { vm.cancelBusy() } }
     if (serverEditorOpen) ServerEditor(vm, editingServer) { serverEditorOpen = false }
 }

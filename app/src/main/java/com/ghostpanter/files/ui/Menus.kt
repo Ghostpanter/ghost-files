@@ -39,6 +39,11 @@ fun MainViewModel.buildEntryMenu(pane: PaneState, targets: List<FileEntry>): Act
     if (single != null) add(t("重命名", "Rename"), Icons.Filled.DriveFileRenameOutline) { dialog = DialogState.Rename(pane.index, single) }
     if (targets.size > 1) add(t("批量重命名", "Batch rename"), Icons.Filled.DriveFileRenameOutline) { dialog = DialogState.BatchRename(pane.index, targets) }
     add(t("删除", "Delete"), Icons.Filled.Delete) { dialog = DialogState.Delete(pane.index, targets) }
+    if (single != null && single.isDirectory) {
+        fsm.localFile(tab.fsId, single.path)?.takeIf { com.ghostpanter.files.core.apk.ApkBundle.isSplitFolder(it) }?.let { dir ->
+            add(t("安装分包（此文件夹）", "Install splits in folder"), Icons.Filled.InstallMobile) { bundleInstall = BundleRequest(dir, single.name) }
+        }
+    }
     if (single != null && !single.isDirectory) {
         add(t("打开方式…", "Open with…"), Icons.AutoMirrored.Filled.OpenInNew) { openEntry(tab, single, chooser = true) }
         add(t("文本编辑器打开", "Open as text"), Icons.Filled.EditNote) { openEntry(tab, single, asText = true) }
@@ -68,7 +73,7 @@ fun MainViewModel.buildEntryMenu(pane: PaneState, targets: List<FileEntry>): Act
         }
         if (com.ghostpanter.files.core.ops.ApksOps.isBundle(single.name)) {
             add(t("解包 APKS/XAPK", "Extract APKS/XAPK"), Icons.Filled.Unarchive) {
-                openEntry(tab, single) // routes to extractApksBundle via openEntry
+                extractBundleEntry(tab, single)
             }
         }
         if (single.name.endsWith(".gfenc") || single.name.endsWith(".aes")) {
