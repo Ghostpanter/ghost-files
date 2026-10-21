@@ -107,6 +107,7 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
     var keepChosen by mutableStateOf<Set<String>>(emptySet()); private set
     var batch by mutableStateOf<DupBatch?>(null); private set
     @Volatile private var batchCancel = false
+    private val pendingRemoved = HashSet<String>()
     /** Root of the raw scan (inside an aggregated [tree]). */
     var scanRoot: SpaceNode? = null; private set
     var adbSerial: String? = null; private set
@@ -184,6 +185,9 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
                 val shown = if (isStorageRoot) composeAggregates(b.root) else b.tree
                 shown.scannedAt = b.tree.scannedAt
                 if (tier == SpaceTier.ROOT && target.wholeDevice) markReadOnly(b.root)
+                // Deleted while this scan was running (the walk may have listed them before).
+                val late = synchronized(pendingRemoved) { pendingRemoved.toList().also { pendingRemoved.clear() } }
+                if (late.isNotEmpty()) synchronized(shown.lock) { SpaceEdits.remove(shown, late) }
                 withContext(Dispatchers.Main) {
                     tree = shown
                     // Files gone since the duplicate search drop out of their groups.
@@ -448,6 +452,7 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
      */
     suspend fun applyRemoved(paths: Collection<String>) {
         if (paths.isEmpty()) return
+        if (running) synchronized(pendingRemoved) { pendingRemoved.addAll(paths) }
         val t = tree
         if (t != null) synchronized(t.lock) { SpaceEdits.remove(t, paths) }
         withContext(Dispatchers.Main) {
