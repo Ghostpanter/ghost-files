@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -345,7 +346,15 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
     LaunchedEffect(tab.highlight, entries.size) {
         val h = tab.highlight ?: return@LaunchedEffect
         val idx = entries.indexOfFirst { it.path == h }
-        if (idx >= 0 && state.firstVisibleItemIndex == 0 && !grid) state.scrollToItem((idx - 3).coerceAtLeast(0))
+        if (idx < 0 || grid || state.firstVisibleItemIndex != 0 || state.firstVisibleItemScrollOffset != 0) return@LaunchedEffect
+        // Wait for the first layout, then scroll only when the highlighted row is not already fully
+        // visible. Scrolling unconditionally clamped at the list end and left the 「上一级」 row cut
+        // off under the pane header on tall (tablet) panes.
+        val info = androidx.compose.runtime.snapshotFlow { state.layoutInfo }.first { it.visibleItemsInfo.isNotEmpty() }
+        val target = idx + parentOffset
+        val row = info.visibleItemsInfo.firstOrNull { it.index == target }
+        val fullyVisible = row != null && row.offset >= info.viewportStartOffset && row.offset + row.size <= info.viewportEndOffset
+        if (!fullyVisible) state.scrollToItem((target - 3).coerceAtLeast(0))
     }
     // Keyboard cursor: keep the highlighted row visible.
     LaunchedEffect(tab.scrollRequest) {
