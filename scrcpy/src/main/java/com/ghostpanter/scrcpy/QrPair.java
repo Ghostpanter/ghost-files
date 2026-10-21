@@ -24,6 +24,12 @@ public final class QrPair extends Activity {
         super.attachBaseContext(ScrcpyHost.wrap(base));
     }
 
+    @Override
+    protected void onApplyThemeResource(android.content.res.Resources.Theme theme, int resid, boolean first) {
+        super.onApplyThemeResource(theme, resid, first);
+        ScrcpyHost.applyOled(this, theme, false);
+    }
+
     private static final int QR_SIZE_PX = 720;
     private static final int REQ_NEARBY = 42;
     private static final long CONNECT_DISCOVER_MS = 12_000L;

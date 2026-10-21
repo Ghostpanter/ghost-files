@@ -25,6 +25,12 @@ public final class Donate extends Activity {
     }
 
     @Override
+    protected void onApplyThemeResource(android.content.res.Resources.Theme theme, int resid, boolean first) {
+        super.onApplyThemeResource(theme, resid, first);
+        ScrcpyHost.applyOled(this, theme, false);
+    }
+
+    @Override
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         setContentView(R.layout.activity_donate);

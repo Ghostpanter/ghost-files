@@ -22,6 +22,12 @@ public final class SettingsActivity extends Activity {
         super.attachBaseContext(ScrcpyHost.wrap(base));
     }
 
+    @Override
+    protected void onApplyThemeResource(android.content.res.Resources.Theme theme, int resid, boolean first) {
+        super.onApplyThemeResource(theme, resid, first);
+        ScrcpyHost.applyOled(this, theme, false);
+    }
+
     private Shizuku.OnRequestPermissionResultListener shizukuPermissionListener;
 
     @Override

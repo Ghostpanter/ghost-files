@@ -21,7 +21,14 @@ public final class ScrcpyHost {
         void browseFiles(Context ctx, String host, int port, String name);
     }
 
+    /** The host's appearance setting: "system" / "light" / "dark", plus the OLED pure-black toggle. */
+    public interface ThemeHook {
+        String themeMode();
+        boolean oledBlack();
+    }
+
     private static volatile ContextWrapperHook localeHook;
+    private static volatile ThemeHook themeHook;
     private static volatile DeviceActions deviceActions;
     private static volatile boolean installed;
 
@@ -47,6 +54,45 @@ public final class ScrcpyHost {
         localeHook = hook;
     }
 
+    public static void setThemeHook(ThemeHook hook) {
+        themeHook = hook;
+    }
+
+    /**
+     * Night bits for the View screens on every API level (28+): an explicit light / dark choice
+     * overrides the system uiMode through a configuration context, so values / values-night and
+     * Theme.Material(.Light) follow the in-app setting even where UiModeManager's per-app night
+     * mode (API 31+) does not exist.
+     */
+    static Context applyNight(Context base) {
+        ThemeHook h = themeHook;
+        if (h == null) return base;
+        int night;
+        String mode = h.themeMode();
+        if ("dark".equals(mode)) night = android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        else if ("light".equals(mode)) night = android.content.res.Configuration.UI_MODE_NIGHT_NO;
+        else return base;
+        android.content.res.Configuration cur = base.getResources().getConfiguration();
+        if ((cur.uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == night) return base;
+        android.content.res.Configuration c = new android.content.res.Configuration(cur);
+        c.uiMode = (cur.uiMode & ~android.content.res.Configuration.UI_MODE_NIGHT_MASK) | night;
+        return base.createConfigurationContext(c);
+    }
+
+    /** True when the OLED overlay applies: the toggle is on and [ctx] resolves to night. */
+    static boolean oledFor(Context ctx) {
+        ThemeHook h = themeHook;
+        if (h == null || !h.oledBlack()) return false;
+        int ui = ctx.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        return ui == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    /** Called from each activity's onApplyThemeResource: layers the OLED colors over Theme.Scrcpy*. */
+    static void applyOled(Context ctx, android.content.res.Resources.Theme theme, boolean fullscreen) {
+        if (!oledFor(ctx)) return;
+        theme.applyStyle(fullscreen ? R.style.ThemeOverlay_Scrcpy_Oled : R.style.ThemeOverlay_Scrcpy_Oled_Window, true);
+    }
+
     public static void setDeviceActions(DeviceActions actions) {
         deviceActions = actions;
     }
@@ -56,14 +102,21 @@ public final class ScrcpyHost {
     }
 
     static Context wrap(Context base) {
+        Context out = base;
         ContextWrapperHook h = localeHook;
-        if (h == null) return base;
+        if (h != null) {
+            try {
+                Context c = h.wrap(base);
+                if (c != null) out = c;
+            } catch (RuntimeException e) {
+                Log.w("host: locale hook failed: %s", e);
+            }
+        }
         try {
-            Context c = h.wrap(base);
-            return c != null ? c : base;
+            return applyNight(out);
         } catch (RuntimeException e) {
-            Log.w("host: locale hook failed: %s", e);
-            return base;
+            Log.w("host: night override failed: %s", e);
+            return out;
         }
     }
 }

@@ -54,6 +54,12 @@ public final class Mirror extends Activity {
         super.attachBaseContext(ScrcpyHost.wrap(base));
     }
 
+    @Override
+    protected void onApplyThemeResource(android.content.res.Resources.Theme theme, int resid, boolean first) {
+        super.onApplyThemeResource(theme, resid, first);
+        ScrcpyHost.applyOled(this, theme, true);
+    }
+
     public static final String EXTRA_HOST = "host";
     public static final String EXTRA_PORT = "port";
 

@@ -20,7 +20,7 @@
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:padding="@dimen/space_sm"
-        android:background="@color/surface_alt">
+        android:background="?attr/scrSurfaceAlt">
 
         <TextView
             android:layout_width="match_parent"

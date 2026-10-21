@@ -7,6 +7,13 @@
 <resources>
     <style name="Theme.Scrcpy" parent="@android:style/Theme.Material.Light">
         <item name="android:colorBackground">@color/bg</item>
+        <item name="scrBg">@color/bg</item>
+        <item name="scrSurface">@color/surface</item>
+        <item name="scrSurfaceAlt">@color/surface_alt</item>
+        <item name="scrTerminalBg">@color/terminal_bg</item>
+        <item name="scrTerminalBar">@color/terminal_toolbar</item>
+        <item name="scrTerminalKey">@color/terminal_key_bg</item>
+        <item name="scrUnlockPanel">@color/unlock_panel</item>
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:colorPrimary">@color/surface</item>
         <item name="android:colorPrimaryDark">@color/bg</item>
@@ -32,5 +39,23 @@
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
+    </style>
+
+    <!-- OLED pure black (dark mode + the app's OLED toggle); applied over any Theme.Scrcpy*. -->
+    <style name="ThemeOverlay.Scrcpy.Oled" parent="">
+        <item name="scrBg">#000000</item>
+        <item name="scrSurface">#0E0E10</item>
+        <item name="scrSurfaceAlt">#1C1C1E</item>
+        <item name="scrTerminalBg">#000000</item>
+        <item name="scrTerminalBar">#0E0E10</item>
+        <item name="scrTerminalKey">#1C1C1E</item>
+        <item name="scrUnlockPanel">#E60E0E10</item>
+        <item name="android:colorBackground">#000000</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+    </style>
+    <!-- Non-fullscreen screens also repaint the window. -->
+    <style name="ThemeOverlay.Scrcpy.Oled.Window">
+        <item name="android:windowBackground">#000000</item>
     </style>
 </resources>

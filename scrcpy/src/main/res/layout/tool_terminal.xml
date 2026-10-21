@@ -6,7 +6,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:padding="0dp"
-    android:background="@color/terminal_bg">
+    android:background="?attr/scrTerminalBg">
 
     <!-- Top toolbar (ssh-pad TerminalPage._toolbar) -->
     <LinearLayout
@@ -17,7 +17,7 @@
         android:gravity="center_vertical"
         android:paddingStart="@dimen/space_sm"
         android:paddingEnd="@dimen/space_xs"
-        android:background="@color/terminal_toolbar"
+        android:background="?attr/scrTerminalBar"
         android:elevation="1dp">
 
         <View
@@ -113,7 +113,7 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:fillViewport="true"
-        android:background="@color/terminal_bg"
+        android:background="?attr/scrTerminalBg"
         android:fadeScrollbars="false"
         android:clickable="true"
         android:focusable="true">
@@ -144,7 +144,7 @@
         android:minHeight="40dp"
         android:paddingHorizontal="@dimen/space_sm"
         android:paddingVertical="@dimen/space_xs"
-        android:background="@color/terminal_toolbar">
+        android:background="?attr/scrTerminalBar">
 
         <EditText
             android:id="@+id/terminal_input"
@@ -188,7 +188,7 @@
         android:id="@+id/terminal_extra_keys"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/terminal_toolbar"
+        android:background="?attr/scrTerminalBar"
         android:scrollbars="none"
         android:fadeScrollbars="true"
         android:elevation="2dp">

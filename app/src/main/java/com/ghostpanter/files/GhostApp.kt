@@ -39,6 +39,11 @@ class GhostApp : Application() {
         com.ghostpanter.scrcpy.ScrcpyHost.install(this)
         com.ghostpanter.adb.AdbPool.init(this)
         com.ghostpanter.scrcpy.ScrcpyHost.setLocaleHook { base -> com.ghostpanter.files.ui.LocaleCtx.wrap(base) }
+        // Light / dark / OLED of the View-based screens follows the in-app setting on every API level.
+        com.ghostpanter.scrcpy.ScrcpyHost.setThemeHook(object : com.ghostpanter.scrcpy.ScrcpyHost.ThemeHook {
+            override fun themeMode(): String = graph.settings.themeMode
+            override fun oledBlack(): Boolean = graph.settings.oledBlack
+        })
         com.ghostpanter.scrcpy.ScrcpyHost.setDeviceActions(object : com.ghostpanter.scrcpy.ScrcpyHost.DeviceActions {
             private fun open(ctx: android.content.Context, extra: String, host: String, port: Int) {
                 val serial = com.ghostpanter.adb.AdbPool.serialOf(com.ghostpanter.scrcpy.Devices.Device(host, port))

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Theme-switchable surfaces so the OLED pure-black overlay can recolor the View screens
+     (light / dark come from values / values-night, OLED from ThemeOverlay.Scrcpy.Oled). -->
+<resources>
+    <attr name="scrBg" format="color|reference"/>
+    <attr name="scrSurface" format="color|reference"/>
+    <attr name="scrSurfaceAlt" format="color|reference"/>
+    <attr name="scrTerminalBg" format="color|reference"/>
+    <attr name="scrTerminalBar" format="color|reference"/>
+    <attr name="scrTerminalKey" format="color|reference"/>
+    <attr name="scrUnlockPanel" format="color|reference"/>
+</resources>
