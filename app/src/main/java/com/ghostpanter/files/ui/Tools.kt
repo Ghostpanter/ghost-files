@@ -15,6 +15,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -555,7 +557,7 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
                 query, { query = it }, singleLine = true,
                 placeholder = { Text(t("搜索名称或包名", "Search")) },
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
-                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
             )
             val list = apps
             if (list == null) Box(Modifier.fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
@@ -567,10 +569,12 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
                 Text(
                     t("${shown.size} 个应用 · 长按进入多选", "${shown.size} apps · long-press to multi-select"),
                     fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 12.dp),
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                 )
-                LazyColumn(Modifier.fillMaxSize()) {
-                    items(shown, key = { it.pkg }) { a ->
+                LazyColumn(Modifier.fillMaxSize().padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 12.dp).ghostCard()) {
+                    itemsIndexed(shown, key = { _, it -> it.pkg }) { i, a ->
+                        if (i > 0) GhostRowDivider()
                         val checked = a.pkg in selectedPkgs
                         Row(
                             Modifier
@@ -584,7 +588,7 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
                                         selectedPkgs = selectedPkgs + a.pkg
                                     },
                                 )
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             if (selecting) {
@@ -595,7 +599,7 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
                             if (icon != null) Image(icon, null, Modifier.size(40.dp)) else Icon(Icons.Filled.Android, null, Modifier.size(40.dp))
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(a.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(a.label, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                                 Text(
                                     "${a.pkg}  ${a.version}  ${formatSize(a.size)}" +
                                         if (a.splits.isNotEmpty()) "  +${a.splits.size} split" else "",

@@ -32,6 +32,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import com.ghostpanter.files.ui.ghostCard
+import com.ghostpanter.files.ui.GhostRowDivider
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -315,8 +318,9 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
         error?.let { ErrorCard(it) { reload++ } }
         if (apps == null && error == null) Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         Text(t("${shown.size} 个应用", "${shown.size} apps"), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
-        LazyColumn(Modifier.fillMaxSize()) {
-            items(shown, key = { it.pkg }) { a ->
+        LazyColumn(Modifier.fillMaxSize().padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 12.dp).ghostCard()) {
+            itemsIndexed(shown, key = { _, it -> it.pkg }) { i, a ->
+                if (i > 0) GhostRowDivider()
                 val meta by produceState(RemoteIcons.cached(a), a.pkg, a.versionCode) {
                     if (value == null && preview == null) value = RemoteIcons.load(ctx, serial, a).also { m -> m.label?.let { labels.value = labels.value + (a.pkg to it) } }
                 }
@@ -326,7 +330,7 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
                             onClick = { if (selected.isNotEmpty()) selected = if (a.pkg in selected) selected - a.pkg else selected + a.pkg else detail = a },
                             onLongClick = { selected = selected + a.pkg },
                         )
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (selected.isNotEmpty()) Checkbox(a.pkg in selected, { selected = if (it) selected + a.pkg else selected - a.pkg })

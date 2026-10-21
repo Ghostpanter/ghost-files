@@ -1,5 +1,9 @@
 package com.ghostpanter.files.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -109,3 +113,16 @@ fun GhostTextField(
     prefix, suffix, supportingText, isError, visualTransformation, keyboardOptions, keyboardActions, singleLine,
     maxLines, minLines, interactionSource, shape, colors,
 )
+
+/** White rounded card container (same look as a file pane) for lists such as the app lists. */
+@Composable
+fun Modifier.ghostCard(radius: androidx.compose.ui.unit.Dp = 16.dp): Modifier {
+    val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(radius)
+    return this.clip(shape).background(cs.surface, shape).border(1.dp, cs.outlineVariant, shape)
+}
+
+/** Hairline row divider inset past a 40dp icon, used inside [ghostCard] lists. */
+@Composable
+fun GhostRowDivider(start: androidx.compose.ui.unit.Dp = 68.dp) =
+    androidx.compose.material3.HorizontalDivider(Modifier.padding(start = start), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
