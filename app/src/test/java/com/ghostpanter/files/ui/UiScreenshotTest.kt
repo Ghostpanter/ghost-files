@@ -14,6 +14,15 @@ import com.android.resources.ScreenOrientation
 import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.data.SortBy
 import com.ghostpanter.files.data.ViewPrefs
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.unit.dp
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,7 +60,11 @@ class UiScreenshotTest(private val name: String, private val device: DeviceConfi
         override val sortBy = SortBy.NAME
     }
 
-    private class FakeHost(override val panes: List<PaneState>) : PaneHost {
+    private class FakeHost(override val panes: List<PaneState>, val apps: Map<String, AppMeta> = emptyMap()) : PaneHost {
+        override fun appPackage(fsId: String, dir: String, e: FileEntry) =
+            if (e.isDirectory) com.ghostpanter.files.core.AppFolders.packageOf(dir, e.name) else null
+        override fun cachedApp(fsId: String, pkg: String) = apps[pkg]
+        override suspend fun loadApp(fsId: String, pkg: String) = apps[pkg]
         override var activePane by mutableIntStateOf(0)
         override val prefs: ViewPrefs = Prefs()
         override fun fsLabel(fsId: String) = when (fsId) { "local" -> "本机"; else -> "NAS (SMB)" }
@@ -124,6 +137,124 @@ class UiScreenshotTest(private val name: String, private val device: DeviceConfi
             tabs.add(TabState("local", "/storage/emulated/0/Download"))
         }
         return FakeHost(listOf(left, right))
+    }
+
+    private fun appIcon(color: Long, glyph: String): android.graphics.Bitmap {
+        val n = 96
+        val b = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(b)
+        val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        p.color = color.toInt(); c.drawRoundRect(4f, 4f, 92f, 92f, 26f, 26f, p)
+        p.color = 0xFFFFFFFF.toInt(); p.textSize = 44f; p.textAlign = android.graphics.Paint.Align.CENTER
+        p.isFakeBoldText = true
+        c.drawText(glyph, 48f, 63f, p)
+        return b
+    }
+
+    private fun androidDataHost(): FakeHost {
+        val d = "/storage/emulated/0/Android/data"
+        val left = PaneState(0).apply {
+            tabs.add(TabState("local", d).apply {
+                entries = listOf(
+                    fe(d, "com.eg.android.AlipayGphone", true, ageDays = 1), fe(d, "com.netease.cloudmusic", true, ageDays = 3),
+                    fe(d, "com.old.removed.app", true, ageDays = 90), fe(d, "com.tencent.mm", true, ageDays = 0),
+                    fe(d, "com.xingin.xhs", true, ageDays = 2), fe(d, "tv.danmaku.bili", true, ageDays = 1),
+                    fe(d, ".nomedia", false, 0, 300),
+                )
+            })
+        }
+        val o = "/storage/emulated/0/Android/obb"
+        val right = PaneState(1).apply {
+            tabs.add(TabState("local", o).apply {
+                entries = listOf(fe(o, "com.miHoYo.Yuanshen", true, ageDays = 6), fe(o, "com.tencent.tmgp.sgame", true, ageDays = 9))
+            })
+        }
+        return FakeHost(listOf(left, right), mapOf(
+            "com.eg.android.AlipayGphone" to AppMeta("支付宝", appIcon(0xFF1677FF, "支")),
+            "com.netease.cloudmusic" to AppMeta("网易云音乐", appIcon(0xFFE60026, "云")),
+            "com.tencent.mm" to AppMeta("微信", appIcon(0xFF07C160, "微")),
+            "com.xingin.xhs" to AppMeta("小红书", appIcon(0xFFFF2442, "书")),
+            "tv.danmaku.bili" to AppMeta("哔哩哔哩", appIcon(0xFFFB7299, "B")),
+            "com.miHoYo.Yuanshen" to AppMeta("原神", appIcon(0xFF5B6FD8, "原")),
+            "com.tencent.tmgp.sgame" to AppMeta("王者荣耀", appIcon(0xFFC9932C, "王")),
+        ))
+    }
+
+    private fun drawerState(dark: Boolean) = DrawerUiState(
+        version = "0.7.2-test",
+        volumes = listOf(Volume("内部存储", "/storage/emulated/0", 256L shl 30, 87L shl 30), Volume("U 盘", "/storage/1A2B-3C4D", 64L shl 30, 51L shl 30)),
+        rootGranted = true, showSafAndroidData = false,
+        safTrees = listOf("content://x" to "Android/data"),
+        bookmarks = listOf(com.ghostpanter.files.data.Bookmark("相机", "local", "/storage/emulated/0/DCIM/Camera"),
+            com.ghostpanter.files.data.Bookmark("下载", "local", "/storage/emulated/0/Download")),
+        servers = listOf(com.ghostpanter.files.core.ServerConfig("nas", "家里 NAS", com.ghostpanter.files.core.Protocol.SMB, "192.168.1.10"),
+            com.ghostpanter.files.core.ServerConfig("vps", "云主机", com.ghostpanter.files.core.Protocol.SFTP, "vps.example.com")),
+        adbDevices = listOf("192.168.1.23:5555" to "Xiaomi Pad 6", "usb-R5CT30ABCDE:1" to "Galaxy Tab S9"),
+        showHidden = false, thumbnails = true, language = "zh",
+        themeMode = if (dark) "dark" else "system", oledBlack = false,
+        layoutMode = "auto", listDensity = "normal", gridView = false, tabletPreview = true,
+        foldersFirst = true, recycleBin = true, jobs = 3, jobsPerServer = 2,
+    )
+
+    @Test fun drawer() {
+        if (device.orientation == ScreenOrientation.LANDSCAPE) return
+        val dark = device.nightMode == NightMode.NIGHT
+        paparazzi.snapshot {
+            GhostTheme(dark = dark) {
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+                    Frame(host(false), dark)
+                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f)))
+                    androidx.compose.material3.Surface(
+                        androidx.compose.ui.Modifier.fillMaxHeight().width(312.dp),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.background,
+                    ) { DrawerBody(drawerState(dark), DrawerActions()) }
+                }
+            }
+        }
+    }
+
+    @Test fun androidData() {
+        val h = androidDataHost()
+        paparazzi.snapshot { Frame(h, device.nightMode == NightMode.NIGHT) }
+    }
+
+    @Test fun installSheet() {
+        if (device.orientation == ScreenOrientation.LANDSCAPE) return
+        val dark = device.nightMode == NightMode.NIGHT
+        val splits = listOf(
+            com.ghostpanter.files.core.apk.ApkBundle.classify("base.apk", 182_331_904),
+            com.ghostpanter.files.core.apk.ApkBundle.classify("split_config.arm64_v8a.apk", 61_204_480),
+            com.ghostpanter.files.core.apk.ApkBundle.classify("split_config.armeabi_v7a.apk", 48_112_640),
+            com.ghostpanter.files.core.apk.ApkBundle.classify("split_config.xxhdpi.apk", 4_300_800),
+            com.ghostpanter.files.core.apk.ApkBundle.classify("split_config.zh.apk", 512_000),
+            com.ghostpanter.files.core.apk.ApkBundle.classify("split_config.en.apk", 498_000),
+        )
+        val sel = setOf("base.apk", "split_config.arm64_v8a.apk", "split_config.xxhdpi.apk", "split_config.zh.apk", "split_config.en.apk")
+        paparazzi.snapshot {
+            GhostTheme(dark = dark) {
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+                    Frame(host(false), dark)
+                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f)))
+                    androidx.compose.material3.Surface(
+                        androidx.compose.ui.Modifier.fillMaxWidth().align(androidx.compose.ui.Alignment.BottomCenter),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow,
+                    ) {
+                        androidx.compose.foundation.layout.Column {
+                            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(32.dp, 4.dp).background(androidx.compose.material3.MaterialTheme.colorScheme.outlineVariant, androidx.compose.foundation.shape.RoundedCornerShape(2.dp)))
+                            }
+                            InstallSheetContent(InstallUi(
+                                title = "微信", packageName = "com.tencent.mm", version = "8.0.53 (2860)", installedVersion = "8.0.50 (2820)",
+                                icon = appIcon(0xFF07C160, "微").asImageBitmap(), format = "APKS", splits = splits, selected = sel, auto = sel,
+                                deviceLine = "arm64-v8a · 440dpi · zh-CN/en-US", obbLine = null, silentVia = "Shizuku", silent = true,
+                            ), InstallActions(extract = {}))
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @Composable

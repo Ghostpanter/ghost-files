@@ -30,6 +30,7 @@ import com.ghostpanter.terminal.TermSessions
 import com.ghostpanter.terminal.TermSink
 import com.ghostpanter.terminal.TermTheme
 import com.ghostpanter.terminal.TerminalPanel
+import com.ghostpanter.files.ui.adb.UsbRow
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -87,7 +88,8 @@ class AdbScreenshotTest(private val name: String, private val device: DeviceConf
     @Test fun devices() = paparazzi.snapshot {
         Shell(Screen.Devices) {
             DevicesContent(listOf(S1, S2), listOf(S1 to DevState.ONLINE, S2 to DevState.OFFLINE),
-                DeviceCallbacks({}, {}, {}, { _, _, _ -> }, {}, {}))
+                DeviceCallbacks({}, {}, {}, { _, _, _ -> }, {}, {}),
+                usb = listOf(UsbRow("usb-R5CT30ABCDE:1", "Galaxy Tab S9", true), UsbRow("usb-bus001002:1", "USB 设备", false)))
         }
     }
 
