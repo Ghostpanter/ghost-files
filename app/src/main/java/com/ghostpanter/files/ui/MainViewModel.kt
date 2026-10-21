@@ -131,6 +131,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                     else -> null
                 }
                 msg?.let { toast(it) }
+                if (job.op == TransferOp.MOVE) {
+                    if (job.state == JobState.COMPLETED) job.sources.forEach { src ->
+                        com.ghostpanter.files.space.SpaceSessions.notifyMoved(src.fsId, src.path, job.dest.fsId, VPath.join(job.dest.path, VPath.name(src.path)))
+                    } else com.ghostpanter.files.space.SpaceSessions.revalidateAll()
+                }
                 val touched = job.sources.map { it.fsId }.toSet() + job.dest.fsId
                 panes.forEach { p -> p.tabs.forEach { if (it.fsId in touched) refresh(it, keepScroll = true) } }
             }
@@ -591,6 +596,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
             for (e in entries) {
                 if (useTrash && fs.id == LocalFs.ID && !e.path.startsWith(trash.trashDir)) trash.moveToTrash(e.path)
                 else fs.delete(e.path, true)
+                // Open space analyses (duplicates, largest files, treemap) drop it right away.
+                com.ghostpanter.files.space.SpaceSessions.notifyRemoved(tab.fsId, listOf(e.path))
             }
         }
     }
@@ -605,6 +612,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
             // Case-only rename ("a.jpg" -> "A.jpg") must work on case-insensitive storage.
             if (!name.equals(e.name, ignoreCase = true) && fs.stat(target) != null) throw FsException(t("已存在同名文件", "Name already exists"))
             fs.rename(e.path, target)
+            com.ghostpanter.files.space.SpaceSessions.notifyMoved(tab.fsId, e.path, tab.fsId, target)
         }
         tab.selected = emptySet()
     }

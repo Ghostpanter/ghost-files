@@ -53,6 +53,8 @@ import androidx.compose.ui.unit.sp
 import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.core.LocalFs
 import com.ghostpanter.files.core.VPath
+import com.ghostpanter.files.core.space.DupGroups
+import com.ghostpanter.files.core.space.DupRanker
 import com.ghostpanter.files.core.space.DuplicateFinder
 import com.ghostpanter.files.core.space.FileCategory
 import com.ghostpanter.files.core.space.NodeFlags
@@ -68,6 +70,7 @@ import com.ghostpanter.files.core.space.TRect
 import com.ghostpanter.files.core.space.TreemapLayout
 import com.ghostpanter.files.fs.RootRunner
 import com.ghostpanter.files.fs.ShizukuRunner
+import com.ghostpanter.files.space.DupBatch
 import com.ghostpanter.files.space.SpaceNotice
 import com.ghostpanter.files.space.SpaceSessions
 import com.ghostpanter.files.space.SpaceSummary
@@ -106,7 +109,20 @@ class SpaceUi(
     val now: Long = System.currentTimeMillis(),
     /** App label + icon of a package (null = unknown / not loaded). */
     val app: (String) -> AppMeta? = { null },
+    /** Kept copy of a duplicate group (user's pick, else [DupRanker]). */
+    val keepOf: (DuplicateFinder.Group) -> String = { g -> DupRanker.best(g.paths) { p -> tree?.find(p)?.mtime ?: 0 } },
+    /** Thumbnails / APK icons for list rows (null = type icons only). */
+    val thumbs: SpaceThumbs? = null,
+    /** Initial horizontal offset of path lines (screenshots of a scrolled path). */
+    val pathScroll: Int = 0,
 )
+
+/** Row thumbnails (reuses the panes' thumbnail + APK icon pipeline). */
+interface SpaceThumbs {
+    fun cached(path: String, dir: Boolean): android.graphics.Bitmap?
+    /** Blocking; called off the main thread. */
+    fun load(path: String, dir: Boolean): android.graphics.Bitmap?
+}
 
 class SpaceCallbacks(
     val back: () -> Unit = {},
@@ -123,6 +139,11 @@ class SpaceCallbacks(
     val openPath: (String) -> Unit = {},
     val more: () -> Unit = {},
     val scope: () -> Unit = {},
+    /** Tap on a duplicate row: keep this copy instead. */
+    val keep: (DuplicateFinder.Group, String) -> Unit = { _, _ -> },
+    val longPath: (String) -> Unit = {},
+    /** 「保留最优，删除其他」 for these groups (one, or all). */
+    val dedupe: (List<DuplicateFinder.Group>) -> Unit = {},
 )
 
 // ====================================================================== stateful screen
@@ -140,6 +161,7 @@ fun SpaceScreen(vm: MainViewModel, s: Screen.Space) {
     var tab by remember(session) { mutableStateOf(SpaceTab.MAP) }
     var deleting by remember { mutableStateOf<SpaceNode?>(null) }
     var scopePicker by remember { mutableStateOf(false) }
+    var dedupeAsk by remember { mutableStateOf<List<DuplicateFinder.Group>?>(null) }
     val scope = rememberCoroutineScope()
     // Tree swapped (refresh finished): keep the same folder by path.
     val cur = remember(tree, currentNode, session.version) { resolveNode(tree, currentNode) }
@@ -222,6 +244,16 @@ fun SpaceScreen(vm: MainViewModel, s: Screen.Space) {
         scanning = session.scanning, background = session.background, files = session.files, bytes = session.bytes,
         currentPath = session.current, scannedAt = tree?.scannedAt ?: 0, error = session.error, notices = session.notices,
         dups = session.dups, dupProgress = session.dupProgress, app = appOf,
+        keepOf = { g -> DupGroups.keepOf(g, session.keepChosen, session::mtimeOf) },
+        thumbs = remember(session) { object : SpaceThumbs {
+            private fun entry(path: String, dir: Boolean): Pair<String, FileEntry> {
+                val (fsId, p) = session.locate(SpaceNode(path, NodeKind.FILE))
+                val n = session.tree?.find(path)
+                return fsId to FileEntry(p, VPath.name(p), dir, n?.size ?: 0, n?.mtime ?: 0)
+            }
+            override fun cached(path: String, dir: Boolean) = entry(path, dir).let { (f, e) -> vm.cachedThumbnail(f, e, 96) }
+            override fun load(path: String, dir: Boolean) = entry(path, dir).let { (f, e) -> vm.thumbnail(f, e, 96) }
+        } },
     )
     val cb = SpaceCallbacks(
         back = { if (!goUp()) vm.screen = Screen.Main },
@@ -256,6 +288,11 @@ fun SpaceScreen(vm: MainViewModel, s: Screen.Space) {
             vm.menu = ActionMenu(t("空间分析", "Space analysis"), scopeLabel(vm, target) + " · " + session.tier.label(), a)
         },
         scope = { scopePicker = true },
+        keep = { g, p -> session.chooseKeep(g, p) },
+        longPath = { p -> session.tree?.find(p)?.let { menuFor(it) } ?: run {
+            val (fsId, lp) = session.locate(SpaceNode(p, NodeKind.FILE)); vm.openFs(fsId, VPath.parent(lp))
+        } },
+        dedupe = { groups -> if (session.batch == null) dedupeAsk = groups },
     )
     // Returning from the usage-access page: recompute aggregates.
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -273,6 +310,24 @@ fun SpaceScreen(vm: MainViewModel, s: Screen.Space) {
         if (selected == n) selected = null
         session.deleteNode(n, trash, vm.trash) { err -> vm.toast(err?.let { t("删除失败: ", "Delete failed: ") + it } ?: t("已删除 ", "Deleted ") + n.name) }
     } }
+    dedupeAsk?.let { groups ->
+        val plan = remember(groups, session.keepChosen, session.version) { DupGroups.plan(groups, session.keepChosen, session::mtimeOf) }
+        val local = plan.delete.all { session.locate(SpaceNode(it, NodeKind.FILE)).first == LocalFs.ID }
+        val trash = vm.g.settings.recycleBin
+        DupConfirmDialog(
+            DupConfirm(all = groups === session.dups,
+                groups = plan.groups, files = plan.delete.size, bytes = plan.bytes,
+                trash = if (!trash) DupConfirm.Trash.OFF else if (local) DupConfirm.Trash.ON else DupConfirm.Trash.PARTIAL,
+                names = plan.delete.map { VPath.name(it) }, keeps = groups.take(3).map { VPath.name(ui.keepOf(it)) }),
+            dismiss = { dedupeAsk = null },
+        ) {
+            dedupeAsk = null
+            val sizes = HashMap<String, Long>(); groups.forEach { g -> g.paths.forEach { sizes[it] = g.size } }
+            selected = null
+            session.deleteDuplicates(plan.delete, sizes, trash, vm.trash) { vm.toast(it) }
+        }
+    }
+    session.batch?.let { b -> DupProgressDialog(b) { session.cancelBatch() } }
     if (scopePicker) SpaceScopeDialog(vm, dismiss = { scopePicker = false }) { fsId, whole ->
         scopePicker = false
         vm.screen = Screen.Space(fsId, null, whole)
@@ -631,9 +686,10 @@ private fun LazyListScope.tabItems(ui: SpaceUi, cb: SpaceCallbacks, tablet: Bool
             } else if (d == null) item { EmptyCard(t("先按大小分组，再对同大小的文件做哈希比对（≥ 1 MB）", "Groups by size, then hashes same-size files (≥ 1 MB)"), action = t("查找重复文件", "Find duplicates"), onAction = cb.findDups) }
             else {
                 val wasted = d.sumOf { it.wasted }
-                item { CardTop(t("${d.size} 组重复 · 可省 ", "${d.size} groups · ") + formatSize(wasted) + t("", " reclaimable")) }
-                d.take(200).forEach { g ->
-                    item(key = "g" + g.paths.first()) { DupGroup(ui, cb, g) }
+                item(key = "dups-top") { DupTop(d.size, wasted, enabled = d.isNotEmpty()) { cb.dedupe(d) } }
+                val shown = d.take(200)
+                shown.forEach { g ->
+                    item(key = "g" + g.size + g.paths.first()) { DupGroup(ui, cb, g, last = g === shown.last()) }
                 }
                 if (d.isEmpty()) item { EmptyCard(t("没有找到重复文件", "No duplicates found")) }
             }
@@ -687,7 +743,8 @@ private fun NodeRow(ui: SpaceUi, cb: SpaceCallbacks, n: SpaceNode, bytes: Long, 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val icon = n.pkg?.let { ui.app(it) }?.icon
-        Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+        if (showPath && icon == null) RowThumb(ui, n.path(), n, color)
+        else Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
             if (icon != null) androidx.compose.foundation.Image(icon.asImageBitmap(), null, Modifier.size(26.dp))
             else Icon(nodeIcon(n), null, Modifier.size(19.dp), tint = color)
         }
@@ -699,8 +756,9 @@ private fun NodeRow(ui: SpaceUi, cb: SpaceCallbacks, n: SpaceNode, bytes: Long, 
                 if (n.has(NodeFlags.READ_ONLY)) Badge(t("只读", "Read-only"), cs.outline)
                 if (n.has(NodeFlags.UNREADABLE)) Badge(t("无权限", "No access"), cs.outline)
             }
+            if (showPath) PathLine(displayPath(n.path()), ui.pathScroll, if (sel) cs.primaryContainer else cs.surface)
             val sub = when {
-                showPath -> VPath.parent(n.path())
+                showPath -> ""
                 n.detail != null -> n.detail!!
                 n.kind == NodeKind.DIR -> t("${n.count} 个文件", "${n.count} files") + (if (n.mtime > 0) " · " + formatTimeCompact(n.mtime, ui.now) else "")
                 n.kind == NodeKind.FILE -> formatTimeCompact(n.mtime, ui.now)
@@ -730,19 +788,103 @@ private fun Badge(text: String, c: Color) {
 }
 
 @Composable
-private fun DupGroup(ui: SpaceUi, cb: SpaceCallbacks, g: DuplicateFinder.Group) {
+private fun DupTop(groups: Int, wasted: Long, enabled: Boolean, all: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().background(cs.surface).padding(horizontal = 14.dp, vertical = 8.dp)) {
-        Text(t("${g.paths.size} 个相同 · 每个 ", "${g.paths.size} copies · ") + formatSize(g.size) + t(" · 可省 ", " · save ") + formatSize(g.wasted), fontSize = 12.sp, color = cs.outline)
-        g.paths.forEach { p ->
-            val node = ui.tree?.find(p)
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).combinedClickableCompat({ node?.let(cb.select) ?: cb.openPath(p) }, { node?.let(cb.long) }).padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(nodeIcon(node ?: SpaceNode(p, NodeKind.FILE).also { it.category = FileCategory.of(p) }), null, Modifier.size(16.dp), tint = Ghost.colors.other)
-                Spacer(Modifier.width(8.dp))
-                Text(p, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)).background(cs.surface).padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(t("$groups 组重复 · 可省 ", "$groups groups · ") + formatSize(wasted) + t("", " reclaimable"), fontSize = 12.sp, color = cs.outline, modifier = Modifier.weight(1f))
+        if (enabled) FilledTonalButton(onClick = all, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp), modifier = Modifier.height(32.dp)) {
+            Icon(Icons.Rounded.AutoFixHigh, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text(t("全部一键处理", "Clean up all"), fontSize = 12.sp)
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DupGroup(ui: SpaceUi, cb: SpaceCallbacks, g: DuplicateFinder.Group, last: Boolean = false) {
+    val cs = MaterialTheme.colorScheme
+    val keep = ui.keepOf(g)
+    val shape = if (last) RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp) else RoundedCornerShape(0.dp)
+    Column(Modifier.fillMaxWidth().clip(shape).background(cs.surface).padding(top = 6.dp, bottom = 4.dp)) {
+        HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = cs.outlineVariant.copy(alpha = 0.6f))
+        Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(t("${g.paths.size} 个相同 · 每个 ", "${g.paths.size} copies · ") + formatSize(g.size) + t(" · 可省 ", " · save ") + formatSize(g.wasted),
+                fontSize = 12.sp, color = cs.outline, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            TextButton(onClick = { cb.dedupe(listOf(g)) }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text(t("保留最优，删除其他", "Keep best, delete rest"), fontSize = 12.sp)
             }
         }
-        HorizontalDivider(Modifier.padding(top = 6.dp), color = cs.outlineVariant)
+        g.paths.forEach { p ->
+            val node = ui.tree?.find(p)
+            val isKeep = p == keep
+            val bg = if (isKeep) cs.primary.copy(alpha = 0.07f).compositeOver(cs.surface) else cs.surface
+            Row(
+                Modifier.fillMaxWidth().background(bg)
+                    .combinedClickable(onClick = { cb.keep(g, p) }, onLongClick = { cb.longPath(p) })
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val n = node ?: SpaceNode(p, NodeKind.FILE).also { it.category = FileCategory.of(p) }
+                RowThumb(ui, p, n, blockColor(n))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(VPath.name(p), fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                            color = if (isKeep) cs.onSurface else cs.onSurface.copy(alpha = 0.86f))
+                        if (isKeep) Badge(t("保留", "Keep"), cs.primary)
+                    }
+                    PathLine(displayPath(p), ui.pathScroll, bg)
+                }
+                Spacer(Modifier.width(8.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    if (isKeep) Icon(Icons.Rounded.CheckCircle, t("保留", "Keep"), Modifier.size(20.dp), tint = cs.primary)
+                    else Icon(Icons.Rounded.DeleteOutline, t("将删除", "Will delete"), Modifier.size(20.dp), tint = cs.outline.copy(alpha = 0.7f))
+                    val m = node?.mtime ?: 0
+                    if (m > 0) Text(formatTimeCompact(m, ui.now), fontSize = 10.sp, color = cs.outline)
+                }
+            }
+        }
+    }
+}
+
+/** 「内部存储/…」 instead of /storage/emulated/0 (and its aliases). */
+fun displayPath(p: String): String {
+    val m = Regex("^(/storage/emulated/0|/data/media/0|/sdcard|/storage/self/primary)(?=/|$)").find(p) ?: return p
+    return t("内部存储", "Internal") + p.substring(m.range.last + 1)
+}
+
+/**
+ * Full path on one line, scrolled sideways inside the row (the scroll consumes horizontal drags first,
+ * so nothing outside sees them; taps and long-presses still reach the row). Edge fades show there is more.
+ */
+@Composable
+fun PathLine(path: String, initial: Int = 0, bg: Color) {
+    val cs = MaterialTheme.colorScheme
+    val st = rememberScrollState(initial)
+    Box(Modifier.fillMaxWidth().padding(top = 1.dp)) {
+        Text(path, fontSize = 11.sp, color = cs.outline, maxLines = 1, softWrap = false, modifier = Modifier.horizontalScroll(st))
+        if (st.canScrollForward) Box(Modifier.align(Alignment.CenterEnd).width(28.dp).height(16.dp)
+            .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(bg.copy(alpha = 0f), bg))))
+        if (st.canScrollBackward) Box(Modifier.align(Alignment.CenterStart).width(18.dp).height(16.dp)
+            .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(bg, bg.copy(alpha = 0f)))))
+    }
+}
+
+/** 34 dp thumbnail: image/video preview, APK icon, else the type icon. */
+@Composable
+private fun RowThumb(ui: SpaceUi, path: String, n: SpaceNode, color: Color) {
+    val wants = n.kind == NodeKind.FILE && n.category in setOf(FileCategory.IMAGE, FileCategory.VIDEO, FileCategory.APK)
+    val src = ui.thumbs
+    var bmp by remember(path, src) { mutableStateOf(if (wants && src != null) runCatching { src.cached(path, false) }.getOrNull() else null) }
+    if (wants && src != null && bmp == null) LaunchedEffect(path, src) {
+        bmp = withContext(Dispatchers.IO) { runCatching { src.load(path, false) }.getOrNull() }
+    }
+    val apk = n.category == FileCategory.APK
+    Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(if (bmp != null && apk) Color.Transparent else color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+        val b = bmp
+        if (b != null) androidx.compose.foundation.Image(b.asImageBitmap(), null,
+            if (apk) Modifier.size(30.dp) else Modifier.fillMaxSize(),
+            contentScale = if (apk) androidx.compose.ui.layout.ContentScale.Fit else androidx.compose.ui.layout.ContentScale.Crop)
+        else Icon(nodeIcon(n), null, Modifier.size(19.dp), tint = color)
     }
 }
 
@@ -930,6 +1072,84 @@ fun SpaceDeleteDialog(n: SpaceNode, trash: Boolean, dismiss: () -> Unit, confirm
         confirmButton = { TextButton(onClick = { confirm(trash && prot == Protection.NONE) }, enabled = ok) { Text(t("删除", "Delete"), color = if (ok) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline) } },
         dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
     )
+}
+
+/** What a 「保留最优，删除其他」 confirmation shows. */
+data class DupConfirm(
+    val all: Boolean, val groups: Int, val files: Int, val bytes: Long, val trash: Trash,
+    val names: List<String>, val keeps: List<String>,
+) { enum class Trash { ON, OFF, PARTIAL } }
+
+@Composable
+fun DupConfirmDialog(c: DupConfirm, dismiss: () -> Unit, confirm: () -> Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = dismiss) { DupConfirmCard(c, dismiss, confirm) }
+}
+
+/** Dialog body (also rendered on its own in screenshots). */
+@Composable
+fun DupConfirmCard(c: DupConfirm, dismiss: () -> Unit = {}, confirm: () -> Unit = {}) {
+    val cs = MaterialTheme.colorScheme
+    Column(Modifier.widthIn(max = 420.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(cs.surfaceContainerHigh).padding(24.dp)) {
+        Icon(Icons.Rounded.AutoFixHigh, null, Modifier.align(Alignment.CenterHorizontally).size(26.dp), tint = cs.primary)
+        Spacer(Modifier.height(12.dp))
+        Text(if (c.all) t("全部一键处理", "Clean up all duplicates") else t("保留最优，删除其他", "Keep best, delete the rest"), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.CenterHorizontally))
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cs.surface).padding(vertical = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+            ConfirmStat(c.files.toString(), t("个文件将删除", "files deleted"), cs.error)
+            ConfirmStat(formatSize(c.bytes), t("可释放", "freed"), cs.primary)
+            ConfirmStat(c.groups.toString(), t("组，每组保留 1 份", "groups, 1 kept each"), cs.onSurface)
+        }
+        Spacer(Modifier.height(12.dp))
+        val keepHint = if (c.groups == 1) t("保留：", "Keep: ") + (c.keeps.firstOrNull() ?: "") else t("每组保留标「保留」的那一份（可先点行改选）", "Each group keeps the one marked Keep (tap a row to change)")
+        Text(keepHint, fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(6.dp))
+        val shown = c.names.take(4)
+        Text(t("删除：", "Delete: ") + shown.joinToString("、") + if (c.names.size > shown.size) t(" 等 ${c.names.size} 个", " and ${c.names.size - shown.size} more") else "",
+            fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(10.dp))
+        val (ti, tc) = when (c.trash) {
+            DupConfirm.Trash.ON -> t("移入回收站，可在回收站恢复", "Moved to the recycle bin (restorable)") to cs.primary
+            DupConfirm.Trash.PARTIAL -> t("部分位置不支持回收站，这些文件将直接删除", "Some locations have no recycle bin; those files are deleted for good") to cs.error
+            DupConfirm.Trash.OFF -> t("回收站已关闭：将直接删除，不可恢复", "Recycle bin is off: deleted for good") to cs.error
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (c.trash == DupConfirm.Trash.ON) Icons.Rounded.RestoreFromTrash else Icons.Rounded.WarningAmber, null, Modifier.size(16.dp), tint = tc)
+            Spacer(Modifier.width(6.dp)); Text(ti, fontSize = 12.sp, color = tc)
+        }
+        Spacer(Modifier.height(18.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) }
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = confirm, enabled = c.files > 0, colors = ButtonDefaults.buttonColors(containerColor = cs.error, contentColor = cs.onError)) {
+                Text(t("删除 ${c.files} 个", "Delete ${c.files}"))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConfirmStat(value: String, label: String, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = 110.dp)) {
+        Text(value, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = color, maxLines = 1)
+        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    }
+}
+
+@Composable
+fun DupProgressDialog(b: DupBatch, stop: () -> Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = {}, properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
+        val cs = MaterialTheme.colorScheme
+        Column(Modifier.widthIn(max = 420.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(cs.surfaceContainerHigh).padding(24.dp)) {
+            Text(t("正在删除重复文件…", "Deleting duplicates…"), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(12.dp))
+            LinearProgressIndicator(progress = { if (b.total > 0) b.done.toFloat() / b.total else 0f }, Modifier.fillMaxWidth().clip(CircleShape))
+            Spacer(Modifier.height(8.dp))
+            Text("${b.done}/${b.total} · " + t("已释放 ", "freed ") + formatSize(b.bytes) + (if (b.failed > 0) t(" · 失败 ${b.failed}", " · ${b.failed} failed") else ""), fontSize = 13.sp, color = cs.onSurfaceVariant)
+            if (b.current.isNotEmpty()) Text(b.current, fontSize = 12.sp, color = cs.outline, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = stop) { Text(t("停止", "Stop")) } }
+        }
+    }
 }
 
 @Composable

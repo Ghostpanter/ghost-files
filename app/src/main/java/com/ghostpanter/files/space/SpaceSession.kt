@@ -18,6 +18,7 @@ import com.ghostpanter.files.core.ShellRunner
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.space.AppStat
 import com.ghostpanter.files.core.space.CategoryTotals
+import com.ghostpanter.files.core.space.DupGroups
 import com.ghostpanter.files.core.space.DuplicateFinder
 import com.ghostpanter.files.core.space.LocalWalker
 import com.ghostpanter.files.core.space.NodeFlags
@@ -27,6 +28,7 @@ import com.ghostpanter.files.core.space.ScanCancelled
 import com.ghostpanter.files.core.space.ScanControl
 import com.ghostpanter.files.core.space.ShellStreamScan
 import com.ghostpanter.files.core.space.SpaceCache
+import com.ghostpanter.files.core.space.SpaceEdits
 import com.ghostpanter.files.core.space.SpaceNode
 import com.ghostpanter.files.core.space.SpacePolicy
 import com.ghostpanter.files.core.space.SpaceQueries
@@ -75,6 +77,9 @@ data class SpaceNotice(val text: String, val action: String? = null, val actionI
 /** Storage totals for the summary card. */
 data class SpaceSummary(val total: Long, val free: Long, val categories: CategoryTotals?)
 
+/** Progress of a 「保留最优，删除其他」 batch. */
+data class DupBatch(val done: Int, val total: Int, val bytes: Long, val failed: Int = 0, val current: String = "")
+
 /**
  * One analysis (kept per target for the process lifetime): loads the cached tree instantly,
  * rescans in the background (incremental for local walks), exposes Compose state.
@@ -98,6 +103,10 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
     var notices by mutableStateOf<List<SpaceNotice>>(emptyList()); private set
     var dups by mutableStateOf<List<DuplicateFinder.Group>?>(null); private set
     var dupProgress by mutableStateOf<Pair<Int, Int>?>(null); private set
+    /** Keep choices the user tapped (one path per group; others use [com.ghostpanter.files.core.space.DupRanker]). */
+    var keepChosen by mutableStateOf<Set<String>>(emptySet()); private set
+    var batch by mutableStateOf<DupBatch?>(null); private set
+    @Volatile private var batchCancel = false
     /** Root of the raw scan (inside an aggregated [tree]). */
     var scanRoot: SpaceNode? = null; private set
     var adbSerial: String? = null; private set
@@ -138,14 +147,17 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
 
     /** Opens the session: cached tree first (instant), then a background refresh. */
     fun open() {
-        if (tree != null || running) return
+        if (tree != null) { if (!running) revalidateDups(); return }
+        if (running) return
         scope.launch {
             val cached = runCatching {
                 DataInputStream(BufferedInputStream(cacheFile().inputStream(), 1 shl 16)).use { SpaceCache.read(it) }
             }.getOrNull()
             if (cached != null) {
                 scanRoot = cached.tree.root.takeIf { it.kind == NodeKind.DIR } ?: cached.tree.root.children?.firstOrNull { it.kind == NodeKind.DIR }
-                withContext(Dispatchers.Main) { tree = cached.tree; version++ }
+                val cachedDups = DupGroups.decode(readDups(cached.meta))
+                withContext(Dispatchers.Main) { tree = cached.tree; if (cachedDups != null && dups == null) dups = cachedDups; version++ }
+                if (cachedDups != null) revalidateDups()
                 if (isStorageRoot) loadStats()
             }
             withContext(Dispatchers.Main) { refresh(full = false) }
@@ -172,7 +184,12 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
                 val shown = if (isStorageRoot) composeAggregates(b.root) else b.tree
                 shown.scannedAt = b.tree.scannedAt
                 if (tier == SpaceTier.ROOT && target.wholeDevice) markReadOnly(b.root)
-                withContext(Dispatchers.Main) { tree = shown; version++ }
+                withContext(Dispatchers.Main) {
+                    tree = shown
+                    // Files gone since the duplicate search drop out of their groups.
+                    dups = dups?.let { d -> synchronized(shown.lock) { DupGroups.retain(d) { p -> SpaceTree.findIn(shown.root, p) != null } } }
+                    version++
+                }
                 runCatching { save(shown) }
             }
             withContext(Dispatchers.Main) {
@@ -357,9 +374,42 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
         return out
     }
 
+    /** writeUTF caps a value at 64 KB: duplicate groups go into numbered chunks. */
+    private fun writeDups(meta: MutableMap<String, String>, groups: List<DuplicateFinder.Group>) {
+        var i = 0; val sb = StringBuilder(); var bytes = 0
+        fun flush() { meta["dups.$i"] = sb.toString(); i++; sb.setLength(0); bytes = 0 }
+        for (line in DupGroups.encode(groups).split('\n').filter { it.isNotEmpty() }) {
+            val b = line.toByteArray().size + 1
+            if (b > 60_000) continue
+            if (bytes + b > 60_000) flush()
+            if (sb.isNotEmpty()) sb.append('\n')
+            sb.append(line); bytes += b
+        }
+        flush()
+        meta["dups"] = i.toString()
+    }
+
+    private fun readDups(meta: Map<String, String>): String? {
+        val n = meta["dups"]?.toIntOrNull() ?: return null
+        return (0 until n).mapNotNull { meta["dups.$it"]?.takeIf { s -> s.isNotEmpty() } }.joinToString("\n")
+    }
+
+    /** Checks every file of every group still exists (cache reload / screen reopened). */
+    fun revalidateDups() {
+        val d = dups ?: return
+        if (d.isEmpty()) return
+        scope.launch {
+            val all = d.flatMap { it.paths }.toSet()
+            val missing = all.filter { p -> runCatching { val (fsId, lp) = locate(SpaceNode(p, NodeKind.FILE)); !fsm.get(fsId).exists(lp) }.getOrDefault(false) }
+            if (missing.isNotEmpty()) applyRemoved(missing)
+        }
+    }
+
     private fun save(t: SpaceTree) {
         val f = cacheFile(); val tmp = File(f.path + ".tmp")
-        DataOutputStream(BufferedOutputStream(tmp.outputStream(), 1 shl 16)).use { SpaceCache.write(it, t, mapOf("tier" to tier.name)) }
+        val meta = HashMap<String, String>(); meta["tier"] = tier.name
+        dups?.let { writeDups(meta, it) }
+        DataOutputStream(BufferedOutputStream(tmp.outputStream(), 1 shl 16)).use { SpaceCache.write(it, t, meta) }
         tmp.renameTo(f)
     }
 
@@ -383,18 +433,95 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
                 if (useTrash && fsId == LocalFs.ID) trash.moveToTrash(p) else fsm.get(fsId).delete(p, true)
             }.exceptionOrNull()
             if (err == null) {
-                val t = tree
-                if (t != null) synchronized(t.lock) { detachEverywhere(n) }
-                runCatching { tree?.let { save(it) } }
+                val (fsId, p) = locate(n)
+                // Every other open analysis (whole device / storage root…) follows too.
+                SpaceSessions.notifyRemoved(fsId, listOf(p), except = this@SpaceSession)
+                applyRemoved(listOf(n.path()))
             }
-            withContext(Dispatchers.Main) { version++; done(err?.message) }
+            withContext(Dispatchers.Main) { done(err?.message) }
         }
     }
 
-    private fun detachEverywhere(n: SpaceNode) {
-        // Aggregated root: the scan node is a child; detaching from the scan keeps totals right,
-        // and the 「系统」 block stays (it is total − rest, recomputed on the next scan).
-        SpaceQueries.detach(n)
+    /**
+     * Files at [paths] (this session's namespace) are gone: detach them from the tree (sizes, largest
+     * files, empty folders, treemap follow), drop them from duplicate groups, persist the cache.
+     */
+    suspend fun applyRemoved(paths: Collection<String>) {
+        if (paths.isEmpty()) return
+        val t = tree
+        if (t != null) synchronized(t.lock) { SpaceEdits.remove(t, paths) }
+        withContext(Dispatchers.Main) {
+            dups = dups?.let { DupGroups.remove(it, paths) }
+            keepChosen = keepChosen.filterTo(HashSet()) { k -> paths.none { VPath.isSameOrDescendant(it, k) } }
+            version++
+        }
+        runCatching { tree?.let { save(it) } }
+    }
+
+    suspend fun applyMoved(from: String, to: String?) {
+        if (to == null) return applyRemoved(listOf(from))
+        val t = tree ?: return
+        synchronized(t.lock) { SpaceEdits.move(t, from, to) }
+        val inScope = synchronized(t.lock) { SpaceTree.findIn(t.root, to) != null }
+        withContext(Dispatchers.Main) {
+            // Moved out of the analyzed folder: like a delete for this session.
+            dups = dups?.let { if (inScope) DupGroups.rename(it, from, to) else DupGroups.remove(it, listOf(from)) }
+            keepChosen = keepChosen.mapTo(HashSet()) { k -> if (inScope && VPath.isSameOrDescendant(from, k)) to + k.removePrefix(from) else k }
+            version++
+        }
+        runCatching { save(t) }
+    }
+
+    /** Maps a path of backend [fsId] into this session's tree namespace (null = unrelated backend). */
+    fun toTreePath(fsId: String, path: String): String? {
+        val p = VPath.normalize(path)
+        val device = fsId == LocalFs.ID || fsId == FsManager.ROOT || fsId == FsManager.SHIZUKU
+        return when (tier) {
+            SpaceTier.ADB, SpaceTier.ADB_ROOT -> if (com.ghostpanter.adb.AdbFs.isAdbId(fsId) && com.ghostpanter.adb.AdbFs.serialOf(fsId) == adbSerial) p else null
+            SpaceTier.ROOT -> if (device) PathCanon.canonical(p) else null
+            SpaceTier.BASIC, SpaceTier.SHIZUKU -> if (device) PathCanon.userVisible(PathCanon.canonical(p)) else null
+            SpaceTier.OTHER -> if (fsId == target.fsId) p else null
+        }
+    }
+
+    fun chooseKeep(g: DuplicateFinder.Group, path: String) { keepChosen = keepChosen - g.paths.toSet() + path }
+
+    fun mtimeOf(p: String): Long = tree?.find(p)?.mtime ?: 0
+
+    fun cancelBatch() { batchCancel = true }
+
+    /**
+     * Deletes [paths] (the non-kept copies) one by one, to the recycle bin when [useTrash] and the file
+     * is on local storage; progress in [batch]; finished files update the page right away.
+     */
+    fun deleteDuplicates(paths: List<String>, bytesEach: Map<String, Long>, useTrash: Boolean, trash: com.ghostpanter.files.core.ops.RecycleBin, done: (String) -> Unit) {
+        if (batch != null || paths.isEmpty()) return
+        batchCancel = false
+        batch = DupBatch(0, paths.size, 0)
+        scope.launch {
+            var ok = 0; var failed = 0; var freed = 0L; var firstErr: String? = null
+            val removed = ArrayList<String>()
+            for ((i, p) in paths.withIndex()) {
+                if (batchCancel) break
+                val cur = freed; val f = failed
+                withContext(Dispatchers.Main) { batch = DupBatch(i, paths.size, cur, f, VPath.name(p)) }
+                val (fsId, lp) = locate(SpaceNode(p, NodeKind.FILE))
+                val err = runCatching { if (useTrash && fsId == LocalFs.ID) trash.moveToTrash(lp) else fsm.get(fsId).delete(lp, false) }.exceptionOrNull()
+                if (err == null) {
+                    ok++; freed += bytesEach[p] ?: 0; removed.add(p)
+                    SpaceSessions.notifyRemoved(fsId, listOf(lp), except = this@SpaceSession)
+                    if (removed.size >= 8) { applyRemoved(removed.toList()); removed.clear() }
+                } else { failed++; if (firstErr == null) firstErr = err.message ?: err.toString() }
+            }
+            applyRemoved(removed)
+            withContext(Dispatchers.Main) {
+                batch = null
+                done(buildString {
+                    append(t("已删除 ", "Deleted ")); append(ok); append(t(" 个文件，释放 ", " files, freed ")); append(formatSize(freed))
+                    if (failed > 0) { append(t("；失败 ", "; failed ")); append(failed); firstErr?.let { append(" (" + it + ")") } }
+                })
+            }
+        }
     }
 
     /** Clears caches: one app ([pkg]) or every app (null). Returns bytes freed (approx.). */
@@ -429,7 +556,8 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
             val f = DuplicateFinder({ p -> val (fsId, lp) = locateNodePath(p); fsm.get(fsId).openRead(lp) }, c)
             f.progress = { d, tot -> scope.launch(Dispatchers.Main) { dupProgress = d to tot } }
             val r = runCatching { f.find(files, minBytes) }.getOrNull()
-            withContext(Dispatchers.Main) { dups = r ?: emptyList(); dupProgress = null }
+            withContext(Dispatchers.Main) { dups = r ?: emptyList(); dupProgress = null; keepChosen = emptySet() }
+            runCatching { tree?.let { save(it) } }
         }
     }
 
@@ -467,7 +595,33 @@ object CacheScripts {
 /** Sessions survive leaving the screen (back from 「在面板中定位」 is instant). */
 object SpaceSessions {
     private val map = HashMap<SpaceTarget, SpaceSession>()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     fun get(ctx: Context, fsm: FsManager, t: SpaceTarget): SpaceSession = synchronized(map) {
         map.getOrPut(t) { SpaceSession(ctx.applicationContext, fsm, t) }
+    }
+
+    private fun all(except: SpaceSession?) = synchronized(map) { map.values.filter { it !== except } }
+
+    /** Files deleted / trashed / moved away anywhere in the app (main panes, other analyses). */
+    fun notifyRemoved(fsId: String, paths: List<String>, except: SpaceSession? = null) {
+        val sessions = all(except).ifEmpty { return }
+        scope.launch {
+            for (s in sessions) runCatching { s.applyRemoved(paths.mapNotNull { s.toTreePath(fsId, it) }) }
+        }
+    }
+
+    /** A move that stopped half-way: re-check which duplicate files still exist. */
+    fun revalidateAll() { all(null).forEach { it.revalidateDups() } }
+
+    /** A rename or a move ([toFsId] null or another backend = it left this device). */
+    fun notifyMoved(fsId: String, from: String, toFsId: String?, to: String?) {
+        val sessions = all(null).ifEmpty { return }
+        scope.launch {
+            for (s in sessions) runCatching {
+                val f = s.toTreePath(fsId, from) ?: return@runCatching
+                val t = if (toFsId != null && to != null) s.toTreePath(toFsId, to) else null
+                s.applyMoved(f, t)
+            }
+        }
     }
 }
