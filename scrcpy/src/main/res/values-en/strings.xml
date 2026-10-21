@@ -332,4 +332,11 @@
     <string name="screen_off_mirror">Turn the target screen off while mirroring</string>
     <string name="device_open_tools">ADB tools (apps / processes / logcat / activation)</string>
     <string name="device_browse_files">Browse in file manager</string>
+    <string name="record_start">Record (with sound)</string>
+    <string name="record_stop">Stop recording %1$s</string>
+    <string name="record_pill">● REC %1$s · tap to stop</string>
+    <string name="record_waiting">Waiting for a keyframe…</string>
+    <string name="record_saved">Recording saved: %1$s</string>
+    <string name="record_failed">Recording failed: %1$s</string>
+    <string name="record_unsupported">This device cannot mux %1$s; switch to H.264 / H.265 in settings, or use screenrecord in Device tools</string>
 </resources>

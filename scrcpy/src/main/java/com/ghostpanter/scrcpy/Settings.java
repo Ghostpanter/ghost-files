@@ -172,6 +172,18 @@ public final class Settings {
         prefs(ctx).edit().putBoolean(STAY_AWAKE, v).apply();
     }
 
+    public static final String RECORD_DIR = "record_dir";
+
+    /** Folder for mirror recordings (absolute path), or null for Movies/双栏文件管理器. */
+    public static String recordDir(Context ctx) {
+        String v = prefs(ctx).getString(RECORD_DIR, null);
+        return v == null || v.trim().isEmpty() ? null : v.trim();
+    }
+
+    public static void setRecordDir(Context ctx, String dir) {
+        prefs(ctx).edit().putString(RECORD_DIR, dir == null ? "" : dir.trim()).apply();
+    }
+
     public static boolean screenOff(Context ctx) {
         return bool(ctx, SCREEN_OFF, false);
     }

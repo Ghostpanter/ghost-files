@@ -347,4 +347,11 @@
     <string name="screen_off_mirror">投屏时关闭目标设备屏幕（息屏投屏）</string>
     <string name="device_open_tools">ADB 工具（应用 / 进程 / 日志 / 激活）</string>
     <string name="device_browse_files">在文件管理器中浏览</string>
+    <string name="record_start">录屏（含声音）</string>
+    <string name="record_stop">停止录屏 %1$s</string>
+    <string name="record_pill">● 录屏中 %1$s · 点按停止</string>
+    <string name="record_waiting">等待关键帧…</string>
+    <string name="record_saved">录像已保存：%1$s</string>
+    <string name="record_failed">录屏失败：%1$s</string>
+    <string name="record_unsupported">此设备无法直接封装 %1$s，请在设置中改用 H.264 / H.265，或在「设备工具」中用 screenrecord 录屏</string>
 </resources>

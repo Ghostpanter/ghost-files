@@ -213,6 +213,7 @@ public final class Mirror extends Activity {
             disconnectBtn.setOnClickListener(view -> disconnectAndLeave());
         }
         setupMirrorActions();
+        setupRecording();
         updateStatusBar();
 
         // Effective tablet vs phone (Ui.isTablet honors Settings force override).
@@ -440,6 +441,85 @@ public final class Mirror extends Activity {
             }
         });
         session.start();
+    }
+
+    // ---- recording from the mirror stream ----
+
+    private Button   recordBtn;
+    private TextView recordPill;
+    private final Runnable recordTicker = new Runnable() {
+        @Override public void run() {
+            updateRecordUi();
+            if (!destroyed) ui.postDelayed(this, 1000);
+        }
+    };
+
+    private final StreamRecorder.Listener recordListener = new StreamRecorder.Listener() {
+        @Override public void onSegment(String location) {
+            runOnUiThread(() -> Toast.makeText(Mirror.this,
+                    getString(R.string.record_saved, location), Toast.LENGTH_LONG).show());
+        }
+        @Override public void onError(Exception e) {
+            runOnUiThread(() -> {
+                Toast.makeText(Mirror.this, getString(R.string.record_failed,
+                        String.valueOf(e.getMessage())), Toast.LENGTH_LONG).show();
+                updateRecordUi();
+            });
+        }
+    };
+
+    private void setupRecording() {
+        recordBtn  = findViewById(R.id.record_toggle);
+        recordPill = findViewById(R.id.record_pill);
+        if (recordBtn != null) recordBtn.setOnClickListener(v -> toggleRecording());
+        if (recordPill != null) recordPill.setOnClickListener(v -> toggleRecording());
+        ui.post(recordTicker);
+    }
+
+    private void toggleRecording() {
+        Session s = session;
+        if (s == null) return;
+        s.setRecordListener(recordListener);
+        if (s.isRecording()) {
+            // Finalizing writes the moov box; keep it off the UI thread.
+            new Thread(() -> {
+                s.stopRecording();
+                runOnUiThread(this::updateRecordUi);
+            }, "record-stop").start();
+            return;
+        }
+        try {
+            s.startRecording();
+            Toast.makeText(this, R.string.record_waiting, Toast.LENGTH_SHORT).show();
+        } catch (StreamRecorder.UnsupportedCodecException e) {
+            Toast.makeText(this, getString(R.string.record_unsupported, Wire.fourccName(e.fourcc)),
+                    Toast.LENGTH_LONG).show();
+        } catch (java.io.IOException | RuntimeException e) {
+            Toast.makeText(this, getString(R.string.record_failed, String.valueOf(e.getMessage())),
+                    Toast.LENGTH_LONG).show();
+        }
+        updateRecordUi();
+    }
+
+    private void updateRecordUi() {
+        Session s = session;
+        long since = s == null ? 0 : s.recordingSince();
+        boolean on = since > 0;
+        String clock = "";
+        if (on) {
+            long sec = Math.max(0, (System.currentTimeMillis() - since) / 1000);
+            clock = sec >= 3600
+                    ? String.format(java.util.Locale.ROOT, "%d:%02d:%02d", sec / 3600, sec / 60 % 60, sec % 60)
+                    : String.format(java.util.Locale.ROOT, "%02d:%02d", sec / 60, sec % 60);
+        }
+        if (recordBtn != null) {
+            recordBtn.setText(on ? getString(R.string.record_stop, clock) : getString(R.string.record_start));
+            recordBtn.setEnabled(s != null);
+        }
+        if (recordPill != null) {
+            recordPill.setVisibility(on ? View.VISIBLE : View.GONE);
+            if (on) recordPill.setText(getString(R.string.record_pill, clock));
+        }
     }
 
     private void disconnectAndLeave() {
@@ -723,6 +803,7 @@ public final class Mirror extends Activity {
         if (s != null) {
             // Teardown blocks on socket closes and a thread join; keep
             // it off the UI thread.
+            s.setRecordListener(null);
             new Thread(() -> s.stop(), "session-stop").start();
         }
         stopService(new Intent(this, Sessions.class));

@@ -23,6 +23,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 // (decoded through MediaCodec into PCM first).
 public final class AudioSink implements AudioFrames {
 
+    /** Decoded PCM (s16le 48 kHz stereo) with its presentation time, for the recorder. */
+    public interface PcmTap { void onPcm(byte[] pcm, int off, int len, long ptsUs); }
+    private volatile PcmTap pcmTap;
+    public void setPcmTap(PcmTap tap) { pcmTap = tap; }
+
     private static final int SAMPLE_RATE = 48_000;
     private static final int CHANNEL_OUT = AudioFormat.CHANNEL_OUT_STEREO;
     private static final int ENCODING    = AudioFormat.ENCODING_PCM_16BIT;
@@ -136,7 +141,14 @@ public final class AudioSink implements AudioFrames {
                         try { mc.releaseOutputBuffer(idx, false); }
                         catch (IllegalStateException ignored) {}
                     }
-                    if (pcm != null) queuePcm(pcm);
+                    if (pcm != null) {
+                        PcmTap tap = pcmTap;
+                        if (tap != null) {
+                            try { tap.onPcm(pcm, 0, pcm.length, info.presentationTimeUs); }
+                            catch (RuntimeException e) { Log.w("audio sink: pcm tap: %s", e); }
+                        }
+                        queuePcm(pcm);
+                    }
                 }
                 @Override public void onError(MediaCodec mc, MediaCodec.CodecException e) {
                     reportFatal(e, "audio sink: opus codec error");

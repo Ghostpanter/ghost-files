@@ -80,6 +80,21 @@
 
         <!-- Collapsed FAB: tiny so it does not cover the preview. Bottom margin
              is raised above the gesture/nav inset at runtime. -->
+        <!-- Recording indicator; tap to stop. -->
+        <TextView
+            android:id="@+id/record_pill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="@dimen/space_md"
+            android:background="@drawable/bg_record_pill"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="5dp"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:visibility="gone"
+            android:elevation="6dp"/>
+
         <Button
             android:id="@+id/mirror_menu_fab"
             android:layout_width="40dp"
@@ -126,6 +141,17 @@
                 android:paddingHorizontal="@dimen/space_lg"
                 android:text="@string/unlock_assist"
                 android:visibility="gone"/>
+
+            <Button
+                android:id="@+id/record_toggle"
+                style="@style/Button.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:minHeight="@dimen/touch_min"
+                android:minWidth="120dp"
+                android:paddingHorizontal="@dimen/space_lg"
+                android:text="@string/record_start"/>
 
             <Button
                 android:id="@+id/disconnect"

@@ -133,16 +133,94 @@ public final class Session {
 
     public synchronized void start() {
         if (runner != null || stopped) return;
+        LIVE.add(this);
         runner = new Thread(this::run, "session");
         runner.start();
     }
 
     // Current endpoint (may change after mDNS rediscovery of TLS connect port).
+    // ---- recording straight from the mirror stream (video passthrough + audio) ----
+
+    private StreamRecorder recorder;
+    private volatile StreamRecorder.Listener recordListener;
+
+    public void setRecordListener(StreamRecorder.Listener l) { recordListener = l; }
+
+    private synchronized StreamRecorder recorder() {
+        if (recorder == null) {
+            Devices.Device t = target;
+            String base = "scrcpy-" + safeName(t == null ? "device" : t.host);
+            recorder = new StreamRecorder(
+                    MediaMuxerSink.factory(ctx, base, Settings.recordDir(ctx)),
+                    new StreamRecorder.Listener() {
+                        @Override public void onSegment(String location) {
+                            StreamRecorder.Listener l = recordListener;
+                            if (l != null) l.onSegment(location);
+                        }
+                        @Override public void onError(Exception e) {
+                            StreamRecorder.Listener l = recordListener;
+                            if (l != null) l.onError(e);
+                        }
+                    });
+        }
+        return recorder;
+    }
+
+    private static String safeName(String s) {
+        String r = s.replaceAll("[^A-Za-z0-9._-]+", "_");
+        return r.isEmpty() ? "device" : r;
+    }
+
+    /** Starts recording; the file opens on the next keyframe (one is requested now). */
+    public void startRecording() throws java.io.IOException {
+        recorder().start();
+        recordingSince = System.currentTimeMillis();
+        Controller c = controller;
+        if (c != null) c.resetVideo();
+    }
+
+    /** Stops and finalizes; returns the written files (more than one after a rotation). */
+    public java.util.List<String> stopRecording() {
+        return recorder().stop();
+    }
+
+    public boolean isRecording() {
+        StreamRecorder r = recorder;
+        return r != null && r.isRecording();
+    }
+
+    private volatile long recordingSince;
+
+    /** Wall clock (ms) when the current recording was started, or 0. */
+    public long recordingSince() { return isRecording() ? recordingSince : 0; }
+
+    // ---- live registry: lets device tools reach the mirror of the same device ----
+
+    private static final java.util.Set<Session> LIVE =
+            java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+
+    /** The running mirror session for host[:port], or null. */
+    public static Session liveFor(String host, int port) {
+        for (Session s : LIVE) {
+            Devices.Device t = s.target;
+            if (t != null && !s.stopped && t.host.equals(host) && (port <= 0 || t.port == port)) return s;
+        }
+        return null;
+    }
+
     public Devices.Device getTarget() {
         return target;
     }
 
     public boolean stop() {
+        LIVE.remove(this);
+        StreamRecorder rec = recorder;
+        if (rec != null && rec.isRecording()) {
+            java.util.List<String> files = rec.stop();
+            StreamRecorder.Listener l = recordListener;
+            Log.i("session: recording finalized on stop (" + files.size() + " file(s))");
+            if (l == null) for (String f : files) Log.i("session: saved " + f);
+        }
         Thread r;
         boolean notify;
         synchronized (this) {
@@ -467,11 +545,13 @@ public final class Session {
             // Audio is optional. Failure to capture or play it must not tear
             // down video and control.
             ak = new AudioSink();
-            as = new AudioStream(s.audioIn, ak);
+            StreamRecorder rec = recorder();
+            ak.setPcmTap(rec::onPcm);
+            as = new AudioStream(s.audioIn, new RecordingTaps.Audio(ak, rec));
 
             vk = new VideoSink(surface, ended, ctrl::resetVideo);
             Controller ctrlRef = ctrl;
-            vs = new VideoStream(s.videoIn, vk,
+            vs = new VideoStream(s.videoIn, new RecordingTaps.Video(vk, rec),
                     (w, h) -> reportConnected(ctrlRef, w, h));
             vs.setOnEnd(ended);
 

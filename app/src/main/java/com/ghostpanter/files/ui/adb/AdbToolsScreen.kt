@@ -95,6 +95,9 @@ import com.ghostpanter.files.ui.Screen
 import com.ghostpanter.files.t
 import com.ghostpanter.scrcpy.Devices
 import com.ghostpanter.scrcpy.Settings
+import com.ghostpanter.scrcpy.MediaMuxerSink
+import com.ghostpanter.scrcpy.Session
+import com.ghostpanter.scrcpy.StreamRecorder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -114,6 +117,23 @@ fun outDir(ctx: Context, kind: String): File {
     val d = File(Environment.getExternalStoragePublicDirectory(kind), "GhostFiles")
     if (d.isDirectory || d.mkdirs()) return d
     return (ctx.getExternalFilesDir(kind) ?: ctx.filesDir).also { it.mkdirs() }
+}
+
+/** Folder for screen recordings: the configured one, else Movies/双栏文件管理器. */
+fun recordOutDir(ctx: Context): File {
+    Settings.recordDir(ctx)?.let { File(it) }?.let { if (it.isDirectory || it.mkdirs()) return it }
+    @Suppress("DEPRECATION")
+    val d = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), MediaMuxerSink.DEFAULT_FOLDER)
+    if (d.isDirectory || d.mkdirs()) return d
+    return outDir(ctx, Environment.DIRECTORY_MOVIES)
+}
+
+/** The running mirror of this serial, if any — recording then comes straight from its stream. */
+fun liveMirror(serial: String): Session? {
+    val d = Devices.parseAddress(serial)
+    if (d != null) return Session.liveFor(d.host, d.port)
+    val host = serial.substringBeforeLast(':')
+    return Session.liveFor(host, serial.substringAfterLast(':', "").toIntOrNull() ?: 0)
 }
 
 fun stamp(): String = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
@@ -195,6 +215,19 @@ fun OverviewPane(toast: (String) -> Unit, serial: String, previewInfo: List<Info
     var shot by remember { mutableStateOf<Pair<File, ImageBitmap>?>(null) }
     var rec by remember { mutableStateOf<Process?>(null) }
     var recSec by remember { mutableIntStateOf(0) }
+    var liveRec by remember { mutableStateOf<Session?>(null) }
+    var recDir by remember { mutableStateOf(Settings.recordDir(ctx)) }
+    var editRecDir by remember { mutableStateOf<String?>(null) }
+    liveRec?.let { live ->
+        LaunchedEffect(live) {
+            while (isActive) {
+                val since = live.recordingSince()
+                if (since == 0L) { liveRec = null; break }
+                recSec = ((System.currentTimeMillis() - since) / 1000).toInt()
+                delay(500)
+            }
+        }
+    }
     var confirm by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var rebootMenu by remember { mutableStateOf(false) }
     var stayAwake by remember { mutableStateOf(Settings.stayAwake(ctx)) }
@@ -225,6 +258,18 @@ fun OverviewPane(toast: (String) -> Unit, serial: String, previewInfo: List<Info
     }
 
     fun startRecord() {
+        // Mirroring this device: record its stream directly (no time limit, with sound).
+        liveMirror(serial)?.let { live ->
+            val started = try { live.startRecording(); true }
+            catch (e: StreamRecorder.UnsupportedCodecException) {
+                toast(t("当前投屏编码无法直接封装，改用 screenrecord", "Mirror codec can't be muxed here; using screenrecord")); false
+            } catch (e: Exception) { toast(t("录屏失败：", "Recording failed: ") + e.message); return }
+            if (started) {
+                recSec = 0; liveRec = live
+                toast(t("正在从投屏画面录制（含声音）", "Recording from the mirror stream (with sound)"))
+                return
+            }
+        }
         val remote = "/data/local/tmp/gf-rec-${System.nanoTime()}.mp4"
         scope.launch {
             val p = io { dev.runner().start("exec screenrecord --bit-rate 8000000 --time-limit 180 $remote") }
@@ -237,7 +282,7 @@ fun OverviewPane(toast: (String) -> Unit, serial: String, previewInfo: List<Info
             busy = t("正在取回录像…", "Pulling recording…")
             delay(600)
             io {
-                val f = File(outDir(ctx, Environment.DIRECTORY_MOVIES), "screenrecord-${safeName(adbLabel(serial))}-${stamp()}.mp4")
+                val f = File(recordOutDir(ctx), "screenrecord-${safeName(adbLabel(serial))}-${stamp()}.mp4")
                 try { f.outputStream().use { dev.pull(remote, it) } } finally { runCatching { dev.sh("rm -f $remote") } }
                 if (f.length() == 0L) { f.delete(); throw java.io.IOException(com.ghostpanter.files.t("录像为空（目标可能不支持 screenrecord）", "Empty recording (screenrecord unsupported?)")) }
                 MediaScannerConnection.scanFile(ctx, arrayOf(f.path), null, null)
@@ -249,6 +294,15 @@ fun OverviewPane(toast: (String) -> Unit, serial: String, previewInfo: List<Info
     }
 
     fun stopRecord() {
+        liveRec?.let { live ->
+            liveRec = null
+            scope.launch {
+                io { live.stopRecording() }
+                    .onSuccess { files -> if (files.isNotEmpty()) toast(t("录像已保存：", "Recording saved: ") + files.joinToString("、")) }
+                    .onFailure { toast(t("录屏失败：", "Recording failed: ") + it.message) }
+            }
+            return
+        }
         scope.launch { io { dev.sh("pkill -INT screenrecord 2>/dev/null || kill -2 \$(pidof screenrecord)", timeoutMs = 10_000) } }
     }
 
@@ -288,7 +342,7 @@ fun OverviewPane(toast: (String) -> Unit, serial: String, previewInfo: List<Info
                     Spacer(Modifier.size(8.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         GhostChip({ screenshot() }, { Text(t("截图", "Screenshot")) }, leadingIcon = { Icon(Icons.Filled.PhotoCamera, null) })
-                        if (rec == null) GhostChip({ startRecord() }, { Text(t("录屏", "Record")) }, leadingIcon = { Icon(Icons.Filled.FiberManualRecord, null) })
+                        if (rec == null && liveRec == null) GhostChip({ startRecord() }, { Text(t("录屏", "Record")) }, leadingIcon = { Icon(Icons.Filled.FiberManualRecord, null) })
                         else GhostChip({ stopRecord() }, { Text(t("停止录屏 ", "Stop ") + "%d:%02d".format(recSec / 60, recSec % 60)) }, leadingIcon = { Icon(Icons.Filled.Stop, null) })
                         GhostChip({ confirm = t("开启网络 ADB（tcpip 5555）？目标的 adbd 会重启并监听 5555 端口，同一局域网内任何人都可尝试连接（仍需授权）。", "Enable network ADB (tcpip 5555)? adbd restarts listening on 5555; anyone on the LAN can try to connect (authorization still required).") to { tcpip() } },
                             { Text(t("无线 ADB 5555", "TCP/IP 5555")) }, leadingIcon = { Icon(Icons.Filled.Wifi, null) })
@@ -307,6 +361,10 @@ fun OverviewPane(toast: (String) -> Unit, serial: String, previewInfo: List<Info
                     ToggleRow(t("控制时保持目标常亮", "Keep target awake while controlling"), stayAwake) { stayAwake = it; Settings.setStayAwake(ctx, it) }
                     ToggleRow(t("投屏时关闭目标屏幕", "Turn target screen off while mirroring"), screenOff) { screenOff = it; Settings.setScreenOff(ctx, it) }
                     ToggleRow(t("目标已 Root：进程 / 文件操作走 su", "Target rooted: use su for processes / files"), rootOn) { rootOn = it; AdbPool.setRootEnabled(serial, it) }
+                    Row(Modifier.fillMaxWidth().clickable { editRecDir = recDir ?: "" }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(t("录屏保存位置", "Recordings folder"), Modifier.weight(1f), fontSize = 14.sp)
+                        Text(recDir ?: MediaMuxerSink.defaultLocationLabel(), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, maxLines = 1)
+                    }
                     shot?.let { (f, bmp) ->
                         Spacer(Modifier.size(8.dp))
                         Image(bmp, f.name, Modifier.heightIn(max = 240.dp).clickable { shot = null })
@@ -337,6 +395,23 @@ fun OverviewPane(toast: (String) -> Unit, serial: String, previewInfo: List<Info
                 }
             }
         }
+    }
+    editRecDir?.let { cur ->
+        AlertDialog(onDismissRequest = { editRecDir = null },
+            title = { Text(t("录屏保存位置", "Recordings folder")) },
+            text = {
+                Column {
+                    GhostTextField(cur, { editRecDir = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("/sdcard/" + MediaMuxerSink.defaultLocationLabel()) })
+                    Spacer(Modifier.size(6.dp))
+                    Text(t("留空则保存到 ", "Leave empty for ") + MediaMuxerSink.defaultLocationLabel(), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                }
+            },
+            confirmButton = { TextButton({
+                val v = cur.trim()
+                Settings.setRecordDir(ctx, v); recDir = Settings.recordDir(ctx); editRecDir = null
+            }) { Text(t("保存", "Save")) } },
+            dismissButton = { TextButton({ editRecDir = null }) { Text(t("取消", "Cancel")) } })
     }
     confirm?.let { (msg, go) ->
         AlertDialog(onDismissRequest = { confirm = null }, text = { Text(msg) },
