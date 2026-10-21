@@ -285,6 +285,18 @@ class SpaceTreeBuilder(rootPath: String, val smallBytes: Long = 128 * 1024, val 
         n.children?.forEach { indexDirs(it) }
     }
 
+    /**
+     * Sub-directory [name] of [parent] at [path], registered so other sources writing into the same
+     * tree (Shizuku stream beside a local walk) find it instead of creating a twin. Caller holds the lock.
+     */
+    fun dirChild(parent: SpaceNode, name: String, path: String): SpaceNode {
+        dirs[path]?.let { return it }
+        val c = SpaceNode(name, NodeKind.DIR)
+        parent.addChild(c)
+        dirs[path] = c
+        return c
+    }
+
     fun markUnreadable(path: String) = synchronized(tree.lock) { ensureDir(path)?.let { it.flags = it.flags or NodeFlags.UNREADABLE } }
 
     fun markComplete(dir: SpaceNode) { dir.flags = dir.flags or NodeFlags.COMPLETE }

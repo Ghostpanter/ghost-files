@@ -234,7 +234,7 @@ class LocalWalker(
                     when (c.kind) {
                         NodeKind.FILE -> b.addToDir(dir, c.name, c.size, c.mtime)
                         NodeKind.SMALL_FILES -> b.graft(dir, copyLeaf(c))
-                        NodeKind.DIR -> { val n = SpaceNode(c.name, NodeKind.DIR); dir.addChild(n); n.flags = c.flags and NodeFlags.UNREADABLE; subs.add(n to c) }
+                        NodeKind.DIR -> { val n = b.dirChild(dir, c.name, VPath.join(path, c.name)); n.mtime = c.mtime; subs.add(n to c) }
                         else -> {}
                     }
                 }
@@ -243,7 +243,7 @@ class LocalWalker(
             }
             for ((n, c) in subs) {
                 val cp = VPath.join(path, c.name)
-                if (!skip(cp) && !n.has(NodeFlags.UNREADABLE)) sub(n, cp, c)
+                if (!skip(cp)) sub(n, cp, c)
             }
             return
         }
@@ -272,8 +272,7 @@ class LocalWalker(
             for ((n, m) in dirs) {
                 val cp = VPath.join(path, n)
                 if (skip(cp)) continue
-                val c = SpaceNode(n, NodeKind.DIR); c.mtime = m
-                dir.addChild(c)
+                val c = b.dirChild(dir, n, cp); c.mtime = m
                 children.add(c to cp)
             }
             if (ok) b.markComplete(dir)
@@ -307,8 +306,8 @@ object VfsWalker {
                 for (e in list) {
                     if (e.isLink) continue
                     if (e.isDirectory) {
-                        val c = SpaceNode(e.name, NodeKind.DIR); c.mtime = e.lastModified
-                        dir.addChild(c); subs.add(c to e.path)
+                        val c = b.dirChild(dir, e.name, VPath.join(path, e.name)); c.mtime = e.lastModified
+                        subs.add(c to VPath.join(path, e.name))
                     } else b.addToDir(dir, e.name, e.size, e.lastModified)
                 }
                 b.markComplete(dir)

@@ -246,6 +246,26 @@ class SpaceTreeTest {
         assertEquals(777, b.root.size)
     }
 
+    @Test fun walkerAndShellStreamShareOneTree() {
+        // Shizuku tier: local walk skips Android/data, a shell stream fills it into the same tree.
+        val d = tempDir("space")
+        File(d, "Android/data/com.a.b/cache").mkdirs(); File(d, "Android/media").mkdirs()
+        File(d, "Android/data/com.a.b/cache/c.bin").writeBytes(ByteArray(300_000))
+        File(d, "Android/media/m.mp4").writeBytes(ByteArray(200_000))
+        File(d, "DCIM").mkdirs(); File(d, "DCIM/p.jpg").writeBytes(ByteArray(150_000))
+        val b = SpaceTreeBuilder(d.path)
+        val data = "${d.path}/Android/data"
+        val t = Thread { ShellStreamScan.run(sh, listOf(data), b, ScanControl()) }.also { it.start() }
+        LocalWalker().walk(d.path, b, ScanControl(), skip = { it == data })
+        t.join()
+        assertEquals(1, b.root.children!!.count { it.name == "Android" })
+        val android = b.root.child("Android")!!
+        assertEquals(1, android.children!!.count { it.name == "data" })
+        assertEquals(650_000, b.root.size)
+        assertEquals(500_000, android.size)
+        assertEquals(300_000, StorageAggregate.appSpecificBytes(b.root) - 200_000)
+    }
+
     @Test fun duplicatesBySizeThenHash() {
         val files = mapOf(
             "/a" to ByteArray(300_000) { 1 }, "/b" to ByteArray(300_000) { 1 },
