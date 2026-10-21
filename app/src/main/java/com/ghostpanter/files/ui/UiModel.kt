@@ -73,6 +73,15 @@ interface PaneHost {
     fun openEntry(pane: PaneState, e: FileEntry) {}
     /** content:// URI for dragging [e] into other apps (local files only). */
     fun contentUri(fsId: String, e: FileEntry): android.net.Uri? = null
+
+    /** Package an app folder stands for (Android/data/<pkg>, /data/data/<pkg>…), or null. */
+    fun appPackage(fsId: String, dir: String, e: FileEntry): String? = null
+
+    /** Cached app label/icon for [pkg] on [fsId]'s device; null if not loaded (or not installed). */
+    fun cachedApp(fsId: String, pkg: String): AppMeta? = null
+
+    /** Loads label/icon off the main thread; null when the package is not installed there. */
+    suspend fun loadApp(fsId: String, pkg: String): AppMeta? = null
 }
 
 /** Local drag-and-drop payload (dual-pane drag between panes). */

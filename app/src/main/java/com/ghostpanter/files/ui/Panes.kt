@@ -343,6 +343,10 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
     val showThumbs = host.prefs.thumbnails
     val ctx = LocalContext.current
     val parentOffset = if (tab.path != "/") 1 else 0
+    // Package-named folders get their app's icon; probe once per listing, not per row.
+    val appParent = remember(tab.fsId, tab.path, entries.size) {
+        entries.any { it.isDirectory && host.appPackage(tab.fsId, tab.path, it) != null }
+    }
     LaunchedEffect(tab.highlight, entries.size) {
         val h = tab.highlight ?: return@LaunchedEffect
         val idx = entries.indexOfFirst { it.path == h }
@@ -412,6 +416,9 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
                         iconSize = spec.gridIcon, showThumbs = showThumbs, spec = spec,
                         dragData = if (dragAndDrop) ({ dragData(e) }) else null,
                         touchDrag = dragAndDrop && tab.selecting && sel,
+                        appPkg = if (appParent) host.appPackage(tab.fsId, tab.path, e) else null,
+                        appCached = { p -> host.cachedApp(tab.fsId, p) },
+                        appLoad = { p -> host.loadApp(tab.fsId, p) },
                     )
                 }
             }
@@ -437,6 +444,9 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
                     iconSize = spec.icon, showThumbs = showThumbs, spec = spec,
                     dragData = if (dragAndDrop) ({ dragData(e) }) else null,
                     touchDrag = dragAndDrop && tab.selecting && sel,
+                    appPkg = if (appParent) host.appPackage(tab.fsId, tab.path, e) else null,
+                    appCached = { p -> host.cachedApp(tab.fsId, p) },
+                    appLoad = { p -> host.loadApp(tab.fsId, p) },
                 )
             }
         }
@@ -489,8 +499,14 @@ fun FileRow(
     /** Tablet frame: drag source (mouse drag; touch long-press-drag on selected rows). */
     dragData: (() -> DragAndDropTransferData?)? = null,
     touchDrag: Boolean = false,
+    /** App folder: package name, plus cached / async lookups of its label and icon. */
+    appPkg: String? = null,
+    appCached: ((String) -> AppMeta?)? = null,
+    appLoad: (suspend (String) -> AppMeta?)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
+    var app by remember(appPkg) { mutableStateOf(appPkg?.let { appCached?.invoke(it) }) }
+    if (appPkg != null && app == null && appLoad != null) LaunchedEffect(appPkg) { app = appLoad(appPkg) }
     val bg = when {
         selected -> cs.primaryContainer
         highlighted -> cs.surfaceVariant
@@ -569,7 +585,16 @@ fun FileRow(
         }
         Box(Modifier.size(iconSize)) {
             val tb = thumbBmp
-            if (tb != null) {
+            val appIcon = app?.icon
+            if (appIcon != null) {
+                Image(appIcon.asImageBitmap(), null, Modifier.size(iconSize).padding(iconSize / 14))
+                Icon(
+                    Icons.Rounded.Folder, null,
+                    Modifier.size(iconSize * 0.46f).align(Alignment.BottomEnd)
+                        .background(cs.surface, RoundedCornerShape(iconSize / 8)).padding(1.dp),
+                    tint = tint,
+                )
+            } else if (tb != null) {
                 val apk = e.extension.lowercase() in setOf("apk", "apks", "xapk", "apkm")
                 Image(
                     tb.asImageBitmap(), null,
@@ -596,7 +621,12 @@ fun FileRow(
                 Text(
                     run {
                         val time = if (wide) formatTimeShort(e.lastModified) else formatTimeCompact(e.lastModified)
-                        if (e.isDirectory) time else formatSize(e.size) + " · " + time
+                        val a = app
+                        when {
+                            a != null && appPkg != null -> a.label + " · " + appPkg
+                            e.isDirectory -> time
+                            else -> formatSize(e.size) + " · " + time
+                        }
                     },
                     fontSize = spec.metaSp.sp, color = cs.outline, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                 )

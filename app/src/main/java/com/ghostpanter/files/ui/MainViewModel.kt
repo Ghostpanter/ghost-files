@@ -411,6 +411,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
         androidx.core.content.FileProvider.getUriForFile(app, app.packageName + ".files", f)
     }.getOrNull()
 
+    /** Scope for app lookups: this device, an ADB target, or none (network shares). */
+    private fun appScope(fsId: String): String? = when {
+        com.ghostpanter.adb.AdbFs.isAdbId(fsId) -> "adb:" + com.ghostpanter.adb.AdbFs.serialOf(fsId)
+        fsId.startsWith("net:") -> null
+        else -> AppIconCache.LOCAL
+    }
+
+    /** Absolute-ish path of [dir] on its device (SAF trees are prefixed with their document path). */
+    private fun appPath(fsId: String, dir: String): String =
+        if (fsId.startsWith("saf:")) {
+            val doc = runCatching { android.provider.DocumentsContract.getTreeDocumentId(android.net.Uri.parse(fsId.removePrefix("saf:"))) }.getOrNull()
+            "/" + doc?.substringAfter(':', "").orEmpty().trim('/') + (if (dir == "/") "" else dir)
+        } else dir
+
+    override fun appPackage(fsId: String, dir: String, e: FileEntry): String? {
+        if (!e.isDirectory || appScope(fsId) == null) return null
+        return com.ghostpanter.files.core.AppFolders.packageOf(appPath(fsId, dir), e.name)
+    }
+
+    override fun cachedApp(fsId: String, pkg: String): AppMeta? =
+        appScope(fsId)?.let { AppIconCache.peek(it, pkg) }?.takeUnless { AppIconCache.isMissing(it) }
+
+    override suspend fun loadApp(fsId: String, pkg: String): AppMeta? =
+        appScope(fsId)?.let { AppIconCache.load(getApplication(), it, pkg) }
+
     override fun textPreview(fsId: String, e: FileEntry): String? {
         if (e.isDirectory || e.size > 8L * 1024 * 1024) return null
         if (e.extension !in TEXT_EXT && e.extension !in PREVIEW_MD) return null
