@@ -182,10 +182,10 @@ fun SmbShareDialog(vm: MainViewModel, h: LanHost, svc: LanService, dismiss: () -
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
                 if (needAuth || user.isNotEmpty()) {
-                    OutlinedTextField(user, { user = it }, label = { Text(t("用户名", "Username")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(pass, { pass = it }, label = { Text(t("密码", "Password")) }, singleLine = true,
+                    GhostTextField(user, { user = it }, label = { Text(t("用户名", "Username")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    GhostTextField(pass, { pass = it }, label = { Text(t("密码", "Password")) }, singleLine = true,
                         visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(domain, { domain = it }, label = { Text(t("域（可选）", "Domain (optional)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    GhostTextField(domain, { domain = it }, label = { Text(t("域（可选）", "Domain (optional)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     TextButton(onClick = { load() }, enabled = !loading && user.isNotBlank()) { Text(t("登录并列出共享", "Sign in & list")) }
                 }
                 shares?.let { list ->

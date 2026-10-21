@@ -84,7 +84,7 @@ fun NameDialog(title: String, initial: String, dismiss: () -> Unit, selectAll: B
         onDismissRequest = dismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(text, { text = it }, singleLine = true, modifier = Modifier.fillMaxWidth().focusRequester(focus))
+            GhostTextField(text, { text = it }, singleLine = true, modifier = Modifier.fillMaxWidth().focusRequester(focus))
         },
         confirmButton = { TextButton(onClick = { onOk(text.text.trim()); dismiss() }) { Text(t("确定", "OK")) } },
         dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
@@ -179,7 +179,7 @@ private fun ChmodDialog(vm: MainViewModel, tab: TabState, e: FileEntry, dismiss:
                     }
                 }
                 if (e.isDirectory) Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(recursive, { recursive = it }); Text(t("应用到子项", "Recursive")) }
-                if (isShell) OutlinedTextField(owner, { owner = it }, label = { Text(t("所有者:组 (chown)", "owner:group")) }, singleLine = true)
+                if (isShell) GhostTextField(owner, { owner = it }, label = { Text(t("所有者:组 (chown)", "owner:group")) }, singleLine = true)
             }
         },
         confirmButton = {
@@ -204,7 +204,7 @@ fun ExtractDialog(e: FileEntry, onDismiss: () -> Unit, onExtract: (Boolean, Stri
             Column {
                 Text(t("解压到：", "Extract to:"))
                 if (e.name.endsWith(".7z", true) || e.name.endsWith(".rar", true)) {
-                    OutlinedTextField(pw, { pw = it }, label = { Text(t("密码（可选）", "Password (optional)")) }, singleLine = true,
+                    GhostTextField(pw, { pw = it }, label = { Text(t("密码（可选）", "Password (optional)")) }, singleLine = true,
                         visualTransformation = PasswordVisualTransformation())
                 }
             }
@@ -276,7 +276,7 @@ fun ServerEditor(vm: MainViewModel, existing: ServerConfig?, dismiss: () -> Unit
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 ExposedDropdownMenuBox(expanded = protoMenu, onExpandedChange = { protoMenu = it }) {
-                    OutlinedTextField(
+                    GhostTextField(
                         protocol.label, {}, readOnly = true, label = { Text(t("协议", "Protocol")) },
                         modifier = Modifier.menuAnchor().fillMaxWidth(),
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(protoMenu) },
@@ -285,22 +285,22 @@ fun ServerEditor(vm: MainViewModel, existing: ServerConfig?, dismiss: () -> Unit
                         Protocol.entries.forEach { p -> DropdownMenuItem(text = { Text(p.label) }, onClick = { protocol = p; protoMenu = false }) }
                     }
                 }
-                OutlinedTextField(name, { name = it }, label = { Text(t("名称（可选）", "Name (optional)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                GhostTextField(name, { name = it }, label = { Text(t("名称（可选）", "Name (optional)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Row {
-                    OutlinedTextField(host, { host = it }, label = { Text(t("主机 / IP", "Host / IP")) }, singleLine = true, modifier = Modifier.weight(2f))
+                    GhostTextField(host, { host = it }, label = { Text(t("主机 / IP", "Host / IP")) }, singleLine = true, modifier = Modifier.weight(2f))
                     Spacer(Modifier.width(6.dp))
-                    OutlinedTextField(port, { port = it.filter(Char::isDigit) }, label = { Text("${t("端口", "Port")} ${protocol.defaultPort}") }, singleLine = true,
+                    GhostTextField(port, { port = it.filter(Char::isDigit) }, label = { Text("${t("端口", "Port")} ${protocol.defaultPort}") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
                 }
                 if (protocol != Protocol.SFTP) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { anonymous = !anonymous }) {
                     Checkbox(anonymous, { anonymous = it }); Text(t("匿名 / 访客", "Anonymous / guest"))
                 }
                 if (!anonymous || protocol == Protocol.SFTP) {
-                    OutlinedTextField(user, { user = it }, label = { Text(t("用户名", "Username")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(pass, { pass = it }, label = { Text(if (protocol == Protocol.SFTP && key.isNotBlank()) t("私钥口令", "Key passphrase") else t("密码", "Password")) },
+                    GhostTextField(user, { user = it }, label = { Text(t("用户名", "Username")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    GhostTextField(pass, { pass = it }, label = { Text(if (protocol == Protocol.SFTP && key.isNotBlank()) t("私钥口令", "Key passphrase") else t("密码", "Password")) },
                         singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
                 }
-                OutlinedTextField(
+                GhostTextField(
                     path, { path = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     label = {
                         Text(when (protocol) {
@@ -340,23 +340,23 @@ fun ServerEditor(vm: MainViewModel, existing: ServerConfig?, dismiss: () -> Unit
                     }
                 }
                 when (protocol) {
-                    Protocol.SMB -> OutlinedTextField(domain, { domain = it }, label = { Text(t("域（可选）", "Domain (optional)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Protocol.SMB -> GhostTextField(domain, { domain = it }, label = { Text(t("域（可选）", "Domain (optional)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Protocol.FTP, Protocol.FTPS -> {
-                        OutlinedTextField(encoding, { encoding = it }, label = { Text(t("编码 (UTF-8 / GBK)", "Encoding")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        GhostTextField(encoding, { encoding = it }, label = { Text(t("编码 (UTF-8 / GBK)", "Encoding")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(passive, { passive = it }); Text(t("被动模式 (PASV)", "Passive mode")) }
                     }
                     Protocol.SFTP -> {
-                        OutlinedTextField(key, { key = it }, label = { Text(t("私钥 (可选，粘贴 OpenSSH/PEM)", "Private key (optional)")) },
+                        GhostTextField(key, { key = it }, label = { Text(t("私钥 (可选，粘贴 OpenSSH/PEM)", "Private key (optional)")) },
                             minLines = 2, maxLines = 4, modifier = Modifier.fillMaxWidth(), textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp))
                         Text(t("ProxyJump（跳板机，可选）", "ProxyJump (optional)"), fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.padding(top = 8.dp))
                         Row {
-                            OutlinedTextField(jumpHost, { jumpHost = it }, label = { Text(t("跳板主机", "Jump host")) }, singleLine = true, modifier = Modifier.weight(2f))
+                            GhostTextField(jumpHost, { jumpHost = it }, label = { Text(t("跳板主机", "Jump host")) }, singleLine = true, modifier = Modifier.weight(2f))
                             Spacer(Modifier.width(6.dp))
-                            OutlinedTextField(jumpPort, { jumpPort = it.filter(Char::isDigit) }, label = { Text("22") }, singleLine = true, modifier = Modifier.weight(1f))
+                            GhostTextField(jumpPort, { jumpPort = it.filter(Char::isDigit) }, label = { Text("22") }, singleLine = true, modifier = Modifier.weight(1f))
                         }
-                        OutlinedTextField(jumpUser, { jumpUser = it }, label = { Text(t("跳板用户（默认同目标）", "Jump user (default=target)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(jumpPass, { jumpPass = it }, label = { Text(t("跳板密码", "Jump password")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(jumpKey, { jumpKey = it }, label = { Text(t("跳板私钥（可选）", "Jump private key")) },
+                        GhostTextField(jumpUser, { jumpUser = it }, label = { Text(t("跳板用户（默认同目标）", "Jump user (default=target)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        GhostTextField(jumpPass, { jumpPass = it }, label = { Text(t("跳板密码", "Jump password")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        GhostTextField(jumpKey, { jumpKey = it }, label = { Text(t("跳板私钥（可选）", "Jump private key")) },
                             minLines = 2, maxLines = 3, modifier = Modifier.fillMaxWidth(), textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp))
                     }
                     else -> Unit
@@ -417,8 +417,8 @@ fun SymlinkDialog(vm: MainViewModel, tab: TabState, dismiss: () -> Unit) {
         text = {
             Column {
                 Text(t("在当前目录创建链接。本机普通目录可能无权限，失败时请用 Root/Shizuku。", "May need Root/Shizuku."), fontSize = 12.sp)
-                OutlinedTextField(link, { link = it }, singleLine = true, label = { Text(t("链接名", "Link name")) }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(target, { target = it }, singleLine = true, label = { Text(t("目标路径", "Target path")) }, modifier = Modifier.fillMaxWidth())
+                GhostTextField(link, { link = it }, singleLine = true, label = { Text(t("链接名", "Link name")) }, modifier = Modifier.fillMaxWidth())
+                GhostTextField(target, { target = it }, singleLine = true, label = { Text(t("目标路径", "Target path")) }, modifier = Modifier.fillMaxWidth())
             }
         },
         confirmButton = { TextButton(enabled = link.isNotBlank() && target.isNotBlank(), onClick = { vm.createSymlink(tab, link, target); dismiss() }) { Text(t("创建", "Create")) } },
@@ -435,7 +435,7 @@ fun RemountDialog(vm: MainViewModel, dismiss: () -> Unit) {
         text = {
             Column {
                 Text(t("危险操作：可能导致无法开机。改完文件后请尽快改回只读。", "Dangerous — remount ro afterwards."), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                OutlinedTextField(mp, { mp = it }, singleLine = true, label = { Text(t("挂载点", "Mount point")) }, modifier = Modifier.fillMaxWidth())
+                GhostTextField(mp, { mp = it }, singleLine = true, label = { Text(t("挂载点", "Mount point")) }, modifier = Modifier.fillMaxWidth())
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (p in listOf("/system", "/vendor", "/product", "/odm", "/data")) GhostChip({ mp = p }, { Text(p) })
                 }
@@ -473,7 +473,7 @@ fun ZipEditDialog(vm: MainViewModel, tab: TabState, entry: FileEntry, dismiss: (
         title = { Text(t("编辑 ZIP 内文件", "Edit ZIP contents")) },
         text = {
             Column(Modifier.heightIn(max = 420.dp)) {
-                OutlinedTextField(password, { password = it }, singleLine = true, label = { Text(t("密码（如有）", "Password")) }, modifier = Modifier.fillMaxWidth())
+                GhostTextField(password, { password = it }, singleLine = true, label = { Text(t("密码（如有）", "Password")) }, modifier = Modifier.fillMaxWidth())
                 when {
                     err != null -> Text(err!!, color = MaterialTheme.colorScheme.error)
                     entries == null -> CircularProgressIndicator()
@@ -546,7 +546,7 @@ fun SplitFileDialog(vm: MainViewModel, tab: TabState, entry: FileEntry, dismiss:
         text = {
             Column {
                 Text(entry.name, fontSize = 12.sp)
-                OutlinedTextField(mb, { mb = it.filter(Char::isDigit).take(6) }, singleLine = true,
+                GhostTextField(mb, { mb = it.filter(Char::isDigit).take(6) }, singleLine = true,
                     label = { Text(t("每卷大小（MB）", "Part size (MB)")) }, modifier = Modifier.fillMaxWidth())
             }
         },
@@ -568,7 +568,7 @@ fun ArchiveTestDialog(vm: MainViewModel, tab: TabState, entry: FileEntry, dismis
         text = {
             Column {
                 Text(entry.name)
-                OutlinedTextField(password, { password = it }, singleLine = true,
+                GhostTextField(password, { password = it }, singleLine = true,
                     label = { Text(t("密码（如有）", "Password")) }, modifier = Modifier.fillMaxWidth())
             }
         },
@@ -589,7 +589,7 @@ fun PasswordOpDialog(vm: MainViewModel, tab: TabState, entry: FileEntry, op: Str
         text = {
             Column {
                 Text(entry.name, fontSize = 12.sp)
-                OutlinedTextField(password, { password = it }, singleLine = true,
+                GhostTextField(password, { password = it }, singleLine = true,
                     label = { Text(t("密码", "Password")) },
                     visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth())

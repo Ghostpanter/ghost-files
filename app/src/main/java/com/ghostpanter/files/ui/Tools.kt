@@ -88,7 +88,7 @@ fun HashDialog(vm: MainViewModel, tab: TabState, entry: FileEntry, dismiss: () -
                                 IconButton(onClick = { copyToClipboard(ctx, a.label, v); vm.toast(t("已复制 ${a.label}", "Copied")) }) { Icon(Icons.Filled.ContentCopy, null) }
                             }
                         }
-                        OutlinedTextField(expected, { expected = it }, label = { Text(t("粘贴校验值进行比对", "Paste hash to compare")) },
+                        GhostTextField(expected, { expected = it }, label = { Text(t("粘贴校验值进行比对", "Paste hash to compare")) },
                             singleLine = true, modifier = Modifier.fillMaxWidth())
                         if (expected.isNotBlank()) {
                             val m = Checksums.match(r, expected)
@@ -124,7 +124,7 @@ fun CompressDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>, d
         title = { Text(t("压缩", "Compress")) },
         text = {
             Column {
-                OutlinedTextField(name, { name = it }, singleLine = true, label = { Text(t("文件名", "Name")) },
+                GhostTextField(name, { name = it }, singleLine = true, label = { Text(t("文件名", "Name")) },
                     suffix = { Text(Archives.extensionOf(kind)) }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -132,7 +132,7 @@ fun CompressDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>, d
                 }
                 if (kind == Archives.Kind.ZIP || kind == Archives.Kind.SEVEN_Z) {
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
+                    GhostTextField(
                         password, { password = it }, singleLine = true,
                         label = { Text(t("密码（留空=不加密）", "Password (empty=none)")) },
                         visualTransformation = if (showPw) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
@@ -144,7 +144,7 @@ fun CompressDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>, d
                 }
                 if (kind == Archives.Kind.ZIP) {
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
+                    GhostTextField(
                         volumeMb, { volumeMb = it.filter(Char::isDigit).take(6) }, singleLine = true,
                         label = { Text(t("分卷大小 MB（留空=不分卷）", "Split size MB (empty=off)")) },
                         modifier = Modifier.fillMaxWidth(),
@@ -187,7 +187,7 @@ fun BatchRenameDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>
         title = { Text(t("批量重命名（${entries.size} 项）", "Batch rename (${entries.size})")) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                OutlinedTextField(template, { template = it }, singleLine = true, label = { Text(t("模板", "Template")) }, modifier = Modifier.fillMaxWidth())
+                GhostTextField(template, { template = it }, singleLine = true, label = { Text(t("模板", "Template")) }, modifier = Modifier.fillMaxWidth())
                 Text(t("可用：{name} 文件名 {ext} 扩展名 {n} 序号 {n:3} 补零序号 {date} {time} {parent}", "Tokens: {name} {ext} {n} {n:3} {date} {time} {parent}"), fontSize = 11.sp)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     for ((label, v) in listOf(t("原名", "Original") to "{name}.{ext}", t("序号", "Number") to "{n:3}.{ext}",
@@ -196,14 +196,14 @@ fun BatchRenameDialog(vm: MainViewModel, tab: TabState, entries: List<FileEntry>
                     }
                 }
                 Row {
-                    OutlinedTextField(find, { find = it }, singleLine = true, label = { Text(t("查找", "Find")) }, modifier = Modifier.weight(1f))
+                    GhostTextField(find, { find = it }, singleLine = true, label = { Text(t("查找", "Find")) }, modifier = Modifier.weight(1f))
                     Spacer(Modifier.width(6.dp))
-                    OutlinedTextField(replace, { replace = it }, singleLine = true, label = { Text(t("替换为", "Replace")) }, modifier = Modifier.weight(1f))
+                    GhostTextField(replace, { replace = it }, singleLine = true, label = { Text(t("替换为", "Replace")) }, modifier = Modifier.weight(1f))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(regex, { regex = it }); Text(t("正则", "Regex"))
                     Spacer(Modifier.width(8.dp))
-                    OutlinedTextField(start, { start = it.filter(Char::isDigit).take(6) }, singleLine = true, label = { Text(t("起始序号", "Start")) }, modifier = Modifier.width(110.dp))
+                    GhostTextField(start, { start = it.filter(Char::isDigit).take(6) }, singleLine = true, label = { Text(t("起始序号", "Start")) }, modifier = Modifier.width(110.dp))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     GhostFilterChip(case == BatchRename.Case.KEEP, { case = BatchRename.Case.KEEP }, { Text(t("原大小写", "Keep")) })
@@ -342,7 +342,7 @@ fun HexScreen(vm: MainViewModel, s: Screen.Hex) {
         AlertDialog(
             onDismissRequest = { editOffset = null },
             title = { Text(t("编辑字节（空格分隔十六进制）", "Edit bytes (hex)")) },
-            text = { OutlinedTextField(editValue, { editValue = it }, modifier = Modifier.fillMaxWidth()) },
+            text = { GhostTextField(editValue, { editValue = it }, modifier = Modifier.fillMaxWidth()) },
             confirmButton = {
                 TextButton(onClick = {
                     val start = editOffset!!
@@ -551,7 +551,7 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             header()
-            OutlinedTextField(
+            GhostTextField(
                 query, { query = it }, singleLine = true,
                 placeholder = { Text(t("搜索名称或包名", "Search")) },
                 leadingIcon = { Icon(Icons.Filled.Search, null) },

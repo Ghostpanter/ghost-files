@@ -331,12 +331,12 @@ fun EditorScreen(vm: MainViewModel, s: Screen.Editor) {
         Column(Modifier.padding(pad).fillMaxSize().imePadding()) {
             if (findOpen && value != null) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(findText, { findText = it }, singleLine = true, placeholder = { Text(t("查找", "Find")) }, modifier = Modifier.weight(1f))
+                    GhostTextField(findText, { findText = it }, singleLine = true, placeholder = { Text(t("查找", "Find")) }, modifier = Modifier.weight(1f))
                     IconButton(onClick = { findNext() }) { Icon(Icons.Filled.ArrowDownward, t("下一个", "Next")) }
                     TextButton(onClick = { ignoreCase = !ignoreCase }) { Text(if (ignoreCase) "a=A" else "a≠A", fontSize = 11.sp) }
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(replaceText, { replaceText = it }, singleLine = true, placeholder = { Text(t("替换为", "Replace")) }, modifier = Modifier.weight(1f))
+                    GhostTextField(replaceText, { replaceText = it }, singleLine = true, placeholder = { Text(t("替换为", "Replace")) }, modifier = Modifier.weight(1f))
                     TextButton(onClick = {
                         val v = value ?: return@TextButton
                         val sel = v.text.substring(v.selection.min, v.selection.max)
@@ -547,7 +547,7 @@ fun SearchScreen(vm: MainViewModel, s: Screen.Search) {
     SubScaffold(t("搜索：", "Search: ") + s.root, { job?.cancel(); vm.screen = Screen.Main }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
-                OutlinedTextField(query, { query = it }, singleLine = true, modifier = Modifier.weight(1f),
+                GhostTextField(query, { query = it }, singleLine = true, modifier = Modifier.weight(1f),
                     placeholder = { Text(t("文件名，支持 * ? 通配", "Name, supports * ?")) })
                 IconButton(onClick = { start() }) { Icon(Icons.Filled.Search, null) }
             }

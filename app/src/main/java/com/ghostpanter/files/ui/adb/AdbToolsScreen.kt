@@ -55,7 +55,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import com.ghostpanter.files.ui.GhostTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Switch
@@ -401,7 +401,7 @@ fun ProcessesPane(toast: (String) -> Unit, serial: String, preview: List<ProcInf
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(query, { query = it }, Modifier.weight(1f), singleLine = true, placeholder = { Text(t("搜索进程 / 包名 / PID", "Search name / package / PID")) })
+            GhostTextField(query, { query = it }, Modifier.weight(1f), singleLine = true, placeholder = { Text(t("搜索进程 / 包名 / PID", "Search name / package / PID")) })
             IconButton(onClick = { reload++ }) { Icon(Icons.Filled.Refresh, t("刷新", "Refresh")) }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

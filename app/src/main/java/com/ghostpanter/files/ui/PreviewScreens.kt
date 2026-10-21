@@ -247,11 +247,11 @@ fun MusicTagScreen(vm: MainViewModel, s: Screen.MusicTag) {
         if (!ready) Box(Modifier.padding(pad).fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
         else Column(Modifier.padding(pad).padding(16.dp).verticalScroll(rememberScrollState())) {
             Text(t("仅 MP3 ID3；FLAC/M4A 后续支持。保存会写入 ID3v1。", "MP3 ID3 only; FLAC/M4A later. Save writes ID3v1."), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-            OutlinedTextField(tags.title, { tags = tags.copy(title = it) }, label = { Text(t("标题", "Title")) }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(tags.artist, { tags = tags.copy(artist = it) }, label = { Text(t("艺术家", "Artist")) }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(tags.album, { tags = tags.copy(album = it) }, label = { Text(t("专辑", "Album")) }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(tags.year, { tags = tags.copy(year = it) }, label = { Text(t("年份", "Year")) }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(tags.comment, { tags = tags.copy(comment = it) }, label = { Text(t("备注", "Comment")) }, modifier = Modifier.fillMaxWidth())
+            GhostTextField(tags.title, { tags = tags.copy(title = it) }, label = { Text(t("标题", "Title")) }, modifier = Modifier.fillMaxWidth())
+            GhostTextField(tags.artist, { tags = tags.copy(artist = it) }, label = { Text(t("艺术家", "Artist")) }, modifier = Modifier.fillMaxWidth())
+            GhostTextField(tags.album, { tags = tags.copy(album = it) }, label = { Text(t("专辑", "Album")) }, modifier = Modifier.fillMaxWidth())
+            GhostTextField(tags.year, { tags = tags.copy(year = it) }, label = { Text(t("年份", "Year")) }, modifier = Modifier.fillMaxWidth())
+            GhostTextField(tags.comment, { tags = tags.copy(comment = it) }, label = { Text(t("备注", "Comment")) }, modifier = Modifier.fillMaxWidth())
         }
     }
 }

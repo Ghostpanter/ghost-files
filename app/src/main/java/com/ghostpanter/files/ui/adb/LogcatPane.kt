@@ -26,7 +26,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.ghostpanter.files.ui.GhostTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -133,10 +133,10 @@ fun LogcatPane(toast: (String) -> Unit, serial: String, preview: List<LogLine>? 
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(tag, { tag = it }, Modifier.weight(1f), singleLine = true, placeholder = { Text("Tag") })
-            OutlinedTextField(pid, { pid = it.filter(Char::isDigit) }, Modifier.width(96.dp).padding(start = 6.dp), singleLine = true,
+            GhostTextField(tag, { tag = it }, Modifier.weight(1f), singleLine = true, placeholder = { Text("Tag") })
+            GhostTextField(pid, { pid = it.filter(Char::isDigit) }, Modifier.width(96.dp).padding(start = 6.dp), singleLine = true,
                 placeholder = { Text("PID") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-            OutlinedTextField(text, { text = it }, Modifier.weight(1f).padding(start = 6.dp), singleLine = true, placeholder = { Text(t("内容", "Text")) })
+            GhostTextField(text, { text = it }, Modifier.weight(1f).padding(start = 6.dp), singleLine = true, placeholder = { Text(t("内容", "Text")) })
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Logcat.LEVELS.forEach { l -> GhostFilterChip(minLevel == l, { minLevel = l }, { Text(l.toString(), color = levelColor(l)) }) }

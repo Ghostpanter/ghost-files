@@ -89,8 +89,8 @@ fun ContentSearchScreen(vm: MainViewModel, s: Screen.ContentSearch) {
         )
     }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
-            OutlinedTextField(query, { query = it }, singleLine = true, label = { Text(t("关键词 / 正则", "Keyword / regex")) }, modifier = Modifier.fillMaxWidth().padding(8.dp))
-            OutlinedTextField(nameFilter, { nameFilter = it }, singleLine = true, label = { Text(t("文件名过滤（可选 *?）", "Name filter")) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
+            GhostTextField(query, { query = it }, singleLine = true, label = { Text(t("关键词 / 正则", "Keyword / regex")) }, modifier = Modifier.fillMaxWidth().padding(8.dp))
+            GhostTextField(nameFilter, { nameFilter = it }, singleLine = true, label = { Text(t("文件名过滤（可选 *?）", "Name filter")) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
             Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(recursive, { recursive = it }); Text(t("子目录", "Recursive"))
                 Checkbox(ignoreCase, { ignoreCase = it }); Text(t("忽略大小写", "Ignore case"))

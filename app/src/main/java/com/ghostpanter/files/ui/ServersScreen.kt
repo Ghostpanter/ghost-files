@@ -257,22 +257,22 @@ private fun ServiceEditorDialog(
         title = { Text(t("${kind.label} 设置", "${kind.label} settings")) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedTextField(port, { port = it.filter { ch -> ch.isDigit() }.take(5) }, label = { Text(t("端口", "Port")) }, singleLine = true)
-                OutlinedTextField(root, { root = it }, label = { Text(t("共享目录", "Share root")) }, singleLine = true)
+                GhostTextField(port, { port = it.filter { ch -> ch.isDigit() }.take(5) }, label = { Text(t("端口", "Port")) }, singleLine = true)
+                GhostTextField(root, { root = it }, label = { Text(t("共享目录", "Share root")) }, singleLine = true)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(anon, { anon = it }); Text(t("匿名访问（只建议在受信任局域网）", "Anonymous (trusted LAN only)"))
                 }
                 if (!anon) {
-                    OutlinedTextField(user, { user = it }, label = { Text(t("用户名", "Username")) }, singleLine = true)
-                    OutlinedTextField(pass, { pass = it }, label = { Text(t("密码", "Password")) }, singleLine = true)
+                    GhostTextField(user, { user = it }, label = { Text(t("用户名", "Username")) }, singleLine = true)
+                    GhostTextField(pass, { pass = it }, label = { Text(t("密码", "Password")) }, singleLine = true)
                     TextButton(onClick = { pass = randomPassword() }) { Text(t("生成随机密码", "Generate password")) }
                 }
                 if (kind == HostedKind.FTP || kind == HostedKind.FTPS) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(tls, { tls = it }); Text(t("启用 FTPS（TLS）", "Enable FTPS (TLS)"))
                     }
-                    OutlinedTextField(pasvStart, { pasvStart = it.filter(Char::isDigit).take(5) }, label = { Text("PASV 起始端口") }, singleLine = true)
-                    OutlinedTextField(pasvEnd, { pasvEnd = it.filter(Char::isDigit).take(5) }, label = { Text("PASV 结束端口") }, singleLine = true)
+                    GhostTextField(pasvStart, { pasvStart = it.filter(Char::isDigit).take(5) }, label = { Text("PASV 起始端口") }, singleLine = true)
+                    GhostTextField(pasvEnd, { pasvEnd = it.filter(Char::isDigit).take(5) }, label = { Text("PASV 结束端口") }, singleLine = true)
                 }
                 if (kind == HostedKind.WEBDAV || kind == HostedKind.WEBDAVS) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
