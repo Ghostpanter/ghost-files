@@ -81,3 +81,50 @@ class DupRulesTest {
         assertNull(DupGroups.decode(null))
     }
 }
+
+class DupRefreshTest {
+    private fun tree(): SpaceTree {
+        val b = SpaceTreeBuilder("/s")
+        b.addDir("/s/Download/Quick Share", 0)
+        b.addDir("/s/Pictures", 0)
+        b.addDir("/s/MT2", 0)
+        b.addFile("/s/Download/Quick Share/moji.apk", 40_000_000, 1)
+        b.addFile("/s/Download/Quick Share/moji (1).apk", 40_000_000, 2)
+        b.addFile("/s/Pictures/a.png", 2_000_000, 1)
+        b.addFile("/s/MT2/a.png", 2_000_000, 2)
+        return b.tree
+    }
+
+    @Test fun deleteUpdatesTreeListsAndGroups() {
+        val t = tree()
+        var groups = listOf(
+            DuplicateFinder.Group(40_000_000, listOf("/s/Download/Quick Share/moji (1).apk", "/s/Download/Quick Share/moji.apk")),
+            DuplicateFinder.Group(2_000_000, listOf("/s/MT2/a.png", "/s/Pictures/a.png")),
+        )
+        val before = t.root.size
+        // The user's case: deleting one of the two identical APKs.
+        val gone = listOf("/s/Download/Quick Share/moji (1).apk")
+        assertEquals(40_000_000, SpaceEdits.remove(t, gone))
+        groups = DupGroups.remove(groups, gone)
+        assertEquals(1, groups.size)
+        assertEquals(2_000_000, groups.sumOf { it.wasted })
+        assertEquals(before - 40_000_000, t.root.size)
+        assertEquals(null, t.find(gone[0]))
+        assertEquals(listOf("/s/Download/Quick Share/moji.apk", "/s/Pictures/a.png", "/s/MT2/a.png"), SpaceQueries.topFiles(t.root, 10).map { it.path() })
+        // Deleting the last file of MT2 makes it an empty folder and removes the group.
+        SpaceEdits.remove(t, listOf("/s/MT2/a.png")); groups = DupGroups.remove(groups, listOf("/s/MT2/a.png"))
+        assertTrue(groups.isEmpty())
+        assertTrue(SpaceQueries.emptyDirs(t.root).any { it.path() == "/s/MT2" })
+    }
+
+    @Test fun moveAndRenameFollowTheNode() {
+        val t = tree()
+        assertTrue(SpaceEdits.move(t, "/s/MT2/a.png", "/s/MT2/b.png"))
+        assertEquals(2_000_000, t.find("/s/MT2/b.png")!!.size)
+        assertTrue(SpaceEdits.move(t, "/s/MT2/b.png", "/s/Pictures/b.png"))
+        assertEquals(4_000_000, t.find("/s/Pictures")!!.size)
+        assertEquals(0, t.find("/s/MT2")!!.size)
+        assertFalse(SpaceEdits.move(t, "/s/Pictures/b.png", "/elsewhere/b.png"))
+        assertEquals(2_000_000, t.find("/s/Pictures")!!.size)
+    }
+}

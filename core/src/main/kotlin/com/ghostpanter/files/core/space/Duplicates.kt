@@ -103,3 +103,36 @@ object DupGroups {
         }
     }
 }
+
+/** Applies file operations done elsewhere (delete / trash / move / rename) to a finished tree. */
+object SpaceEdits {
+    /** Detaches every path found; returns the bytes taken out. Callers hold [SpaceTree.lock]. */
+    fun remove(tree: SpaceTree, paths: Collection<String>): Long {
+        var freed = 0L
+        for (p in paths) {
+            val n = SpaceTree.findIn(tree.root, p) ?: continue
+            if (n.parent == null) continue
+            freed += n.size
+            SpaceQueries.detach(n)
+        }
+        return freed
+    }
+
+    /**
+     * Moves/renames [from] to [to]: the node keeps its subtree; it is re-attached under [to]'s parent
+     * when that folder is in the tree (else it just leaves the tree, like a delete).
+     */
+    fun move(tree: SpaceTree, from: String, to: String): Boolean {
+        val n = SpaceTree.findIn(tree.root, from) ?: return false
+        val oldParent = n.parent ?: return false
+        val dest = SpaceTree.findIn(tree.root, VPath.parent(to))
+        if (dest === oldParent) { n.name = VPath.name(to); return true }
+        SpaceQueries.detach(n)
+        if (dest == null || dest.kind != NodeKind.DIR) return false
+        n.name = VPath.name(to)
+        dest.addChild(n)
+        var a: SpaceNode? = dest
+        while (a != null) { a.size += n.size; a.count += n.count; a = a.parent }
+        return true
+    }
+}
