@@ -51,6 +51,14 @@ object AppIconCache {
 
     const val LOCAL = "local"
 
+    /** True/false when known, null when the lookup failed (ADB offline…): residue marking must not guess. */
+    suspend fun isInstalled(ctx: Context, scope: String, pkg: String): Boolean? = withContext(Dispatchers.IO) {
+        if (scope == LOCAL) runCatching { ctx.packageManager.getPackageInfo(pkg, 0); true }.getOrElse {
+            if (it is android.content.pm.PackageManager.NameNotFoundException) false else null
+        }
+        else runCatching { pkg in listing(scope.removePrefix("adb:")) }.getOrNull()
+    }
+
     private fun disk(ctx: Context) = File(ctx.cacheDir, "app-icons").apply { mkdirs() }
 
     private fun local(ctx: Context, pkg: String): AppMeta? {

@@ -74,6 +74,8 @@ sealed interface Screen {
     /** Paired ADB targets: mirror, browse, tools. */
     data object Devices : Screen
     data class AdbTools(val serial: String, val tab: Int = 0) : Screen
+    /** SpaceSniffer-style analysis of a folder (null = backend home / internal storage), or the whole device. */
+    data class Space(val fsId: String = com.ghostpanter.files.core.LocalFs.ID, val path: String? = null, val whole: Boolean = false) : Screen
 }
 
 sealed interface UiEvent {

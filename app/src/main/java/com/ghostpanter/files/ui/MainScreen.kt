@@ -73,7 +73,8 @@ fun MainScreen(vm: MainViewModel, activity: MainActivity) {
         if (layout.tablet) TabletShell(vm, activity, layout, editServer) else PhoneShell(vm, activity, editServer)
     }
 
-    if (vm.screen != Screen.Main) BackHandler { vm.screen = Screen.Main }
+    // The space analysis page handles back itself (drill up first).
+    if (vm.screen != Screen.Main && vm.screen !is Screen.Space) BackHandler { vm.screen = Screen.Main }
 
     vm.dialog?.let { d -> EntryDialogs(vm, d) { vm.dialog = null } }
     vm.menu?.let { m -> ActionMenuDialog(m) { vm.menu = null } }
@@ -190,6 +191,7 @@ private fun ScreenHost(vm: MainViewModel, activity: MainActivity, tablet: Window
         is Screen.MusicTag -> MusicTagScreen(vm, s)
         Screen.Devices -> com.ghostpanter.files.ui.adb.DevicesScreen(vm)
         is Screen.AdbTools -> com.ghostpanter.files.ui.adb.AdbToolsScreen(vm, s)
+        is Screen.Space -> SpaceScreen(vm, s)
     }
 }
 

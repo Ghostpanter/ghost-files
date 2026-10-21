@@ -39,6 +39,9 @@ fun MainViewModel.buildEntryMenu(pane: PaneState, targets: List<FileEntry>): Act
     if (single != null) add(t("重命名", "Rename"), Icons.Filled.DriveFileRenameOutline) { dialog = DialogState.Rename(pane.index, single) }
     if (targets.size > 1) add(t("批量重命名", "Batch rename"), Icons.Filled.DriveFileRenameOutline) { dialog = DialogState.BatchRename(pane.index, targets) }
     add(t("删除", "Delete"), Icons.Filled.Delete) { dialog = DialogState.Delete(pane.index, targets) }
+    if (single != null && single.isDirectory) add(t("分析此文件夹", "Analyze this folder"), Icons.Filled.DonutSmall, t("空间分析", "Space analysis")) {
+        screen = Screen.Space(tab.fsId, single.path)
+    }
     if (single != null && single.isDirectory) {
         fsm.localFile(tab.fsId, single.path)?.takeIf { com.ghostpanter.files.core.apk.ApkBundle.isSplitFolder(it) }?.let { dir ->
             add(t("安装分包（此文件夹）", "Install splits in folder"), Icons.Filled.InstallMobile) { bundleInstall = BundleRequest(dir, single.name) }
@@ -167,6 +170,7 @@ fun MainViewModel.buildMoreMenu(pane: PaneState): ActionMenu {
     add(t("终端", "Terminal"), Icons.Filled.Code) { screen = Screen.Terminal }
     add(t("设备 / 投屏", "Devices / mirror"), Icons.Filled.Cast) { screen = Screen.Devices }
     add(t("应用管理（备份 APK）", "App manager"), Icons.Filled.Apps) { screen = Screen.Apps }
+    add(t("空间分析（当前目录）", "Space analysis (this folder)"), Icons.Filled.DonutSmall) { screen = Screen.Space(tab.fsId, tab.path) }
     add(t("传输队列", "Transfers"), Icons.Filled.SwapVert) { screen = Screen.Transfers }
     add(t("目录属性", "Folder properties"), Icons.Filled.Info) {
         dialog = DialogState.Properties(pane.index, FileEntry(tab.path, tab.title, true, 0, 0))
