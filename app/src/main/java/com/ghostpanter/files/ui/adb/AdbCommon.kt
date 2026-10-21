@@ -44,7 +44,12 @@ fun rememberSavedDevices(): List<String> {
         owner.lifecycle.addObserver(obs)
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
-    return remember(rev) { AdbPool.saved().map { AdbPool.serialOf(it) } }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    // Wireless (saved) targets first, then attached USB targets that already have access.
+    return remember(rev) {
+        AdbPool.saved().map { AdbPool.serialOf(it) } +
+            runCatching { com.ghostpanter.adb.usb.UsbAdb.targets(ctx).filter { it.hasPermission }.map { it.serial } }.getOrDefault(emptyList())
+    }
 }
 
 /** 本机 / 目标设备 switch shown on the Apps and Terminal pages. `null` = this device. */

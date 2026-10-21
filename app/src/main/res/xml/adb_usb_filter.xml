@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android devices with USB debugging on: the ADB interface (class 0xFF, subclass 0x42, protocol 0x01).
+     Fastboot (0x42/0x03) is deliberately not matched. -->
+<resources>
+    <usb-device class="255" subclass="66" protocol="1" />
+</resources>

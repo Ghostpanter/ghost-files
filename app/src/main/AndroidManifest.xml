@@ -5,6 +5,8 @@
 
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- ADB over USB / OTG; optional so phones without USB host still install. -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- mDNS discovery needs a multicast lock while scanning the LAN -->
@@ -45,6 +47,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- An Android device with USB debugging plugged in (OTG): open 设备 / 投屏. -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/adb_usb_filter" />
             <!-- Tasker / automation -->
             <intent-filter>
                 <action android:name="com.ghostpanter.files.action.SHOW_TRANSFERS" />

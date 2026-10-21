@@ -105,6 +105,8 @@ class MainActivity : ComponentActivity() {
 
     /** From the embedded scrcpy panel: open the ADB tools page or browse the device in the active pane. */
     private fun handleAdbIntent(i: Intent) {
+        // OTG: launched by plugging in a device with USB debugging (permission comes with the intent).
+        if (i.action == android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED) { vm.screen = Screen.Devices; i.action = null }
         i.getStringExtra(EXTRA_ADB_TOOLS)?.let { vm.screen = Screen.AdbTools(it); i.removeExtra(EXTRA_ADB_TOOLS) }
         i.getStringExtra(EXTRA_ADB_BROWSE)?.let { vm.openFs(com.ghostpanter.adb.AdbFs.idFor(it, false)); i.removeExtra(EXTRA_ADB_BROWSE) }
     }

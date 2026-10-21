@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ghostpanter.adb.AdbFs
 import com.ghostpanter.adb.AdbPool
+import com.ghostpanter.adb.usb.UsbAdb
 import com.ghostpanter.files.ui.MainViewModel
 import com.ghostpanter.files.ui.Screen
 import com.ghostpanter.files.t
@@ -88,15 +89,40 @@ fun DevicesScreen(vm: MainViewModel) {
     val ctx = LocalContext.current
     DevicesContent(
         rememberSavedDevices(), null,
-        DeviceCallbacks(
+        usb = rememberUsbTargets(),
+        cb = DeviceCallbacks(
             back = { vm.screen = Screen.Main },
             pair = { AdbNav.pairPanel(ctx) },
             mirror = { AdbNav.mirror(ctx, it) },
             browse = { serial, pane, root -> if (pane != null) vm.activePane = pane; vm.openFs(AdbFs.idFor(serial, root), if (root) "/" else null) },
             tools = { vm.screen = Screen.AdbTools(it) },
             shell = { vm.termTarget = it; vm.pendingTerminal = it; vm.screen = Screen.Terminal },
+            usbGrant = { serial ->
+                val key = UsbAdb.keyOfSerial(serial)
+                UsbAdb.find(ctx, key)?.let { UsbAdb.requestPermission(ctx, it) }
+            },
         ),
     )
+}
+
+/** One attached USB device with an ADB interface. */
+data class UsbRow(val serial: String, val label: String, val granted: Boolean)
+
+/** Attached USB ADB devices; refreshed on attach / detach / permission answers and on resume. */
+@Composable
+fun rememberUsbTargets(): List<UsbRow> {
+    val ctx = LocalContext.current
+    var rev by remember { mutableIntStateOf(0) }
+    val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        UsbAdb.init(ctx)
+        val l: () -> Unit = { android.os.Handler(android.os.Looper.getMainLooper()).post { rev++ } }
+        UsbAdb.addListener(l)
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) rev++ }
+        owner.lifecycle.addObserver(obs)
+        onDispose { UsbAdb.removeListener(l); owner.lifecycle.removeObserver(obs) }
+    }
+    return remember(rev) { runCatching { UsbAdb.targets(ctx).map { UsbRow(it.serial, it.label, it.hasPermission) } }.getOrDefault(emptyList()) }
 }
 
 class DeviceCallbacks(
@@ -106,11 +132,13 @@ class DeviceCallbacks(
     val browse: (serial: String, pane: Int?, root: Boolean) -> Unit,
     val tools: (String) -> Unit,
     val shell: (String) -> Unit,
+    val usbGrant: (String) -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DevicesContent(saved: List<String>, preview: List<Pair<String, DevState>>?, cb: DeviceCallbacks) {
+fun DevicesContent(savedAll: List<String>, preview: List<Pair<String, DevState>>?, cb: DeviceCallbacks, usb: List<UsbRow> = emptyList()) {
+    val saved = savedAll.filterNot { UsbAdb.isUsbSerial(it) }
     var refresh by remember { mutableIntStateOf(0) }
     Scaffold(
         topBar = {
@@ -134,7 +162,23 @@ fun DevicesContent(saved: List<String>, preview: List<Pair<String, DevState>>?, 
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (saved.isEmpty()) {
+            if (usb.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel(t("USB 连接", "USB")) }
+                items(usb, key = { "usb:" + it.serial }) { u ->
+                    if (!u.granted) UsbGrantCard(u, cb)
+                    else {
+                        if (u.label.isNotBlank() && AdbPool.name(u.serial) == null) AdbPool.setName(u.serial, u.label)
+                        var state by remember(u.serial) { mutableStateOf(preview?.firstOrNull { it.first == u.serial }?.second ?: DevState.CHECKING) }
+                        if (preview == null) LaunchedEffect(u.serial, refresh) {
+                            state = DevState.CHECKING
+                            state = if (probe(u.serial)) DevState.ONLINE else DevState.OFFLINE
+                        }
+                        DeviceCard(cb, u.serial, state)
+                    }
+                }
+                if (saved.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel(t("无线连接", "Wireless")) }
+            }
+            if (saved.isEmpty() && usb.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { EmptyHint(cb.pair) }
             }
             items(saved, key = { it }) { serial ->
@@ -147,8 +191,8 @@ fun DevicesContent(saved: List<String>, preview: List<Pair<String, DevState>>?, 
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(
-                    t("提示：本应用与独立版 scrcpy-android 的 ADB 密钥不同，首次使用需在目标设备的「无线调试」中重新配对。",
-                        "Note: this app has its own ADB key (different from the standalone scrcpy-android), so pair the target again under Wireless debugging."),
+                    t("提示：本应用与独立版 scrcpy-android 的 ADB 密钥不同，首次使用需在目标设备的「无线调试」中重新配对。也可用 USB / OTG 线直连：目标开启「USB 调试」后插上即可，首次需在目标上点「允许 USB 调试」。",
+                        "Note: this app has its own ADB key (different from the standalone scrcpy-android), so pair the target again under Wireless debugging. Or connect with a USB / OTG cable: enable USB debugging on the target, plug it in and tap “Allow USB debugging” there the first time."),
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(4.dp),
                 )
             }
@@ -181,11 +225,11 @@ private fun DeviceCard(cb: DeviceCallbacks, serial: String, state: DevState) {
                 Box(
                     Modifier.size(44.dp).background(cs.surfaceVariant, RoundedCornerShape(14.dp)),
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Rounded.PhoneAndroid, null, Modifier.size(24.dp), tint = cs.primary) }
+                ) { Icon(if (UsbAdb.isUsbSerial(serial)) Icons.Rounded.Usb else Icons.Rounded.PhoneAndroid, null, Modifier.size(24.dp), tint = cs.primary) }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(AdbPool.name(serial) ?: t("未知设备", "Unknown device"), fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
-                    Text(serial, fontSize = 12.sp, color = cs.outline, maxLines = 1)
+                    Text(if (UsbAdb.isUsbSerial(serial)) "USB · " + UsbAdb.keyOfSerial(serial) else serial, fontSize = 12.sp, color = cs.outline, maxLines = 1)
                 }
                 val online = state == DevState.ONLINE
                 val l = when (state) {
@@ -213,6 +257,31 @@ private fun DeviceCard(cb: DeviceCallbacks, serial: String, state: DevState) {
                 SoftChip(t("工具", "Tools"), Icons.Rounded.Build) { cb.tools(serial) }
                 SoftChip(t("终端", "Shell"), Icons.Rounded.Terminal) { cb.shell(serial) }
             }
+        }
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) =
+    Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(start = 8.dp, top = 4.dp))
+
+@Composable
+private fun UsbGrantCard(u: UsbRow, cb: DeviceCallbacks) {
+    val cs = MaterialTheme.colorScheme
+    Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(44.dp).background(cs.surfaceVariant, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Usb, null, Modifier.size(24.dp), tint = cs.primary)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(u.label, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
+                    Text(t("已插入 · 需要 USB 访问授权", "Attached · USB access needed"), fontSize = 12.sp, color = cs.outline, maxLines = 1)
+                }
+            }
+            Spacer(Modifier.size(14.dp))
+            SoftChip(t("授权 USB 访问", "Allow USB access"), Icons.Rounded.Usb, accent = true) { cb.usbGrant(u.serial) }
         }
     }
 }
