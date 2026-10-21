@@ -163,7 +163,7 @@ class SpaceScreenshotTest(private val name: String, private val device: DeviceCo
         b.tree.find("/data/data/com.tencent.mm")!!.pkg = "com.tencent.mm"
         render(SpaceUi(
             scopeLabel = "整机", tier = SpaceTier.ROOT, tree = b.tree, current = b.root, selected = null, filter = SpaceFilter(), tab = SpaceTab.MAP, version = 1,
-            summary = SpaceSummary(256 * GB, 71 * GB, null), scannedAt = now - 120_000, now = now, app = { apps[it] },
+            scannedAt = now - 120_000, now = now, app = { apps[it] },
         ))
     }
 

@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.rounded.InsertDriveFile
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -294,10 +295,13 @@ private fun scopeLabel(vm: MainViewModel, t0: SpaceTarget): String = when {
 fun nodeLabel(n: SpaceNode, app: (String) -> AppMeta?): String = when {
     n.kind == NodeKind.SMALL_FILES -> t("${n.count} 个小文件", "${n.count} small files")
     n.kind == NodeKind.DIR && n.parent == null -> VPath.name(n.name).ifEmpty { "/" }
-    n.name.startsWith("/") -> when (n.name) {
-        "/data" -> t("数据分区 /data", "Data /data")
+    n.name.startsWith("/") -> when {
+        n.name == "/data" -> t("数据分区 /data", "Data /data")
+        n.parent?.name == "" && com.ghostpanter.files.core.space.PathCanon.isUserStorage(n.name) -> t("用户文件", "User files")
         else -> n.name
     }
+    n.parent?.parent == null && n.parent?.name == "/" -> "/" + n.name
+    n.kind == NodeKind.DIR && n.path() == "/data/media" -> t("media · 内部存储", "media · internal storage")
     n.name.isEmpty() -> n.detail ?: "/"
     n.pkg != null && n.kind == NodeKind.DIR -> app(n.pkg!!)?.label?.let { "$it · ${n.name}" } ?: n.name
     else -> n.name
@@ -384,7 +388,7 @@ private fun Header(ui: SpaceUi, cb: SpaceCallbacks) {
             UsageBar(ui)
             Spacer(Modifier.height(8.dp))
             Legend(ui)
-        }
+        } else PartsBar(ui)
         if (ui.scanning || ui.error != null) {
             Spacer(Modifier.height(10.dp))
             if (ui.scanning) {
@@ -464,6 +468,34 @@ private fun summaryParts(ui: SpaceUi): List<Triple<String, Color, Float>> {
     return out
 }
 
+/** No system totals (Root whole device, folders, ADB): share of the top-level blocks of the scan. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PartsBar(ui: SpaceUi) {
+    val root = ui.tree?.root ?: return
+    val g = Ghost.colors
+    val cs = MaterialTheme.colorScheme
+    val palette = listOf(g.folder, g.video, g.archive, g.apk, g.image, g.audio)
+    val kids = synchronized(ui.tree.lock) { root.children?.filter { it.size > 0 }?.sortedByDescending { it.size }?.take(6) ?: emptyList() }
+    if (kids.size < 2 || root.size <= 0) return
+    Spacer(Modifier.height(10.dp))
+    Row(Modifier.fillMaxWidth().height(10.dp).clip(CircleShape).background(cs.surfaceVariant)) {
+        kids.forEachIndexed { i, k -> Box(Modifier.weight((k.size.toFloat() / root.size).coerceAtLeast(0.004f)).fillMaxHeight().background(palette[i % palette.size])) }
+        val rest = 1f - kids.sumOf { it.size.toDouble() }.toFloat() / root.size
+        if (rest > 0.001f) Spacer(Modifier.weight(rest))
+    }
+    Spacer(Modifier.height(8.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        kids.forEachIndexed { i, k ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(palette[i % palette.size]))
+                Spacer(Modifier.width(5.dp))
+                Text(nodeLabel(k, ui.app).substringBefore(" · ") + " " + formatSize(k.size), fontSize = 11.sp, color = cs.onSurfaceVariant, maxLines = 1)
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Legend(ui: SpaceUi) {
@@ -497,7 +529,7 @@ private fun Crumbs(ui: SpaceUi, cb: SpaceCallbacks) {
             if (i > 0) Icon(Icons.Rounded.ChevronRight, null, Modifier.size(16.dp), tint = cs.outline)
             val last = i == chain.size - 1
             Text(
-                if (i == 0) (if (n.name.isEmpty()) ui.scopeLabel.substringBefore("  ") else VPath.name(n.name).ifEmpty { "/" }) else nodeLabel(n, ui.app).substringBefore(" · "),
+                if (i == 0) rootLabel(ui, n) else nodeLabel(n, ui.app).substringBefore(" · "),
                 fontSize = 13.sp, fontWeight = if (last) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (last) cs.onSurface else cs.primary, maxLines = 1,
                 modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = !last) { cb.crumb(n) }.padding(horizontal = 4.dp, vertical = 3.dp),
@@ -507,6 +539,11 @@ private fun Crumbs(ui: SpaceUi, cb: SpaceCallbacks) {
 }
 
 private val DAY = 86_400_000L
+
+/** Name of the analysis root: the scope ("内部存储", "整机") or the analyzed folder's name. */
+fun rootLabel(ui: SpaceUi, n: SpaceNode): String =
+    if (n.parent != null) nodeLabel(n, ui.app).substringBefore(" · ")
+    else if (ui.scopeLabel.contains("  ")) VPath.name(n.name).ifEmpty { "/" } else ui.scopeLabel
 
 @Composable
 private fun Filters(ui: SpaceUi, cb: SpaceCallbacks) {
@@ -525,7 +562,7 @@ private fun Filters(ui: SpaceUi, cb: SpaceCallbacks) {
         )
         val ti = times.indexOfFirst { (n, o) -> n > 0 && kotlin.math.abs(n - f.newerThan) < DAY || o > 0 && kotlin.math.abs(o - f.olderThan) < DAY }.takeIf { it > 0 }
         FilterMenu(ti?.let { times[it].third } ?: t("修改时间", "Modified"), f.newerThan > 0 || f.olderThan > 0, times.map { it.third }) { i -> cb.filter(f.copy(newerThan = times[i].first, olderThan = times[i].second)) }
-        if (f.active) GhostChip(onClick = { cb.filter(SpaceFilter()) }, label = { Text(t("清除", "Clear")) }, leadingIcon = { Icon(Icons.Rounded.Close, null) })
+        if (f.active) GhostFilterChip(selected = false, onClick = { cb.filter(SpaceFilter()) }, label = { Text(t("清除", "Clear")) }, leadingIcon = { Icon(Icons.Rounded.Close, null, Modifier.size(16.dp)) })
     }
 }
 
@@ -577,8 +614,9 @@ private fun LazyListScope.tabItems(ui: SpaceUi, cb: SpaceCallbacks, tablet: Bool
             val root = ui.current ?: return
             val top = synchronized(ui.tree?.lock ?: Any()) { SpaceQueries.topFiles(root, 100, ui.filter) }
             val max = top.firstOrNull()?.size ?: 1
-            item { CardTop(t("最大的 ${top.size} 个文件", "Largest ${top.size} files") + " · " + nodeLabel(root, ui.app)) }
-            items(top, key = { System.identityHashCode(it) }) { n -> NodeRow(ui, cb, n, n.size, max, showPath = true, last = n === top.last()) }
+            val share = (if (ui.filter.active) synchronized(ui.tree?.lock ?: Any()) { ui.filter.apply(root) } else root.size).coerceAtLeast(max)
+            item { CardTop(t("最大的 ${top.size} 个文件", "Largest ${top.size} files") + " · " + rootLabel(ui, root)) }
+            items(top, key = { System.identityHashCode(it) }) { n -> NodeRow(ui, cb, n, n.size, share, showPath = true, last = n === top.last()) }
             if (top.isEmpty()) item { EmptyCard(t("没有文件", "No files")) }
         }
         SpaceTab.DUPS -> {
@@ -823,8 +861,11 @@ fun SpaceTreemap(ui: SpaceUi, cur: SpaceNode, cb: SpaceCallbacks, modifier: Modi
                         drawText(tl, topLeft = Offset(x + 4.dp.toPx(), y + 3.dp.toPx()))
                         if (showSize) {
                             val sl = measurer.measure(formatSize(p.bytes), subStyle, maxLines = 1, constraints = Constraints(maxWidth = maxW))
-                            if (p.depth == 0 && p.node.drillable && h >= nest + header) drawText(sl, topLeft = Offset(x + w - sl.size.width - 4.dp.toPx(), y + 3.dp.toPx()))
-                            else drawText(sl, topLeft = Offset(x + 4.dp.toPx(), y + 3.dp.toPx() + tl.size.height))
+                            val headerRow = p.depth == 0 && p.node.drillable && h >= nest + header
+                            if (headerRow) {
+                                // Size at the right of the header only when it does not run into the name.
+                                if (tl.size.width + sl.size.width + 14.dp.toPx() <= w) drawText(sl, topLeft = Offset(x + w - sl.size.width - 4.dp.toPx(), y + 3.dp.toPx()))
+                            } else drawText(sl, topLeft = Offset(x + 4.dp.toPx(), y + 3.dp.toPx() + tl.size.height))
                         }
                     }
                 }
