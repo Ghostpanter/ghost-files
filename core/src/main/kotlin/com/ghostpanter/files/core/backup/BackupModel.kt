@@ -2,7 +2,8 @@ package com.ghostpanter.files.core.backup
 
 /** What a backup can hold. */
 enum class BackupKind(val id: String) {
-    SMS("sms"), CALLS("calls"), CONTACTS("contacts"), CALENDAR("calendar"), WIFI("wifi");
+    SMS("sms"), CALLS("calls"), CONTACTS("contacts"), CALENDAR("calendar");
+    /** Unknown ids (e.g. "wifi" from 0.7.1-test1 backups) are null and silently ignored. */
     companion object { fun of(id: String) = entries.firstOrNull { it.id == id } }
 }
 
@@ -52,7 +53,6 @@ data class BackupManifest(
             BackupKind.CALLS -> "calls-$stamp.xml"
             BackupKind.CONTACTS -> "contacts-$stamp.vcf"
             BackupKind.CALENDAR -> "calendar-$stamp.ics"
-            BackupKind.WIFI -> "wifi/WifiConfigStore.xml"
         }
 
         /** Which kind a loose file is (sms-*.xml, calls-*.xml, *.vcf, *.ics), null = not a backup file. */
@@ -63,7 +63,6 @@ data class BackupManifest(
                 n.startsWith("calls-") && n.endsWith(".xml") -> BackupKind.CALLS
                 n.endsWith(".vcf") -> BackupKind.CONTACTS
                 n.endsWith(".ics") -> BackupKind.CALENDAR
-                n == "wificonfigstore.xml" || n == "wpa_supplicant.conf" -> BackupKind.WIFI
                 else -> null
             }
         }
@@ -107,11 +106,4 @@ object BackupDedupe {
 
     /** Event: title + start (+ end), so the same meeting is not inserted twice. */
     fun event(title: String, start: Long, end: Long?, allDay: Boolean) = "e|" + title.trim() + "|" + start / 1000 + "|" + ((end ?: 0) / 1000) + "|" + allDay
-}
-
-/** Android WiFi saved networks (Root). */
-object WifiStore {
-    /** Android 11+ keeps the store in the WiFi APEX data dir; 8–10 in /data/misc/wifi. */
-    fun path(sdk: Int) = if (sdk >= 30) "/data/misc/apexdata/com.android.wifi/WifiConfigStore.xml" else "/data/misc/wifi/WifiConfigStore.xml"
-    fun countNetworks(xml: String) = Regex("<Network>").findAll(xml).count()
 }

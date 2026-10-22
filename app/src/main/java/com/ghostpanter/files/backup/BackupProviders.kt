@@ -24,8 +24,6 @@ import com.ghostpanter.files.core.backup.SmsXml
 import com.ghostpanter.files.core.backup.VCard
 import com.ghostpanter.files.core.backup.VContact
 import com.ghostpanter.files.core.backup.VEvent
-import com.ghostpanter.files.core.backup.WifiStore
-import com.ghostpanter.files.fs.RootRunner
 import java.io.Reader
 import java.io.Writer
 import java.util.concurrent.CancellationException
@@ -35,7 +33,7 @@ class Tick(val cancelled: () -> Boolean, val progress: (Int, Int) -> Unit) {
     fun check() { if (cancelled()) throw CancellationException() }
 }
 
-/** Reads / writes SMS, MMS, call log, contacts, calendar and (Root) WiFi through the system providers. */
+/** Reads / writes SMS, MMS, call log, contacts, calendar through the system providers. */
 class BackupProviders(private val ctx: Context) {
     private val cr = ctx.contentResolver
 
@@ -47,7 +45,6 @@ class BackupProviders(private val ctx: Context) {
         BackupKind.CALLS -> listOf(Manifest.permission.READ_CALL_LOG) + if (restore) listOf(Manifest.permission.WRITE_CALL_LOG) else emptyList()
         BackupKind.CONTACTS -> listOf(Manifest.permission.READ_CONTACTS) + if (restore) listOf(Manifest.permission.WRITE_CONTACTS) else emptyList()
         BackupKind.CALENDAR -> listOf(Manifest.permission.READ_CALENDAR) + if (restore) listOf(Manifest.permission.WRITE_CALENDAR) else emptyList()
-        BackupKind.WIFI -> emptyList()
     }
 
     private fun count(uri: Uri, sel: String? = null): Int? = runCatching { cr.query(uri, arrayOf("_id"), sel, null, null)?.use { it.count } }.getOrNull()
@@ -58,7 +55,6 @@ class BackupProviders(private val ctx: Context) {
         BackupKind.CALLS -> if (!has(Manifest.permission.READ_CALL_LOG)) null else count(CallLog.Calls.CONTENT_URI)
         BackupKind.CONTACTS -> if (!has(Manifest.permission.READ_CONTACTS)) null else count(ContactsContract.Contacts.CONTENT_URI)
         BackupKind.CALENDAR -> if (!has(Manifest.permission.READ_CALENDAR)) null else count(CalendarContract.Events.CONTENT_URI, "${CalendarContract.Events.DELETED}=0")
-        BackupKind.WIFI -> wifiBytes()?.let { WifiStore.countNetworks(String(it)) }
     }
 
     private fun row(c: Cursor): Map<String, String?> {
@@ -406,42 +402,5 @@ class BackupProviders(private val ctx: Context) {
         }
         t.progress(incoming.size, incoming.size)
         return res
-    }
-
-    // ------------------------------------------------------------------ WiFi (Root)
-
-    fun wifiBytes(): ByteArray? {
-        if (!RootRunner.granted()) return null
-        return runCatching {
-            val p = RootRunner.start("cat ${WifiStore.path(Build.VERSION.SDK_INT)} 2>/dev/null")
-            p.outputStream.close()
-            val b = p.inputStream.readBytes(); p.waitFor()
-            b.takeIf { it.isNotEmpty() }
-        }.getOrNull()
-    }
-
-    /** Replaces the WiFi store (current one kept as *.ghostbak) and restarts WiFi. */
-    fun restoreWifi(bytes: ByteArray): String {
-        val tmp = java.io.File(ctx.cacheDir, "wifi-restore.xml"); tmp.writeBytes(bytes)
-        val target = WifiStore.path(Build.VERSION.SDK_INT)
-        val q = com.ghostpanter.files.core.VPath::shellQuote
-        val script = """
-            set -e
-            svc wifi disable || true
-            sleep 1
-            [ -f ${q(target)} ] && cp -p ${q(target)} ${q("$target.ghostbak")} || true
-            cat ${q(tmp.path)} > ${q("$target.tmp")}
-            chmod 600 ${q("$target.tmp")}
-            chown system:system ${q("$target.tmp")} 2>/dev/null || chown 1000:1000 ${q("$target.tmp")}
-            mv -f ${q("$target.tmp")} ${q(target)}
-            restorecon ${q(target)} 2>/dev/null || true
-            svc wifi enable || true
-            echo OK
-        """.trimIndent()
-        val p = RootRunner.start(script); p.outputStream.close()
-        val out = p.inputStream.bufferedReader().readText(); val err = p.errorStream.bufferedReader().readText(); p.waitFor()
-        tmp.delete()
-        if (!out.contains("OK")) throw java.io.IOException(err.ifBlank { "su failed" })
-        return target
     }
 }

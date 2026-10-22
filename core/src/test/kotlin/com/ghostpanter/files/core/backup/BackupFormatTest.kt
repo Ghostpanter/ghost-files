@@ -192,10 +192,24 @@ class BackupDedupeTest {
 }
 
 class BackupManifestTest {
+    /** 0.7.1-test1 could write a Root WiFi item; it is no longer supported and must be ignored without error. */
+    @Test fun legacyWifiItemIsIgnored() {
+        val json = """{"format": "ghost-backup", "version": 1, "created": 1, "device": "d", "app": "0.7.1-test1", "sdk": 34, "items": [
+            {"kind": "sms", "count": 3, "file": "sms-1.xml"},
+            {"kind": "wifi", "count": 8, "file": "wifi/WifiConfigStore.xml"},
+            {"kind": "contacts", "count": 2, "file": "contacts-1.vcf"}]}"""
+        val m = BackupManifest.parse(json)!!
+        assertEquals(listOf(BackupKind.SMS, BackupKind.CONTACTS), m.counts.keys.toList())
+        assertEquals(listOf(BackupKind.SMS, BackupKind.CONTACTS), m.files.keys.toList())
+        assertNull(BackupManifest.kindOf("WifiConfigStore.xml"))
+        assertNull(BackupKind.of("wifi"))
+        assertEquals(4, BackupKind.entries.size)
+    }
+
     @Test fun jsonRoundTripAndFileKinds() {
         val m = BackupManifest(1792600000000, "Xiaomi \"14\"", "0.7.1-test1",
-            linkedMapOf(BackupKind.SMS to 1200, BackupKind.CALLS to 300, BackupKind.WIFI to 8),
-            linkedMapOf(BackupKind.SMS to "sms-1.xml", BackupKind.CALLS to "calls-1.xml", BackupKind.WIFI to "wifi/WifiConfigStore.xml"), sdk = 34)
+            linkedMapOf(BackupKind.SMS to 1200, BackupKind.CALLS to 300, BackupKind.CALENDAR to 8),
+            linkedMapOf(BackupKind.SMS to "sms-1.xml", BackupKind.CALLS to "calls-1.xml", BackupKind.CALENDAR to "calendar-1.ics"), sdk = 34)
         assertEquals(m, BackupManifest.parse(m.toJson()))
         assertNull(BackupManifest.parse("{\"format\":\"other\"}"))
         assertEquals(BackupKind.SMS, BackupManifest.kindOf("sms-20261022093000.xml"))

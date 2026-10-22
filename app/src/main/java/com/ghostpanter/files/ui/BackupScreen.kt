@@ -39,7 +39,6 @@ import com.ghostpanter.files.backup.SmsRoleMemory
 import com.ghostpanter.files.core.LocalFs
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.backup.BackupKind
-import com.ghostpanter.files.fs.RootRunner
 import com.ghostpanter.files.t
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -96,7 +95,6 @@ fun kindLabel(k: BackupKind) = when (k) {
     BackupKind.CALLS -> t("通话记录", "Call log")
     BackupKind.CONTACTS -> t("联系人", "Contacts")
     BackupKind.CALENDAR -> t("日历", "Calendar")
-    BackupKind.WIFI -> t("WiFi 配置和密码", "WiFi networks & passwords")
 }
 
 private fun kindFormat(k: BackupKind) = when (k) {
@@ -104,7 +102,6 @@ private fun kindFormat(k: BackupKind) = when (k) {
     BackupKind.CALLS -> t("SMS Backup & Restore 格式", "SMS Backup & Restore XML")
     BackupKind.CONTACTS -> "vCard (.vcf)"
     BackupKind.CALENDAR -> "iCalendar (.ics)"
-    BackupKind.WIFI -> t("Root · WifiConfigStore.xml", "Root · WifiConfigStore.xml")
 }
 
 private fun kindIcon(k: BackupKind): ImageVector = when (k) {
@@ -112,7 +109,6 @@ private fun kindIcon(k: BackupKind): ImageVector = when (k) {
     BackupKind.CALLS -> Icons.Rounded.Call
     BackupKind.CONTACTS -> Icons.Rounded.Contacts
     BackupKind.CALENDAR -> Icons.Rounded.CalendarMonth
-    BackupKind.WIFI -> Icons.Rounded.Wifi
 }
 
 @Composable
@@ -121,7 +117,6 @@ private fun kindColor(k: BackupKind): Color = when (k) {
     BackupKind.CALLS -> Ghost.colors.image
     BackupKind.CONTACTS -> Ghost.colors.folder
     BackupKind.CALENDAR -> Ghost.colors.archive
-    BackupKind.WIFI -> Ghost.colors.apk
 }
 
 private fun countText(k: BackupKind, n: Int) = when (k) {
@@ -129,7 +124,6 @@ private fun countText(k: BackupKind, n: Int) = when (k) {
     BackupKind.CALLS -> t("%,d 条".format(n), "%,d".format(n))
     BackupKind.CONTACTS -> t("%,d 位".format(n), "%,d".format(n))
     BackupKind.CALENDAR -> t("%,d 个".format(n), "%,d".format(n))
-    BackupKind.WIFI -> t("%,d 个网络".format(n), "%,d networks".format(n))
 }
 
 // ====================================================================== stateless content
@@ -302,10 +296,6 @@ private fun SideColumn(ui: BackupUi, cb: BackupCallbacks, status: Boolean = true
         Tip(Icons.Rounded.FilterAlt, cs.primary, t("已经存在的短信、通话记录、联系人、日程不会重复写入。", "Items already on this phone are skipped, so nothing is duplicated."))
         Spacer(Modifier.height(8.dp))
         Tip(Icons.Rounded.Sms, cs.primary, t("恢复短信时需要临时把本应用设为默认短信应用（系统要求），恢复完成后会引导你切回原来的应用。", "Restoring messages needs this app as the default SMS app for a moment (Android rule); you will be guided back afterwards."))
-        if (ui.restoreItems.any { it.kind == BackupKind.WIFI }) {
-            Spacer(Modifier.height(8.dp))
-            Tip(Icons.Rounded.WarningAmber, cs.error, t("恢复 WiFi 会用备份替换当前的已保存网络（原文件另存为 .ghostbak），需要 Root，完成后建议重启手机。", "Restoring WiFi replaces the saved networks (old file kept as .ghostbak); needs root; reboot afterwards."))
-        }
     }
 }
 
@@ -432,21 +422,17 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
     var destFs by remember { mutableStateOf(LocalFs.ID) }
     var destDir by remember { mutableStateOf(BackupJobs.defaultDir(vm.fsm)) }
     var destPicker by remember { mutableStateOf(false) }
-    var rooted by remember { mutableStateOf(RootRunner.granted()) }
     var inv by remember { mutableStateOf<RestoreInventory?>(null) }
     var invLoading by remember { mutableStateOf(false) }
     var invError by remember { mutableStateOf<String?>(null) }
     var restoreChecked by remember { mutableStateOf(setOf<BackupKind>()) }
     var recent by remember { mutableStateOf<List<RestoreSource>>(emptyList()) }
     var recentInfo by remember { mutableStateOf<List<RecentBackup>>(emptyList()) }
-    var wifiConfirm by remember { mutableStateOf(false) }
     var holdsSms by remember { mutableStateOf(BackupJobs.isDefaultSms(ctx)) }
     var pendingRestore by remember { mutableStateOf(false) }
 
     fun reloadCounts() = scope.launch {
-        rooted = RootRunner.granted()
         for (k in kinds) {
-            if (k == BackupKind.WIFI && !rooted) { counts[k] = null; continue }
             counts[k] = withContext(Dispatchers.IO) { runCatching { prov.count(k) }.getOrNull() }
         }
     }
@@ -455,7 +441,7 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
         scope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { BackupJobs.inspect(vm.fsm, src) } }
             invLoading = false
-            r.onSuccess { i -> inv = i; restoreChecked = i.entries.map { it.kind }.filter { it != BackupKind.WIFI }.toSet() }
+            r.onSuccess { i -> inv = i; restoreChecked = i.entries.map { it.kind }.toSet() }
                 .onFailure { invError = t("无法读取：", "Cannot read: ") + (it.message ?: it.toString()) }
         }
     }
@@ -514,12 +500,10 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
     }
 
     val items = kinds.map { k ->
-        val wifi = k == BackupKind.WIFI
         val c = counts[k]
-        BackupItemUi(k, c, k in checked && (c != null || !wifi), enabled = !wifi || rooted,
+        BackupItemUi(k, c, k in checked && c != null,
             missing = when {
-                wifi && !rooted -> t("需要 Root", "Needs root")
-                c == null && !wifi && prov.permissions(k, false).any { !prov.has(it) } -> t("需要授权才能读取，点按授权", "Permission needed — tap to grant")
+                c == null && prov.permissions(k, false).any { !prov.has(it) } -> t("需要授权才能读取，点按授权", "Permission needed — tap to grant")
                 else -> null
             })
     }
@@ -530,7 +514,7 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
         zip = zip,
         restoreLabel = i?.let { VPath.name(it.source.path) },
         restoreSub = i?.let { listOfNotNull(if (it.created > 0) fmtDate(it.created) else null, it.device.ifBlank { null }, vm.fsm.label(it.source.fsId)).joinToString(" · ") },
-        restoreItems = i?.entries?.map { e -> BackupItemUi(e.kind, e.count, e.kind in restoreChecked, enabled = e.kind != BackupKind.WIFI || rooted, missing = if (e.kind == BackupKind.WIFI && !rooted) t("需要 Root", "Needs root") else null) } ?: emptyList(),
+        restoreItems = i?.entries?.map { e -> BackupItemUi(e.kind, e.count, e.kind in restoreChecked) } ?: emptyList(),
         restoreLoading = invLoading, restoreError = invError,
         recent = recentInfo, progress = BackupJobs.progress, outcome = outcome, holdsSms = holdsSms && BackupJobs.progress == null,
     )
@@ -543,12 +527,12 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
         dest = { destPicker = true },
         start = {
             val sel = items.filter { it.checked && it.enabled }.map { it.kind }
-            if (request(sel.filter { it != BackupKind.WIFI }, false)) BackupJobs.backup(ctx.applicationContext, vm.fsm, sel, destFs, destDir, zip)
+            if (request(sel, false)) BackupJobs.backup(ctx.applicationContext, vm.fsm, sel, destFs, destDir, zip)
         },
         cancel = { BackupJobs.cancel() },
         toggleRestore = { k -> restoreChecked = if (k in restoreChecked) restoreChecked - k else restoreChecked + k },
         pickRecent = { idx -> recent.getOrNull(idx)?.let { load(it) } },
-        startRestore = { if (BackupKind.WIFI in restoreChecked) wifiConfirm = true else startRestore() },
+        startRestore = { startRestore() },
         dismiss = { BackupJobs.outcome = null },
         openResult = { outcome?.let { o -> if (o.fsId != null && o.path != null) { vm.screen = Screen.Main; vm.openFs(o.fsId, if (zip) VPath.parent(o.path) else o.path) } } },
         giveBackSms = { giveBack() },
@@ -556,7 +540,6 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
     BackupContent(ui, cb)
 
     if (destPicker) BackupDestDialog(vm, destFs, destDir, dismiss = { destPicker = false }) { f, d -> destFs = f; destDir = d; destPicker = false }
-    if (wifiConfirm) WifiRestoreDialog(dismiss = { wifiConfirm = false }) { wifiConfirm = false; startRestore() }
 }
 
 @Composable
@@ -591,23 +574,3 @@ private fun BackupDestDialog(vm: MainViewModel, fsId: String, dir: String, dismi
     )
 }
 
-@Composable
-private fun WifiRestoreDialog(dismiss: () -> Unit, confirm: () -> Unit) {
-    var ack by remember { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = dismiss,
-        icon = { Icon(Icons.Rounded.WarningAmber, null, tint = MaterialTheme.colorScheme.error) },
-        title = { Text(t("用备份替换 WiFi 配置？", "Replace WiFi networks?")) },
-        text = {
-            Column {
-                Text(t("将用 Root 覆盖系统的 WifiConfigStore.xml：当前已保存的网络会被备份里的列表替换（原文件另存为 WifiConfigStore.xml.ghostbak）。过程中会关闭再打开 WiFi；系统通常要重启手机后才会完整读取新配置。不同安卓版本之间恢复可能无效。",
-                    "Root overwrites WifiConfigStore.xml: saved networks are replaced by the backup (old file kept as .ghostbak). WiFi is toggled; a reboot is usually needed. Restoring across Android versions may not work."), fontSize = 13.sp)
-                Row(Modifier.clickable { ack = !ack }.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(ack, { ack = it }); Text(t("我了解，继续替换", "I understand"), fontSize = 13.sp)
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = confirm, enabled = ack) { Text(t("替换并重启 WiFi", "Replace & restart WiFi"), color = if (ack) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline) } },
-        dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
-    )
-}

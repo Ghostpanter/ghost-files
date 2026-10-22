@@ -12,7 +12,6 @@ import com.ghostpanter.files.core.VirtualFs
 import com.ghostpanter.files.core.backup.BackupKind
 import com.ghostpanter.files.core.backup.BackupManifest
 import com.ghostpanter.files.core.backup.SmsXml
-import com.ghostpanter.files.core.backup.WifiStore
 import com.ghostpanter.files.fs.FsManager
 import com.ghostpanter.files.t
 import kotlinx.coroutines.CoroutineScope
@@ -108,7 +107,6 @@ object BackupJobs {
                     fs.mkdirs(target)
                     kinds.forEachIndexed { i, k ->
                         val path = VPath.join(target, files[k]!!)
-                        if (k == BackupKind.WIFI) fs.mkdirs(VPath.parent(path))
                         safe(k, lines) { fs.openWrite(path).buffered(1 shl 16).use { counts[k] = runOne(p, k, it, i, kinds.size, label) } }
                         if (k !in counts) runCatching { fs.delete(path, false) }
                     }
@@ -137,7 +135,6 @@ object BackupJobs {
         BackupKind.CALLS -> t("$n 条通话记录", "$n calls")
         BackupKind.CONTACTS -> t("$n 位联系人", "$n contacts")
         BackupKind.CALENDAR -> t("$n 个日程", "$n events")
-        BackupKind.WIFI -> t("$n 个 WiFi", "$n networks")
     }
 
     private suspend fun publish(kind: BackupKind, restore: Boolean, step: Int, steps: Int, done: Int, total: Int, label: String) =
@@ -157,7 +154,6 @@ object BackupJobs {
             BackupKind.CALLS -> p.exportCalls(w, t)
             BackupKind.CONTACTS -> p.exportContacts(w, t)
             BackupKind.CALENDAR -> p.exportCalendar(w, t)
-            BackupKind.WIFI -> { val b = p.wifiBytes() ?: throw java.io.IOException(t("读取 WiFi 配置失败（需要 Root）", "Cannot read WiFi config (root)")); w.flush(); out.write(b); WifiStore.countNetworks(String(b)) }
         }
         w.flush()
         return n
@@ -172,7 +168,6 @@ object BackupJobs {
             BackupKind.SMS, BackupKind.CALLS -> open().use { i -> val b = ByteArray(4096); val r = i.read(b).coerceAtLeast(0); SmsXml.peekCount(String(b, 0, r))?.second }
             BackupKind.CONTACTS -> open().bufferedReader().useLines { s -> s.count { it.trim().equals("BEGIN:VCARD", true) } }
             BackupKind.CALENDAR -> open().bufferedReader().useLines { s -> s.count { it.trim() == "BEGIN:VEVENT" } }
-            BackupKind.WIFI -> open().use { WifiStore.countNetworks(String(it.readBytes())) }
         }
     }.getOrNull()
 
@@ -195,7 +190,6 @@ object BackupJobs {
                     if (f.isDirectory || entries.any { it.kind == k }) continue
                     entries.add(RestoreEntry(k, countIn(k) { fs.openRead(f.path) }, f.name))
                 }
-                if (fs.stat(VPath.join(dir, "wifi/WifiConfigStore.xml")) != null) entries.add(RestoreEntry(BackupKind.WIFI, null, "wifi/WifiConfigStore.xml"))
             }
             return RestoreInventory(RestoreSource(src.fsId, dir), label, RestoreInventory.Type.FOLDER, entries, m?.created ?: e.lastModified, m?.device ?: "")
         }
@@ -240,11 +234,6 @@ object BackupJobs {
                 val t = tick(k, true, step, order.size, inv.label)
                 t.progress(0, 0)
                 if (k == BackupKind.SMS && !isDefaultSms(ctx)) { lines.add(BackupLine(k, t("未设为默认短信应用，已跳过", "Not the default SMS app: skipped"), false)); return }
-                if (k == BackupKind.WIFI) {
-                    val target = p.restoreWifi(input.readBytes())
-                    lines.add(BackupLine(k, t("已写入 $target，建议重启手机生效", "Written to $target; reboot to apply")))
-                    return
-                }
                 val r: Reader = input.bufferedReader(Charsets.UTF_8)
                 val c = when (k) {
                     BackupKind.SMS -> p.restoreSms(r, t)

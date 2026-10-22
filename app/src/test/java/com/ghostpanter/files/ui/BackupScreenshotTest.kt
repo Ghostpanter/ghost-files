@@ -41,7 +41,6 @@ class BackupScreenshotTest(private val name: String, private val device: DeviceC
         BackupItemUi(BackupKind.CALLS, 3_201, true),
         BackupItemUi(BackupKind.CONTACTS, 642, true),
         BackupItemUi(BackupKind.CALENDAR, null, false, missing = "需要授权才能读取，点按授权"),
-        BackupItemUi(BackupKind.WIFI, 23, true),
     )
 
     @Test fun backupPage() = render(BackupUi(BackupTab.BACKUP, items, "内部存储/双栏文件管理器/备份", zip = false))
@@ -51,7 +50,7 @@ class BackupScreenshotTest(private val name: String, private val device: DeviceC
 
     private val restoreItems = listOf(
         BackupItemUi(BackupKind.SMS, 12_486, true), BackupItemUi(BackupKind.CALLS, 3_201, true),
-        BackupItemUi(BackupKind.CONTACTS, 642, true), BackupItemUi(BackupKind.CALENDAR, 158, false), BackupItemUi(BackupKind.WIFI, 23, false),
+        BackupItemUi(BackupKind.CONTACTS, 642, true), BackupItemUi(BackupKind.CALENDAR, 158, false),
     )
     private val recent = listOf(
         RecentBackup("2026-10-22_093012", "2026-10-22 09:30 · 内部存储/双栏文件管理器/备份"),
