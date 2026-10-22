@@ -55,9 +55,13 @@ object BundleInstaller {
     suspend fun install(
         ctx: Context, bundle: ApkBundle, entries: List<ApkBundle.Split>, shell: ShellRunner?,
         onProgress: (Long, Long) -> Unit,
+        /** Recorded install source for the pm path (`pm install-create -i`); ignored by the system installer. */
+        installer: String? = null,
     ) {
         require(entries.any { it.kind == ApkBundle.Kind.BASE }) { "base APK required" }
-        if (shell != null) withContext(Dispatchers.IO) { installWithPm(shell, bundle, entries, onProgress) }
+        if (shell != null) withContext(Dispatchers.IO) {
+            installWithPm(shell, entries.map { e -> Item(e.name, e.size) { bundle.open(e.entry) } }, installer, onProgress)
+        }
         else {
             if (!canRequestInstalls(ctx)) throw NeedsInstallPermission()
             installWithSession(ctx, bundle, entries, onProgress)
@@ -113,7 +117,8 @@ object BundleInstaller {
                     else -> {
                         done(c, this)
                         val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
-                        if (cont.isActive) cont.resumeWithException(IOException(statusText(status) + (msg?.let { " · $it" } ?: "")))
+                        val why = msg?.let { com.ghostpanter.files.core.apk.InstallSource.explain(it) }
+                        if (cont.isActive) cont.resumeWithException(IOException(statusText(status) + (msg?.let { " · $it" } ?: "") + (why?.let { "\n$it" } ?: "")))
                     }
                 }
             }
@@ -144,21 +149,36 @@ object BundleInstaller {
 
     // ---------------------------------------------------------------- pm over Root / Shizuku
 
-    private fun installWithPm(sh: ShellRunner, bundle: ApkBundle, entries: List<ApkBundle.Split>, onProgress: (Long, Long) -> Unit) {
+    private class Item(val name: String, val size: Long, val open: () -> InputStream)
+
+    /**
+     * Re-installs [pkg] from its own installed APKs with a different recorded source (same signature, `-r`, so
+     * data is kept). Used when `pm set-installer` is refused.
+     */
+    suspend fun reinstallAs(ctx: Context, sh: ShellRunner, pkg: String, installer: String) = withContext(Dispatchers.IO) {
+        val ai = ctx.packageManager.getApplicationInfo(pkg, 0)
+        val files = (listOf(ai.sourceDir) + ai.splitSourceDirs.orEmpty()).filterNotNull().map { File(it) }
+        installWithPm(sh, files.map { f -> Item(f.name, f.length()) { f.inputStream() } }, installer) { _, _ -> }
+    }
+
+    private fun installWithPm(sh: ShellRunner, entries: List<Item>, installer: String?, onProgress: (Long, Long) -> Unit) {
         val total = entries.sumOf { it.size.coerceAtLeast(0) }.coerceAtLeast(1)
-        val created = run(sh, "pm install-create -r -S $total")
+        val created = run(sh, com.ghostpanter.files.core.apk.InstallSource.pmCreate(total, installer))
         val sid = Regex("""\[(\d+)]""").find(created)?.groupValues?.get(1)
             ?: throw IOException(t("pm 无法创建安装会话：", "pm install-create failed: ") + created.trim())
         try {
             var done = 0L
             for ((i, e) in entries.withIndex()) {
                 val p = sh.start("pm install-write -S ${e.size} $sid ${i}_${safe(e.name)} -")
-                bundle.open(e.entry).use { ins -> p.outputStream.use { out -> copy(ins, out) { n -> done += n; onProgress(done, total) } } }
+                e.open().use { ins -> p.outputStream.use { out -> copy(ins, out) { n -> done += n; onProgress(done, total) } } }
                 val out = finish(p)
                 if (!out.contains("Success")) throw IOException("install-write: " + out.trim())
             }
             val r = run(sh, "pm install-commit $sid")
-            if (!r.contains("Success")) throw IOException(r.trim().ifEmpty { "install-commit failed" })
+            if (!r.contains("Success")) {
+                val msg = r.trim().ifEmpty { "install-commit failed" }
+                throw IOException(com.ghostpanter.files.core.apk.InstallSource.explain(msg)?.let { "$it\n$msg" } ?: msg)
+            }
         } catch (t: Throwable) {
             runCatching { run(sh, "pm install-abandon $sid") }
             throw t

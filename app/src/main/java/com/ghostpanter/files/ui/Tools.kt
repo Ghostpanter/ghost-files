@@ -390,7 +390,8 @@ fun hexRow(b: ByteArray, row: Int, base: Long): String {
 
 // ------------------------------------------------------------------ app manager
 
-private class AppRow(val label: String, val pkg: String, val version: String, val system: Boolean, val apk: String, val splits: List<String>, val size: Long, val info: ApplicationInfo)
+private class AppRow(val label: String, val pkg: String, val version: String, val system: Boolean, val apk: String, val splits: List<String>, val size: Long, val info: ApplicationInfo,
+    val versionCode: Long = 0, val installer: String? = null)
 
 private data class BatchBackupProgress(
     val mode: String,
@@ -427,6 +428,7 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
                     ai.loadLabel(pm).toString(), pi.packageName, pi.versionName ?: "",
                     (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0, ai.sourceDir ?: "", splits,
                     (listOf(ai.sourceDir) + splits).sumOf { p -> p?.let { File(it).length() } ?: 0L }, ai,
+                    pi.longVersionCode, com.ghostpanter.files.install.AppSource.record(ctx, pi.packageName)?.installer,
                 )
             }.sortedBy { it.label.lowercase() }
         }
@@ -453,7 +455,7 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
             val total = targets.size
             for ((i, a) in targets.withIndex()) {
                 batchProgress = BatchBackupProgress("apk", i + 1, total, a.label, ok, fail)
-                val r = withContext(Dispatchers.IO) { runCatching { backupApk(a) } }
+                val r = withContext(Dispatchers.IO) { runCatching { backupApk(ctx, a) } }
                 if (r.isSuccess) ok++ else fail++
             }
             batchProgress = null
@@ -602,7 +604,8 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
                                 Text(a.label, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                                 Text(
                                     "${a.pkg}  ${a.version}  ${formatSize(a.size)}" +
-                                        if (a.splits.isNotEmpty()) "  +${a.splits.size} split" else "",
+                                        (if (a.splits.isNotEmpty()) "  +${a.splits.size} split" else "") +
+                                        (if (!a.system) "  · " + sourceShort(ctx, a.installer) else ""),
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.outline,
                                     maxLines = 1,
@@ -621,13 +624,19 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
         AlertDialog(
             onDismissRequest = dismiss,
             title = { Text(a.label) },
-            text = { SelectionContainer { Text("${a.pkg}\n${t("版本", "Version")} ${a.version}\n${a.apk}", fontSize = 12.sp) } },
+            text = {
+                Column {
+                    SelectionContainer { Text("${a.pkg}\n${t("版本", "Version")} ${a.version}\n${a.apk}", fontSize = 12.sp) }
+                    Spacer(Modifier.height(10.dp))
+                    InstalledAppSource(vm, a.pkg)
+                }
+            },
             confirmButton = {
                 Column(horizontalAlignment = Alignment.End) {
                     TextButton(onClick = {
                         dismiss()
                         scope.launch {
-                            val r = withContext(Dispatchers.IO) { runCatching { backupApk(a) } }
+                            val r = withContext(Dispatchers.IO) { runCatching { backupApk(ctx, a) } }
                             r.onSuccess { vm.toast(t("已备份到 ", "Saved to ") + it) }
                                 .onFailure { vm.toast(t("备份失败：", "Backup failed: ") + it.message) }
                         }
@@ -704,10 +713,78 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
     }
 }
 
+private fun sourceShort(ctx: Context, installer: String?): String =
+    com.ghostpanter.files.core.apk.InstallSource.knownLabel(installer, ctx.packageName) ?: installer!!
+
+/** Source card in the app detail: shows what PackageManager / dumpsys recorded, and can switch it to Google Play. */
+@Composable
+private fun InstalledAppSource(vm: MainViewModel, pkg: String) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val elevated = remember { com.ghostpanter.files.install.BundleInstaller.elevated() }
+    val play = remember { com.ghostpanter.files.install.AppSource.playPresent(ctx) }
+    var rec by remember(pkg) { mutableStateOf<com.ghostpanter.files.core.apk.InstallSource.Record?>(null) }
+    var loading by remember(pkg) { mutableStateOf(true) }
+    var busy by remember { mutableStateOf(false) }
+    var note by remember(pkg) { mutableStateOf<Pair<Boolean, String>?>(null) }
+    var offerReinstall by remember(pkg) { mutableStateOf(false) }
+    suspend fun reload() {
+        rec = withContext(Dispatchers.IO) { com.ghostpanter.files.install.AppSource.best(ctx, pkg, elevated?.second) }
+        loading = false
+    }
+    LaunchedEffect(pkg) { reload() }
+    val PLAY = com.ghostpanter.files.core.apk.InstallSource.PLAY
+    val r = rec
+    val isPlay = r?.installer == PLAY
+    fun label(p: String?) = com.ghostpanter.files.install.AppSource.label(ctx, p)
+    AppSourceCard(
+        AppSourceUi(
+            installer = if (loading) "" else label(r?.installer), installerPkg = r?.installer,
+            initiating = r?.initiating?.takeIf { it != r.installer }?.let { label(it) },
+            updateOwner = r?.updateOwner?.let { label(it) },
+            isPlay = isPlay, canSetPlay = elevated != null && play && !isPlay && !loading,
+            canOpenPlay = play, busy = busy, note = note, offerReinstall = offerReinstall && elevated != null, loading = loading,
+        ),
+        onSetPlay = {
+            val sh = elevated?.second ?: return@AppSourceCard
+            busy = true
+            scope.launch {
+                val res = withContext(Dispatchers.IO) { com.ghostpanter.files.install.AppSource.setInstaller(sh, pkg, PLAY) }
+                reload()
+                busy = false
+                note = when {
+                    res.isSuccess && rec?.installer == PLAY -> true to t("已改为 Google Play 来源（${elevated.first}）", "Source set to Google Play (${elevated.first})")
+                    res.isSuccess -> { offerReinstall = true; false to t("命令执行成功，但系统记录的来源仍是 ${label(rec?.installer)}", "Command ran, but Android still records ${label(rec?.installer)}") }
+                    else -> {
+                        offerReinstall = true
+                        val raw = res.exceptionOrNull()?.message.orEmpty()
+                        false to ((com.ghostpanter.files.core.apk.InstallSource.explain(raw) ?: t("修改失败", "Failed")) + "\n" + raw.lineSequence().take(2).joinToString(" ").take(160))
+                    }
+                }
+            }
+        },
+        onOpenPlay = { com.ghostpanter.files.install.AppSource.playIntent(ctx, pkg)?.let { i -> runCatching { ctx.startActivity(i) } } },
+        onReinstall = {
+            val sh = elevated?.second ?: return@AppSourceCard
+            busy = true
+            scope.launch {
+                val res = runCatching { com.ghostpanter.files.install.BundleInstaller.reinstallAs(ctx, sh, pkg, PLAY) }
+                reload()
+                busy = false
+                note = if (res.isSuccess && rec?.installer == PLAY) { offerReinstall = false; true to t("已覆盖安装，来源为 Google Play，数据保留", "Reinstalled as a Google Play install; data kept") }
+                else false to (t("覆盖安装后来源为 ${label(rec?.installer)}", "After reinstall the source is ${label(rec?.installer)}") + (res.exceptionOrNull()?.message?.let { "\n" + it.take(200) } ?: ""))
+            }
+        },
+    )
+}
+
 private fun backupDir() = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "GhostFiles/apks")
 
-/** Copies base.apk (or base + splits as an .apks zip) to Download/GhostFiles/apks. */
-private fun backupApk(a: AppRow): String {
+/**
+ * Copies base.apk (or base + splits as an .apks zip) to Download/GhostFiles/apks. The .apks carries ghost-app.json
+ * with the original install source and this device's ABI / density / languages.
+ */
+private fun backupApk(ctx: Context, a: AppRow): String {
     val dir = backupDir().apply { mkdirs() }
     val safe = (a.label + "_" + a.version).replace(Regex("[\\\\/:*?\"<>|\\s]+"), "_")
     if (a.splits.isEmpty()) {
@@ -717,6 +794,9 @@ private fun backupApk(a: AppRow): String {
     }
     val out = File(dir, "$safe.apks")
     java.util.zip.ZipOutputStream(out.outputStream().buffered()).use { z ->
+        z.putNextEntry(java.util.zip.ZipEntry(com.ghostpanter.files.core.apk.BundleMeta.NAME))
+        z.write(com.ghostpanter.files.install.AppSource.meta(ctx, a.pkg, a.version, a.versionCode).toJson().toByteArray())
+        z.closeEntry()
         for (p in listOf(a.apk) + a.splits) {
             z.putNextEntry(java.util.zip.ZipEntry(File(p).name))
             File(p).inputStream().use { it.copyTo(z, 256 * 1024) }

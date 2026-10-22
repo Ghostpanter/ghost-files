@@ -10,6 +10,7 @@ import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Environment
 import android.provider.OpenableColumns
+import com.ghostpanter.files.core.apk.InstallSource
 import android.util.LruCache
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -180,9 +181,13 @@ private fun remoteDevice(dev: com.ghostpanter.adb.AdbDevice): com.ghostpanter.fi
     return com.ghostpanter.files.core.apk.ApkBundle.Device(abis, dpi, langs)
 }
 
-private fun localApks(ctx: Context, uris: List<Uri>, dev: com.ghostpanter.adb.AdbDevice): List<RemoteApps.Apk> {
+/** APKs to push, plus the bundle's package and recorded original install source when it is one of our backups. */
+private class LocalPick(val apks: List<RemoteApps.Apk>, val pkg: String?, val original: String?)
+
+private fun localApks(ctx: Context, uris: List<Uri>, dev: com.ghostpanter.adb.AdbDevice): LocalPick {
     val cr = ctx.contentResolver
     val out = ArrayList<RemoteApps.Apk>()
+    var pkg: String? = null; var original: String? = null
     for (u in uris) {
         var name = "app.apk"; var size = -1L
         cr.query(u, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
@@ -194,6 +199,7 @@ private fun localApks(ctx: Context, uris: List<Uri>, dev: com.ghostpanter.adb.Ad
             cr.openInputStream(u)!!.use { i -> tmp.outputStream().use { i.copyTo(it) } }
             // Same parser / split choice as local installs, but for the target's ABI, density and locale.
             val b = com.ghostpanter.files.core.apk.ApkBundle.read(tmp)
+            pkg = pkg ?: b.packageName; original = original ?: b.meta?.source?.installer
             val pick = b.select(remoteDevice(dev))
             val z = ZipFile(tmp)
             b.splits.filter { it.entry in pick }.forEach { sp ->
@@ -205,7 +211,7 @@ private fun localApks(ctx: Context, uris: List<Uri>, dev: com.ghostpanter.adb.Ad
             out += RemoteApps.Apk(name, size) { cr.openInputStream(u)!! }
         }
     }
-    return out
+    return LocalPick(out, pkg, original)
 }
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
@@ -227,6 +233,14 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
     var installMenu by remember { mutableStateOf(false) }
     var pickLocal by remember { mutableStateOf(false) }
     val labels = remember(serial) { mutableStateOf(previewLabels) }
+    // Record installs as Google Play (or the backup's original source) instead of com.android.shell.
+    var targetPlay by remember(serial) { mutableStateOf(false) }
+    var asPlay by remember(serial) { mutableStateOf<Boolean?>(null) }
+    if (preview == null) LaunchedEffect(serial) {
+        val has = io { RemoteApps.hasPlay(dev) }.getOrDefault(false)
+        targetPlay = has
+        if (asPlay == null) asPlay = has
+    }
 
     if (preview == null) LaunchedEffect(serial, reload) {
         error = null
@@ -234,19 +248,29 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
             .onSuccess { apps = it }.onFailure { error = it.message }
     }
 
-    fun install(list: List<RemoteApps.Apk>, title: String) {
+    fun install(list: List<RemoteApps.Apk>, title: String, pkg: String? = null, original: String? = null) {
         if (list.isEmpty()) return
+        val installer = if (asPlay == true) InstallSource.defaultChoice(original, InstallSource.SHELL, targetPlay, true)
+            ?.let { InstallSource.installerFor(it, original, InstallSource.SHELL) }?.takeIf { it != InstallSource.SHELL } else null
         scope.launch {
             progress = Triple(t("安装 ", "Installing ") + title, 0, 1)
-            io { RemoteApps.install(dev, list) { d, tot -> bytes = d to tot } }
-                .onSuccess { toast(t("安装成功：", "Installed: ") + title) }
+            io { RemoteApps.install(dev, list, { d, tot -> bytes = d to tot }, installer) }
+                .onSuccess {
+                    val rec = pkg?.let { p -> io { RemoteApps.source(dev, p) }.getOrNull() }
+                    fun name(p: String?) = InstallSource.knownLabel(p, ctx.packageName) ?: p!!
+                    toast(t("安装成功：", "Installed: ") + title + when {
+                        rec == null -> ""
+                        installer == null || rec.installer == installer -> t(" · 来源 ", " · source ") + name(rec.installer)
+                        else -> t("，但来源记录为 ${name(rec.installer)}（期望 ${name(installer)}）", "; source recorded as ${name(rec.installer)} (wanted ${name(installer)})")
+                    })
+                }
                 .onFailure { toast(t("安装失败：", "Install failed: ") + it.message) }
             progress = null; bytes = null; reload++
         }
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) scope.launch {
-            io { localApks(ctx, uris, dev) }.onSuccess { install(it, it.firstOrNull()?.name ?: "APK") }.onFailure { toast(it.message ?: "error") }
+            io { localApks(ctx, uris, dev) }.onSuccess { install(it.apks, it.apks.firstOrNull()?.name ?: "APK", it.pkg, it.original) }.onFailure { toast(it.message ?: "error") }
         }
     }
 
@@ -276,6 +300,11 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
                         File(dir, "$name.apk").outputStream().use { dev.pull(paths.first(), it) }
                     } else {
                         ZipOutputStream(File(dir, "$name.apks").outputStream()).use { z ->
+                            val rec = runCatching { RemoteApps.source(dev, a.pkg) }.getOrNull()
+                            val d = remoteDevice(dev)
+                            val meta = com.ghostpanter.files.core.apk.BundleMeta(a.pkg, null, a.versionCode, rec ?: com.ghostpanter.files.core.apk.InstallSource.Record(null),
+                                adbLabel(serial), d.abis, d.densityDpi, d.languages, System.currentTimeMillis())
+                            z.putNextEntry(ZipEntry(com.ghostpanter.files.core.apk.BundleMeta.NAME)); z.write(meta.toJson().toByteArray()); z.closeEntry()
                             paths.forEach { p -> z.putNextEntry(ZipEntry(p.substringAfterLast('/'))); dev.pull(p, z); z.closeEntry() }
                         }
                     }
@@ -302,6 +331,11 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
                 DropdownMenu(installMenu, { installMenu = false }) {
                     DropdownMenuItem({ Text(t("选择本地 APK / APKS / XAPK…", "Pick local APK / APKS / XAPK…")) }, { installMenu = false; picker.launch(arrayOf("*/*")) })
                     DropdownMenuItem({ Text(t("从本机已安装应用…", "From an app installed here…")) }, { installMenu = false; pickLocal = true })
+                    if (targetPlay) DropdownMenuItem(
+                        { Column { Text(t("安装来源记为 Google Play", "Record Google Play as source")); Text(t("有备份记录时保持原来源", "Keeps the original source when recorded"), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline) } },
+                        { asPlay = asPlay != true },
+                        trailingIcon = { Checkbox(asPlay == true, { asPlay = it }) },
+                    )
                 }
             }
         }
@@ -377,6 +411,28 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
                     Text(a.pkg, fontSize = 13.sp)
                     Text("versionCode ${a.versionCode} · uid ${a.uid}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                     if (a.apkPath.isNotEmpty()) Text(a.apkPath, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                    if (!a.uninstalled) {
+                        var rec by remember(a.pkg) { mutableStateOf<InstallSource.Record?>(null) }
+                        var loaded by remember(a.pkg) { mutableStateOf(preview != null) }
+                        if (preview == null) LaunchedEffect(a.pkg) { rec = io { RemoteApps.source(dev, a.pkg) }.getOrNull(); loaded = true }
+                        fun name(p: String?) = InstallSource.knownLabel(p, ctx.packageName) ?: (labels.value[p] ?: p!!)
+                        Spacer(Modifier.size(8.dp))
+                        com.ghostpanter.files.ui.AppSourceCard(
+                            com.ghostpanter.files.ui.AppSourceUi(
+                                installer = if (loaded) name(rec?.installer) else "", installerPkg = rec?.installer,
+                                initiating = rec?.initiating?.takeIf { it != rec?.installer }?.let { name(it) }, updateOwner = rec?.updateOwner?.let { name(it) },
+                                isPlay = rec?.installer == InstallSource.PLAY, canSetPlay = targetPlay && loaded && rec?.installer != InstallSource.PLAY, loading = !loaded,
+                            ),
+                            onSetPlay = {
+                                scope.launch {
+                                    val out = io { dev.sh(InstallSource.setInstaller(a.pkg, InstallSource.PLAY), timeoutMs = 30_000).let { it.stdout + it.stderr } }.getOrElse { it.message.orEmpty() }
+                                    rec = io { RemoteApps.source(dev, a.pkg) }.getOrNull()
+                                    toast(if (InstallSource.setInstallerOk(out) && rec?.installer == InstallSource.PLAY) t("已改为 Google Play 来源", "Source set to Google Play")
+                                        else (InstallSource.explain(out) ?: t("修改失败：", "Failed: ")) + " " + out.trim().take(160))
+                                }
+                            },
+                        )
+                    }
                     Spacer(Modifier.size(10.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (a.uninstalled) GhostChip({ one(t("恢复", "Restore"), RemoteApps.restore(a.pkg)) }, { Text(t("恢复安装", "Restore")) })
@@ -403,7 +459,8 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
     if (pickLocal) LocalAppPicker(onDismiss = { pickLocal = false }) { ai, label ->
         pickLocal = false
         val files = (listOf(ai.sourceDir) + ai.splitSourceDirs.orEmpty()).filterNotNull().map { File(it) }
-        install(files.map { f -> RemoteApps.Apk(f.name, f.length()) { f.inputStream() } }, label)
+        install(files.map { f -> RemoteApps.Apk(f.name, f.length()) { f.inputStream() } }, label, ai.packageName,
+            com.ghostpanter.files.install.AppSource.record(ctx, ai.packageName)?.installer)
     }
 }
 

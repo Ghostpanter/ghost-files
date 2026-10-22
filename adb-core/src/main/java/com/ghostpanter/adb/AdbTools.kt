@@ -182,6 +182,12 @@ object RemoteApps {
         "case \"\$c\" in */*) am start -n \"\$c\" ;; *) monkey -p ${q(pkg)} -c android.intent.category.LAUNCHER 1 ;; esac"
     fun paths(pkg: String) = "pm path ${q(pkg)}"
     fun parsePaths(out: String) = out.lineSequence().map { it.trim() }.filter { it.startsWith("package:") }.map { it.removePrefix("package:") }.toList()
+    /** Install source of [pkg] on the target (dumpsys). */
+    fun source(dev: AdbDevice, pkg: String): com.ghostpanter.files.core.apk.InstallSource.Record? =
+        com.ghostpanter.files.core.apk.InstallSource.parseDumpsys(dev.sh(com.ghostpanter.files.core.apk.InstallSource.dumpsys(pkg), timeoutMs = 30_000).stdout, pkg)
+
+    fun hasPlay(dev: AdbDevice): Boolean = dev.sh("pm path ${com.ghostpanter.files.core.apk.InstallSource.PLAY}", timeoutMs = 15_000).stdout.contains("package:")
+
     fun versionName(pkg: String) = "dumpsys package ${q(pkg)} | grep -m1 versionName"
 
     class Apk(val name: String, val size: Long, val open: () -> InputStream)
@@ -190,7 +196,7 @@ object RemoteApps {
      * Installs one APK, or a split set through a pm session, after pushing to /data/local/tmp.
      * [progress] gets (bytesDone, bytesTotal); returns pm's output.
      */
-    fun install(dev: AdbDevice, apks: List<Apk>, progress: (Long, Long) -> Unit = { _, _ -> }): String {
+    fun install(dev: AdbDevice, apks: List<Apk>, progress: (Long, Long) -> Unit = { _, _ -> }, installer: String? = null): String {
         require(apks.isNotEmpty())
         val dir = "/data/local/tmp/gf-install-" + java.lang.Long.toHexString(System.nanoTime())
         val total = apks.sumOf { it.size }.coerceAtLeast(1)
@@ -208,9 +214,9 @@ object RemoteApps {
                 r
             }
             val out = if (remote.size == 1) {
-                dev.sh("pm install -r -t ${q(remote[0])}", timeoutMs = 600_000).stdout
+                dev.sh(com.ghostpanter.files.core.apk.InstallSource.pmInstall(remote[0], installer), timeoutMs = 600_000).stdout
             } else {
-                val created = dev.sh("pm install-create -r -t -S $total", timeoutMs = 60_000).stdout
+                val created = dev.sh(com.ghostpanter.files.core.apk.InstallSource.pmCreate(total, installer, allowTest = true), timeoutMs = 60_000).stdout
                 val sid = Regex("\\[(\\d+)]").find(created)?.groupValues?.get(1) ?: throw IOException(created.trim())
                 for ((i, r) in remote.withIndex()) {
                     val w = dev.sh("pm install-write -S ${apks[i].size} $sid split_$i.apk ${q(r)}", timeoutMs = 300_000)
@@ -218,7 +224,10 @@ object RemoteApps {
                 }
                 dev.sh("pm install-commit $sid", timeoutMs = 600_000).stdout
             }
-            if (!out.contains("Success")) throw IOException(out.trim().ifEmpty { "install failed" })
+            if (!out.contains("Success")) {
+                val msg = out.trim().ifEmpty { "install failed" }
+                throw IOException(com.ghostpanter.files.core.apk.InstallSource.explain(msg)?.let { "$it\n$msg" } ?: msg)
+            }
             return out.trim()
         } finally {
             runCatching { dev.sh("rm -rf $dir", timeoutMs = 15_000) }
