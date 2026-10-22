@@ -23,7 +23,10 @@ class FsManager(
 
     val local = LocalFs(LocalFs.ID, t("本机", "Local"), storageRoot)
     val root: ShellFs by lazy { ShellFs(ROOT, "Root", RootRunner, "/") }
-    val shizuku: ShellFs by lazy { ShellFs(SHIZUKU, "Shizuku", ShizukuRunner, "$storageRoot/Android/data") }
+    /** Shell commands over Shizuku (fallback and for chmod / chown / copy). */
+    val shizukuShell: ShellFs by lazy { ShellFs(SHIZUKU, "Shizuku", ShizukuRunner, "$storageRoot/Android/data") }
+    /** Shizuku UserService first (java.io in the shell-uid process), [shizukuShell] otherwise. */
+    val shizuku: VirtualFs by lazy { ShizukuFs(shizukuShell) }
 
     private val debugSh: ShellFs by lazy {
         ShellFs(DEBUG_SH, "DebugSh", { script -> ProcessBuilder("sh", "-c", script).redirectErrorStream(true).start() }, "/")

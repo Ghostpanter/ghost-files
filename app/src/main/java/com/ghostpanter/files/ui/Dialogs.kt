@@ -25,6 +25,7 @@ import com.ghostpanter.files.core.LocalFs
 import com.ghostpanter.files.core.Protocol
 import com.ghostpanter.files.core.ServerConfig
 import com.ghostpanter.files.core.ShellFs
+import com.ghostpanter.files.fs.shellOrNull
 import com.ghostpanter.files.core.ops.DirStats
 import com.ghostpanter.files.core.ops.FsStats
 import com.ghostpanter.files.core.transfer.ConflictPolicy
@@ -162,7 +163,7 @@ private fun ChmodDialog(vm: MainViewModel, tab: TabState, e: FileEntry, dismiss:
     val bits = remember { mutableStateListOf(*initial.map { it != '-' }.toTypedArray()) }
     var recursive by remember { mutableStateOf(false) }
     var owner by remember { mutableStateOf(listOfNotNull(e.owner, e.group).joinToString(":")) }
-    val isShell = vm.fs(tab) is ShellFs
+    val isShell = vm.fs(tab).shellOrNull() != null
     fun octal(): String = (0..2).joinToString("") { g ->
         ((if (bits[g * 3]) 4 else 0) + (if (bits[g * 3 + 1]) 2 else 0) + (if (bits[g * 3 + 2]) 1 else 0)).toString()
     }

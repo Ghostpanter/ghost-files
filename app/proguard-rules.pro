@@ -12,6 +12,9 @@
 -keep class com.jcraft.jzlib.** { *; }
 -keep class rikka.shizuku.** { *; }
 -keep class moe.shizuku.** { *; }
+# Shizuku UserService: instantiated by class name in Shizuku's process.
+-keep class com.ghostpanter.files.fs.FileService { <init>(...); *; }
+-keep class com.ghostpanter.files.fs.IFileService** { *; }
 -keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
 
 -dontwarn javax.naming.**

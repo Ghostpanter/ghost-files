@@ -16,6 +16,7 @@ import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.LocalFs
 import com.ghostpanter.files.core.ShellFs
+import com.ghostpanter.files.fs.shellOrNull
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.VirtualFs
 import com.ghostpanter.files.core.ops.Archives
@@ -660,7 +661,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
         val fs = fs(tab)
         runBusy(t("创建软链接…", "Creating symlink…"), listOf(tab)) {
             val link = VPath.join(tab.path, linkName.trim())
-            val shell = fs as? ShellFs
+            val shell = fs.shellOrNull()
             com.ghostpanter.files.core.ops.SymlinkOps.createLink(link, target.trim(), shell)
         }
     }
@@ -787,7 +788,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     }
 
     fun chown(tab: TabState, e: FileEntry, owner: String, recursive: Boolean) {
-        val fs = fs(tab) as? ShellFs ?: return
+        val fs = fs(tab).shellOrNull() ?: return
         runBusy(t("修改所有者…", "chown…"), listOf(tab)) { fs.chown(e.path, owner, recursive) }
     }
 
