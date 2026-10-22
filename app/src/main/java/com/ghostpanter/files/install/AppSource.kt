@@ -7,7 +7,6 @@ import android.os.Build
 import com.ghostpanter.files.core.ShellRunner
 import com.ghostpanter.files.core.apk.BundleMeta
 import com.ghostpanter.files.core.apk.InstallSource
-import java.util.concurrent.TimeUnit
 
 /** Install-source lookups on this device (PackageManager, or dumpsys through Root / Shizuku). */
 object AppSource {
@@ -67,11 +66,6 @@ object AppSource {
             (Build.MANUFACTURER + " " + Build.MODEL).trim(), d.abis, d.densityDpi, d.languages, System.currentTimeMillis())
     }
 
-    private fun run(sh: ShellRunner, cmd: String): String {
-        val p = sh.start(cmd)
-        p.outputStream.close()
-        val out = p.inputStream.bufferedReader().readText() + p.errorStream.bufferedReader().readText()
-        if (!p.waitFor(60, TimeUnit.SECONDS)) { p.destroyForcibly(); throw java.io.IOException("timed out") }
-        return out
-    }
+    private fun run(sh: ShellRunner, cmd: String): String =
+        com.ghostpanter.files.core.Proc.run(sh, cmd, 60_000).let { it.stdout + it.stderr }
 }

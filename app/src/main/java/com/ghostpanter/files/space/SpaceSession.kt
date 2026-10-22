@@ -235,7 +235,7 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
                 if (!RootRunner.granted() && !RootRunner.check(timeoutSec = 20)) throw java.io.IOException(t("未获得 Root 授权", "Root not granted"))
                 if (target.wholeDevice) {
                     val extra = runCatching {
-                        RootRunner.start("ls -d /my_* /cache /data/log 2>/dev/null").let { p -> p.outputStream.close(); p.inputStream.bufferedReader().readLines().also { p.waitFor() } }
+                        com.ghostpanter.files.core.Proc.run(RootRunner, "ls -d /my_* /cache /data/log 2>/dev/null", 15_000).stdout.lines().map { it.trim() }.filter { it.isNotEmpty() }
                     }.getOrDefault(emptyList()).filter { it.startsWith("/") && it != "/data/log" }
                     val roots = PathCanon.dedupeRoots(listOf("/data", "/system", "/vendor", "/product", "/system_ext", "/odm") + extra)
                     val b = SpaceTreeBuilder("/").also { liveBuilder = it }
@@ -542,7 +542,7 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
             val msg = if (runner == null) t("需要 Root 或 Shizuku", "Needs root or Shizuku") else runCatching {
                 val root = runner === RootRunner || tier == SpaceTier.ADB_ROOT
                 val script = CacheScripts.script(pkg, root, ctx.packageName)
-                val p = runner.start(script); p.outputStream.close(); p.inputStream.readBytes(); p.waitFor()
+                com.ghostpanter.files.core.Proc.run(runner, script, 300_000, what = t("清理缓存", "clear caches"))
                 val after = runCatching { StatFs("/data").availableBytes }.getOrDefault(0)
                 val freed = (after - before).coerceAtLeast(0)
                 if (adbSerial != null) t("已清理缓存", "Caches cleared")

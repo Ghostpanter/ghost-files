@@ -185,16 +185,15 @@ object BundleInstaller {
         }
     }
 
-    private fun run(sh: ShellRunner, cmd: String): String {
-        val p = sh.start(cmd)
-        p.outputStream.close()
-        return finish(p)
-    }
+    private fun run(sh: ShellRunner, cmd: String): String = finishCode(sh.start(cmd).also { runCatching { it.outputStream.close() } }).second
 
-    private fun finish(p: Process): String {
-        val out = p.inputStream.bufferedReader().readText() + p.errorStream.bufferedReader().readText()
-        if (!p.waitFor(120, TimeUnit.SECONDS)) { p.destroyForcibly(); throw IOException("pm timed out") }
-        return out
+    private fun finish(p: Process): String = finishCode(p).second
+
+    /** stdin already closed by the caller; drains stdout + stderr together and waits (2 min) for pm. */
+    private fun finishCode(p: Process): Pair<Int, String> {
+        val r = try { com.ghostpanter.files.core.Proc.collect(p, 120_000, closeStdin = false, what = "pm") }
+            catch (e: com.ghostpanter.files.core.ProcTimeoutException) { throw IOException(t("pm 无响应（超过 2 分钟）", "pm did not answer within 2 minutes"), e) }
+        return r.code to (r.stdout + r.stderr)
     }
 
     // ---------------------------------------------------------------- OBB
@@ -220,8 +219,7 @@ object BundleInstaller {
                 val q = { s: String -> "'" + s.replace("'", "'\\''") + "'" }
                 val p = sh.start("mkdir -p ${q(dst.parent!!)} && cat > ${q(dst.path)}")
                 bundle.open(o.entry).use { ins -> p.outputStream.use { copy(ins, it) { n -> done += n; onProgress(done, total) } } }
-                finish(p)
-                if (p.exitValue() != 0) throw IOException("OBB copy failed: " + dst.path)
+                if (finishCode(p).first != 0) throw IOException("OBB copy failed: " + dst.path)
             }
             out += dst.path
         }

@@ -140,8 +140,10 @@ object ShellStreamScan {
      */
     fun run(runner: ShellRunner, roots: List<String>, b: SpaceTreeBuilder, ctl: ScanControl, prune: List<String> = emptyList(), mapPath: (String) -> String = { it }): Boolean {
         val p = runner.start(script(roots, prune))
-        ctl.onCancel.add { p.destroy() }
+        ctl.onCancel.add { com.ghostpanter.files.core.Proc.kill(p) }
         runCatching { p.outputStream.close() }
+        // stderr is drained in the background so a chatty find can't block on a full pipe.
+        val finish = com.ghostpanter.files.core.Proc.afterStream(p)
         var ended = false
         try {
             p.inputStream.bufferedReader(Charsets.UTF_8).use { r ->
@@ -168,7 +170,7 @@ object ShellStreamScan {
                 flush()
             }
         } finally {
-            if (!p.waitFor(2, TimeUnit.SECONDS)) p.destroyForcibly()
+            finish(2000)
         }
         if (ctl.isCancelled) throw ScanCancelled()
         return ended

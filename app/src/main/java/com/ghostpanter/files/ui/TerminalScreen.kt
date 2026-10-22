@@ -49,12 +49,7 @@ object TerminalHub {
 
     private fun hostName(): String = Build.MODEL.trim().replace(Regex("\\s+"), "-").ifEmpty { "android" }
 
-    private fun runOnce(p: Process): String {
-        p.outputStream.close()
-        val out = p.inputStream.readBytes().toString(Charsets.UTF_8)
-        p.waitFor(20, TimeUnit.SECONDS)
-        return out
-    }
+    private fun runOnce(p: Process): String = com.ghostpanter.files.core.Proc.collect(p, 20_000).stdout
 
     private fun processBackend(label: String, user: String, start: (String) -> Process, separateErr: Boolean): TermBackend {
         var proc: Process? = null

@@ -50,7 +50,9 @@ class AdbFs(
             private fun check() {
                 if (checked) return
                 checked = true
-                if (proc.exitValue() != 0) throw FsException(tr("读取失败", "Read failed") + ": $p")
+                // EOF on stdout can arrive just before the exit status: wait for it instead of exitValue().
+                val code = com.ghostpanter.files.core.Proc.await(proc, 10_000)
+                if (code != 0) throw FsException(tr("读取失败", "Read failed") + ": $p" + if (code == null) tr("（超时）", " (timed out)") else "")
             }
             override fun read(): Int { val b = super.read(); if (b < 0) check(); return b }
             override fun read(b: ByteArray, off: Int, len: Int): Int { val n = super.read(b, off, len); if (n < 0) check(); return n }

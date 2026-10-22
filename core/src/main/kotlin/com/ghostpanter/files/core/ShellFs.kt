@@ -52,24 +52,10 @@ class ShellFs(
 
     override fun close() { session?.close() }
 
-    private fun execOnce(script: String, timeout: Long): ShellResult {
-        val p = runner.start(script)
-        p.outputStream.close()
-        val err = ByteArrayOutputStream()
-        val errThread = thread(isDaemon = true, name = "shell-stderr") {
-            runCatching { p.errorStream.copyTo(err) }
-        }
-        val out = ByteArrayOutputStream()
-        val outThread = thread(isDaemon = true, name = "shell-stdout") {
-            runCatching { p.inputStream.copyTo(out) }
-        }
-        if (!p.waitFor(timeout, TimeUnit.SECONDS)) {
-            p.destroyForcibly()
-            throw FsException(tr("命令超时 (${timeout}s)", "Command timed out (${timeout}s)"))
-        }
-        outThread.join(2000)
-        errThread.join(2000)
-        return ShellResult(p.exitValue(), out.toString(Charsets.UTF_8.name()), err.toString(Charsets.UTF_8.name()))
+    private fun execOnce(script: String, timeout: Long): ShellResult = try {
+        Proc.collect(runner.start(script), TimeUnit.SECONDS.toMillis(timeout)).toShell()
+    } catch (e: ProcTimeoutException) {
+        throw FsException(tr("命令超时 (${timeout}s)", "Command timed out (${timeout}s)"), e)
     }
 
     private fun run(script: String, what: String): ShellResult {
@@ -106,17 +92,15 @@ class ShellFs(
         val p = q(path)
         val script = if (offset > 0) "exec tail -c +${offset + 1} -- $p" else "exec cat -- $p"
         val proc = runner.start(script)
-        proc.outputStream.close()
-        val err = ByteArrayOutputStream()
-        thread(isDaemon = true, name = "shell-read-err") { runCatching { proc.errorStream.copyTo(err) } }
+        runCatching { proc.outputStream.close() }
+        val finish = Proc.afterStream(proc)
         return object : FilterInputStream(proc.inputStream) {
             private var checked = false
             private fun checkEof() {
                 if (checked) return
                 checked = true
-                proc.waitFor(10, TimeUnit.SECONDS)
-                val code = runCatching { proc.exitValue() }.getOrDefault(-1)
-                if (code != 0) throw FsException(tr("读取失败", "Read failed") + ": ${err.toString().trim().ifEmpty { "exit $code" }}")
+                val (code, err) = finish(10_000)
+                if (code != 0) throw FsException(tr("读取失败", "Read failed") + ": ${err.trim().ifEmpty { if (code == null) tr("超时", "timed out") else "exit $code" }}")
             }
             override fun read(): Int { val b = super.read(); if (b < 0) checkEof(); return b }
             override fun read(b: ByteArray, off: Int, len: Int): Int {
@@ -148,15 +132,9 @@ class ShellFs(
                 if (r.ok && B64.matches(text)) java.util.Base64.getDecoder().decode(text) else null
             } catch (_: PersistentShell.Unavailable) { null } catch (_: IllegalArgumentException) { null } catch (_: FsException) { null }
         } ?: run {
-            val proc = runner.start("exec $dd")
-            proc.outputStream.close()
-            val out = java.io.ByteArrayOutputStream()
-            val reader = thread(isDaemon = true, name = "shell-readAt") { runCatching { proc.inputStream.copyTo(out) } }
             try {
-                if (!proc.waitFor(timeoutSec, TimeUnit.SECONDS)) throw FsException(tr("读取超时", "Read timed out"))
-                reader.join(2000)
-            } finally { proc.destroy() }
-            out.toByteArray()
+                Proc.collect(runner.start("exec $dd"), TimeUnit.SECONDS.toMillis(timeoutSec)).out
+            } catch (e: ProcTimeoutException) { throw FsException(tr("读取超时", "Read timed out"), e) }
         }
         val skip = (offset - first * bs).toInt()
         if (raw.size <= skip) return -1
@@ -185,10 +163,9 @@ class ShellFs(
                 closed = true
                 runCatching { out.flush() }
                 runCatching { out.close() }
-                if (!proc.waitFor(timeoutSec, TimeUnit.SECONDS)) {
-                    proc.destroyForcibly(); throw FsException(tr("写入超时", "Write timed out"))
-                }
-                if (proc.exitValue() != 0) throw FsException(tr("写入失败", "Write failed") + ": ${err.toString().trim().ifEmpty { "exit ${proc.exitValue()}" }}")
+                val code = Proc.await(proc, TimeUnit.SECONDS.toMillis(timeoutSec))
+                    ?: run { Proc.kill(proc); throw FsException(tr("写入超时", "Write timed out")) }
+                if (code != 0) throw FsException(tr("写入失败", "Write failed") + ": ${err.toString().trim().ifEmpty { "exit $code" }}")
             }
         }
     }
@@ -281,7 +258,7 @@ internal class PersistentShell(private val runner: ShellRunner) : java.io.Closea
     private val pool = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "pshell-io").apply { isDaemon = true } }
 
     private fun ensure(): Process {
-        proc?.takeIf { it.isAlive }?.let { return it }
+        proc?.takeIf { Proc.isAlive(it) }?.let { return it }
         kill()
         val p = runner.start("exec sh")
         proc = p
@@ -336,7 +313,7 @@ internal class PersistentShell(private val runner: ShellRunner) : java.io.Closea
     }
 
     private fun kill() {
-        proc?.let { runCatching { it.outputStream.close() }; runCatching { it.destroyForcibly() } }
+        proc?.let { runCatching { it.outputStream.close() }; Proc.kill(it) }
         proc = null; stdout = null; stderr = null
     }
 

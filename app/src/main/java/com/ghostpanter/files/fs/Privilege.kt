@@ -94,14 +94,8 @@ object RootRunner : ShellRunner {
     }
 
     private fun tryForm(form: SuForm, timeoutSec: Long): Boolean = runCatching {
-        val p = processFor(form, "id")
-        p.outputStream.close()
-        if (!p.waitFor(timeoutSec.coerceAtLeast(1), TimeUnit.SECONDS)) {
-            p.destroyForcibly()
-            return false
-        }
-        val out = p.inputStream.bufferedReader().readText()
-        p.exitValue() == 0 && out.contains("uid=0")
+        val r = com.ghostpanter.files.core.Proc.collect(processFor(form, "id"), TimeUnit.SECONDS.toMillis(timeoutSec.coerceAtLeast(1)))
+        r.code == 0 && r.stdout.contains("uid=0")
     }.getOrDefault(false)
 }
 

@@ -37,23 +37,9 @@ class AdbDevice(val serial: String, private val transportProvider: () -> AdbTran
     /** Like [sh] but returns raw (binary-safe) output bytes. */
     fun shBytes(cmd: String, root: Boolean = false, timeoutMs: Long = 30_000, maxBytes: Int = 8 shl 20): Pair<Int, ByteArray> {
         val p = runner(root).start(cmd)
-        val out = ByteArrayOutputStream()
-        val reader = thread(isDaemon = true, name = "adb-sh") {
-            runCatching {
-                val b = ByteArray(16 * 1024)
-                while (true) {
-                    val n = p.inputStream.read(b)
-                    if (n < 0) break
-                    if (out.size() < maxBytes) out.write(b, 0, minOf(n, maxBytes - out.size()))
-                }
-            }
-        }
-        if (!p.waitFor(timeoutMs, TimeUnit.MILLISECONDS)) {
-            p.destroy()
-            throw IOException("adb shell timed out: ${cmd.take(60)}")
-        }
-        reader.join(2000)
-        return p.exitValue() to out.toByteArray()
+        val r = try { com.ghostpanter.files.core.Proc.collect(p, timeoutMs, closeStdin = false, maxBytes = maxBytes.toLong()) }
+            catch (e: com.ghostpanter.files.core.ProcTimeoutException) { throw IOException("adb shell timed out: ${cmd.take(60)}", e) }
+        return r.code to r.out
     }
 
     /** [len] bytes of [path] from [offset] via `dd` (seeks, never streams the prefix). */

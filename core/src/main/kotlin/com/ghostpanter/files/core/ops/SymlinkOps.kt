@@ -24,8 +24,7 @@ object SymlinkOps {
         try {
             Files.createSymbolicLink(f.toPath(), File(tgt).toPath())
         } catch (e: Exception) {
-            val p = Runtime.getRuntime().exec(arrayOf("ln", "-s", tgt, link))
-            val code = p.waitFor()
+            val code = runCatching { com.ghostpanter.files.core.Proc.collect(Runtime.getRuntime().exec(arrayOf("ln", "-s", tgt, link)), 15_000).code }.getOrDefault(-1)
             if (code != 0) throw FsException(tr("创建软链接失败（本机可能无权限，请用 Root/Shizuku）", "Create symlink failed (try Root/Shizuku)") + ": ${e.message}", e)
         }
     }

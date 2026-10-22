@@ -276,7 +276,7 @@ fun OverviewPane(toast: (String) -> Unit, serial: String, previewInfo: List<Info
                 .getOrElse { toast(t("录屏启动失败：", "Recording failed: ") + it.message); return@launch }
             rec = p; recSec = 0
             val ticker = launch { while (isActive) { delay(1000); recSec++ } }
-            io { p.waitFor(200, TimeUnit.SECONDS) }
+            io { com.ghostpanter.files.core.Proc.await(p, 200_000) }
             ticker.cancel()
             rec = null
             busy = t("正在取回录像…", "Pulling recording…")
