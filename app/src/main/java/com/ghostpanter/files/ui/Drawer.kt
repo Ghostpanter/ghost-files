@@ -108,6 +108,7 @@ class DrawerActions(
     val trash: () -> Unit = {},
     val apps: () -> Unit = {},
     val space: () -> Unit = {},
+    val backup: () -> Unit = {},
     val transfers: () -> Unit = {},
     val setShowHidden: (Boolean) -> Unit = {},
     val setThumbnails: (Boolean) -> Unit = {},
@@ -212,6 +213,7 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         trash = { vm.screen = Screen.Trash; close() },
         apps = { vm.screen = Screen.Apps; close() },
         space = { vm.screen = Screen.Space(); close() },
+        backup = { vm.screen = Screen.Backup(); close() },
         transfers = { vm.screen = Screen.Transfers; close() },
         setShowHidden = { settings.showHidden = it },
         setThumbnails = { settings.showThumbnails = it },
@@ -331,6 +333,8 @@ fun DrawerBody(s: DrawerUiState, a: DrawerActions, modifier: Modifier = Modifier
             Item(Icons.Rounded.Apps, t("应用管理", "App manager"), onClick = a.apps)
             Hair()
             Item(Icons.Rounded.DonutSmall, t("空间分析", "Space analysis"), t("方块图看清哪里占空间", "Treemap of what uses space"), onClick = a.space)
+            Hair()
+            Item(Icons.Rounded.SettingsBackupRestore, t("备份与恢复", "Backup & restore"), t("短信、通话记录、联系人、日历", "SMS, calls, contacts, calendar"), onClick = a.backup)
             Hair()
             Item(Icons.Rounded.SwapVert, t("传输队列", "Transfers"), onClick = a.transfers)
         }

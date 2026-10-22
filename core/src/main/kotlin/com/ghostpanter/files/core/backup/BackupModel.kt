@@ -108,3 +108,10 @@ object BackupDedupe {
     /** Event: title + start (+ end), so the same meeting is not inserted twice. */
     fun event(title: String, start: Long, end: Long?, allDay: Boolean) = "e|" + title.trim() + "|" + start / 1000 + "|" + ((end ?: 0) / 1000) + "|" + allDay
 }
+
+/** Android WiFi saved networks (Root). */
+object WifiStore {
+    /** Android 11+ keeps the store in the WiFi APEX data dir; 8–10 in /data/misc/wifi. */
+    fun path(sdk: Int) = if (sdk >= 30) "/data/misc/apexdata/com.android.wifi/WifiConfigStore.xml" else "/data/misc/wifi/WifiConfigStore.xml"
+    fun countNetworks(xml: String) = Regex("<Network>").findAll(xml).count()
+}

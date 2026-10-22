@@ -192,6 +192,7 @@ private fun ScreenHost(vm: MainViewModel, activity: MainActivity, tablet: Window
         Screen.Devices -> com.ghostpanter.files.ui.adb.DevicesScreen(vm)
         is Screen.AdbTools -> com.ghostpanter.files.ui.adb.AdbToolsScreen(vm, s)
         is Screen.Space -> SpaceScreen(vm, s)
+        is Screen.Backup -> BackupScreen(vm, s)
     }
 }
 

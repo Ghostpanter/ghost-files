@@ -76,6 +76,8 @@ sealed interface Screen {
     data class AdbTools(val serial: String, val tab: Int = 0) : Screen
     /** SpaceSniffer-style analysis of a folder (null = backend home / internal storage), or the whole device. */
     data class Space(val fsId: String = com.ghostpanter.files.core.LocalFs.ID, val path: String? = null, val whole: Boolean = false) : Screen
+    /** 备份与恢复; [restorePath] opens the restore tab on that backup (folder, zip, sms-*.xml, .vcf …). */
+    data class Backup(val restoreFs: String? = null, val restorePath: String? = null) : Screen
 }
 
 sealed interface UiEvent {
@@ -828,6 +830,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
         val ext = e.extension
         when {
             asText -> screen = Screen.Editor(tab.fsId, e.path)
+            !chooser && com.ghostpanter.files.core.backup.BackupManifest.opensRestore(e.name) -> screen = Screen.Backup(tab.fsId, e.path)
             !chooser && ext in PREVIEW_MD -> screen = Screen.Preview(tab.fsId, e.path, "md")
             !chooser && ext == "pdf" -> screen = Screen.Preview(tab.fsId, e.path, "pdf")
             !chooser && ext == "epub" -> screen = Screen.Preview(tab.fsId, e.path, "epub")

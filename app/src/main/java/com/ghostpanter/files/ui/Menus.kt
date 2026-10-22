@@ -39,6 +39,10 @@ fun MainViewModel.buildEntryMenu(pane: PaneState, targets: List<FileEntry>): Act
     if (single != null) add(t("重命名", "Rename"), Icons.Filled.DriveFileRenameOutline) { dialog = DialogState.Rename(pane.index, single) }
     if (targets.size > 1) add(t("批量重命名", "Batch rename"), Icons.Filled.DriveFileRenameOutline) { dialog = DialogState.BatchRename(pane.index, targets) }
     add(t("删除", "Delete"), Icons.Filled.Delete) { dialog = DialogState.Delete(pane.index, targets) }
+    if (single != null && !single.isDirectory && com.ghostpanter.files.core.backup.BackupManifest.kindOf(single.name) != null)
+        add(t("用备份与恢复导入", "Import with Backup & restore"), Icons.Filled.SettingsBackupRestore) { screen = Screen.Backup(tab.fsId, single.path) }
+    if (single != null && single.isDirectory && runCatching { java.io.File(single.path, com.ghostpanter.files.core.backup.BackupManifest.NAME).exists() }.getOrDefault(false))
+        add(t("从此备份恢复", "Restore from this backup"), Icons.Filled.SettingsBackupRestore) { screen = Screen.Backup(tab.fsId, single.path) }
     if (single != null && single.isDirectory) add(t("分析此文件夹", "Analyze this folder"), Icons.Filled.DonutSmall, t("空间分析", "Space analysis")) {
         screen = Screen.Space(tab.fsId, single.path)
     }
