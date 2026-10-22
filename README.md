@@ -9,7 +9,7 @@
 
 参照 **MT 管理器** 和 **MiXplorer** 做的安卓双栏文件管理器：MT 式左右双栏，Root / Shizuku 提权访问 `Android/data` 和系统目录，连接 **SMB / FTP / FTPS / SFTP / WebDAV**，本机也能当服务器。还内置了投屏（scrcpy）、ADB 工具、终端、空间分析和 VLC 播放器。传输队列针对局域网复制容易卡死的问题专门做过设计。
 
-**下载：[最新正式版 APK](https://github.com/Ghostpanter/ghost-files/releases/latest)**（当前为 v0.7.0）
+**下载：[最新正式版 APK](https://github.com/Ghostpanter/ghost-files/releases/latest)**（当前为 v0.7.1）
 
 <p>
   <img src="docs/images/browse.png" width="200" alt="双栏浏览">
@@ -31,7 +31,7 @@
 - 界面语言：默认中文；设置 → 语言 可选「跟随系统 / 简体中文 / English」
 - Kotlin + Jetpack Compose（Material 3）
 
-## 功能（v0.7.0）
+## 功能（v0.7.1）
 
 ### 双栏浏览
 - MT 式双栏：手机竖屏也始终左右并排，中间分隔条可拖动（双击恢复一半）；当前栏有蓝色描边，复制 / 移动默认目标是另一栏
@@ -48,7 +48,8 @@
 
 ### 提权访问
 - **Root**（su，兼容 Magisk / KernelSU）：浏览整个 `/`，含 `/data`、隐藏和系统文件；chmod（含递归）、chown；软链接；重新挂载为读写
-- **Shizuku**（免 Root，adb shell 权限）：访问 `Android/data`、`Android/obb`
+- **Shizuku**（免 Root，adb shell 权限）：访问 `Android/data`、`Android/obb`（侧栏合并为一条入口）
+- **内置提权**（v0.7.1，不用另装 Shizuku）：Android 11+ 用通知栏配对码自连本机无线调试；9/10 可用电脑或 OTG ADB 启动命令；Root 可直接拉起。已装并授权外置 Shizuku 时优先外置
 - **SAF**：Android 11–12 授权 `Android/data`；U 盘 / SD 卡
 - **包名文件夹显示应用图标**：`Android/data`、`obb`、`media`、`/data/data`、`/data/user`、`/data/app` 下以包名命名的文件夹显示对应应用的图标和名称
 
@@ -70,8 +71,10 @@
 
 ### 安装包与应用
 - 安装 `.apk`，以及 `.apks` / `.xapk` / `.apkm` 和拆分 APK 文件夹：按本机自动选择合适的拆分包，可用系统安装器，也可用 Root / Shizuku 静默安装，自动复制 OBB
+- **安装来源**（v0.7.1）：静默安装可选 Play / 本应用 / 保留原状；应用详情可查看或改写来源
 - APK 信息（图标、版本、SDK、权限、已装版本）
 - 应用管理：批量导出 APK；有 Root 时可批量备份应用数据
+- **个人数据备份与恢复**（v0.7.1）：联系人、短信 / 彩信、通话记录、日历
 
 ### 空间分析
 - 方块图显示哪些文件夹最占空间，可按类型、大小、修改时间筛选；另有「大文件」「重复」「空文件夹」列表
