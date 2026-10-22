@@ -18,6 +18,8 @@ class TabState(fsId: String, path: String) {
     var entries by mutableStateOf<List<FileEntry>>(emptyList())
     var loading by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
+    /** Raw exception text behind [error], shown under 「详情」. */
+    var errorDetail by mutableStateOf<String?>(null)
     var selected by mutableStateOf<Set<String>>(emptySet())
     /** MT-style multi-select mode (stays on even when nothing is ticked yet). */
     var multiSelect by mutableStateOf(false)

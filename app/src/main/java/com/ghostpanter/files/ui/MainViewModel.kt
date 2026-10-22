@@ -196,6 +196,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
         val path = tab.path
         tab.loading = true
         tab.error = null
+        tab.errorDetail = null
         tab.loadJob = viewModelScope.launch {
             val acc = ArrayList<FileEntry>()
             var first = true
@@ -240,7 +241,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                         } catch (e2: Exception) {
                             if (tab.path == path) {
                                 tab.entries = emptyList()
-                                tab.error = e2.message ?: e2.javaClass.simpleName
+                                val f = com.ghostpanter.files.core.FriendlyError.describe(e2, "Root")
+                                tab.error = f.text; tab.errorDetail = f.detail
                             }
                             return@launch
                         }
@@ -248,7 +250,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                 }
                 if (tab.path == path) {
                     tab.entries = emptyList()
-                    tab.error = msg
+                    val f = com.ghostpanter.files.core.FriendlyError.describe(e, fsm.label(fsId).takeIf { fsId == FsManager.SHIZUKU || fsId == FsManager.ROOT })
+                    tab.error = f.text; tab.errorDetail = f.detail
                 }
             } finally {
                 if (tab.path == path) tab.loading = false

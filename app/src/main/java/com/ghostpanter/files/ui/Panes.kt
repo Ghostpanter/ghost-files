@@ -454,7 +454,14 @@ private fun FileList(host: PaneHost, pane: PaneState, tab: TabState, wide: Boole
             tab.loading && entries.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center).size(28.dp), strokeWidth = 3.dp)
             tab.error != null -> Column(Modifier.align(Alignment.Center).padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Filled.ErrorOutline, null, tint = MaterialTheme.colorScheme.error)
-                Text(tab.error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                Text(tab.error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                tab.errorDetail?.let { d ->
+                    var open by remember(d) { mutableStateOf(false) }
+                    TextButton(onClick = { open = !open }) { Text(if (open) t("收起详情", "Hide details") else t("详情", "Details"), fontSize = 12.sp) }
+                    if (open) androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(d, fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, maxLines = 8, overflow = TextOverflow.Ellipsis)
+                    }
+                }
                 if (tab.fsId == LocalFs.ID && (tab.path.contains("/Android/data") || tab.path.contains("/Android/obb"))) {
                     Text(t("Android 11+ 需通过 Shizuku / Root / SAF 访问此目录（侧边栏）", "Use Shizuku / Root / SAF from the drawer"), fontSize = 11.sp)
                 }
