@@ -10,6 +10,7 @@ import com.ghostpanter.files.core.ShellFs
 import com.ghostpanter.files.core.VirtualFs
 import com.ghostpanter.files.data.HostKeyPrefs
 import com.ghostpanter.files.data.ServerStore
+import com.ghostpanter.files.privilege.ElevatedAccess
 import com.ghostpanter.files.t
 import java.util.concurrent.ConcurrentHashMap
 
@@ -73,7 +74,7 @@ class FsManager(
     fun label(id: String): String = when {
         id == LocalFs.ID -> t("本机", "Local")
         id == ROOT -> "Root"
-        id == SHIZUKU -> "Shizuku"
+        id == SHIZUKU -> ElevatedAccess.label()
         id.startsWith("net:") -> servers.get(id.removePrefix("net:"))?.let { "${it.name} (${it.protocol.label})" } ?: id
         id.startsWith("saf:") -> "SAF: " + (Uri.parse(id.removePrefix("saf:")).lastPathSegment?.substringAfter(':') ?: "?")
         com.ghostpanter.adb.AdbFs.isAdbId(id) -> "ADB · " + adbLabel(com.ghostpanter.adb.AdbFs.serialOf(id), id.startsWith(com.ghostpanter.adb.AdbFs.PREFIX_SU))

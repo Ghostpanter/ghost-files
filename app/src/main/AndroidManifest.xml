@@ -27,6 +27,10 @@
     <!-- Space analysis: per-app sizes (StorageStatsManager); user grants it in 「使用情况访问」. -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
+    <!-- Granted to ourselves after elevated start; used to toggle wireless debugging on boot. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 备份与恢复: requested at runtime only for the items the user picks. -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
@@ -146,6 +150,32 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <provider
+            android:name=".privilege.PrivilegeBinderProvider"
+            android:authorities="${applicationId}.privilege"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <receiver
+            android:name=".privilege.PairingCodeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.ghostpanter.files.privilege.PAIR_CODE" />
+                <action android:name="com.ghostpanter.files.privilege.PAIR_CANCEL" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".privilege.PrivilegeBootReceiver"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
+            </intent-filter>
+        </receiver>
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"

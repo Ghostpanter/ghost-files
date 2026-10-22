@@ -12,6 +12,8 @@ import com.ghostpanter.files.core.NioListing
 import com.ghostpanter.files.core.ShellFs
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.VirtualFs
+import com.ghostpanter.files.privilege.ElevatedAccess
+import com.ghostpanter.files.privilege.EmbeddedPrivilege
 import com.ghostpanter.files.t
 import rikka.shizuku.Shizuku
 import java.io.InputStream
@@ -42,8 +44,12 @@ object ShizukuFileService {
 
     /** Never blocks the main thread; elsewhere waits up to 6 s for the first bind. */
     fun get(): IFileService? {
+        // Embedded PrivilegeServer exposes the same IFileService shape.
+        ElevatedAccess.fileService()?.let { return it }
         svc?.let { s -> if (runCatching { s.asBinder().pingBinder() }.getOrDefault(false)) return s; svc = null; bound = false }
         if (System.currentTimeMillis() < downUntil || !ShizukuRunner.granted()) return null
+        // Embedded-only: no external Shizuku UserService to bind.
+        if (ElevatedAccess.kind() == com.ghostpanter.files.core.privilege.PrivilegeKind.EMBEDDED) return null
         if (runCatching { Shizuku.getVersion() }.getOrDefault(0) < 10) { downUntil = Long.MAX_VALUE; return null }
         if (Looper.myLooper() == Looper.getMainLooper()) return null
         synchronized(this) {

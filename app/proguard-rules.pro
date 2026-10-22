@@ -93,3 +93,10 @@
 -dontwarn io.github.muntashirakon.adb.**
 -keep class com.ghostpanter.scrcpy.ZhuoyitongGuard { *; }
 -keep class com.ghostpanter.scrcpy.ZhuoyitongGuard$* { *; }
+
+# Embedded privilege (app_process entry + binder AIDL)
+-keep class com.ghostpanter.files.privilege.PrivilegeServer { public static void main(java.lang.String[]); }
+-keep class com.ghostpanter.files.privilege.PrivilegeService { <init>(...); *; }
+-keep class com.ghostpanter.files.privilege.IPrivilegeService** { *; }
+-keep class com.ghostpanter.files.privilege.PrivilegeBinderProvider { *; }
+-keep class com.ghostpanter.files.core.NioListing { *; }

@@ -28,6 +28,8 @@ class GhostApp : Application() {
         }
         installSecurityProviders()
         graph = AppGraph(this)
+        com.ghostpanter.files.privilege.ElevatedAccess.init(this)
+        com.ghostpanter.files.privilege.EmbeddedPrivilege.init(this)
         installScrcpy()
         com.ghostpanter.files.core.Lang.apply(graph.settings.language)
         com.ghostpanter.files.data.Settings.applyNightMode(this, graph.settings.themeMode)

@@ -2,6 +2,9 @@ package com.ghostpanter.files.fs
 
 import android.content.pm.PackageManager
 import com.ghostpanter.files.core.ShellRunner
+import com.ghostpanter.files.core.privilege.PrivilegeKind
+import com.ghostpanter.files.privilege.ElevatedAccess
+import com.ghostpanter.files.privilege.EmbeddedPrivilege
 import rikka.shizuku.Shizuku
 import java.io.File
 import java.io.IOException
@@ -99,8 +102,11 @@ object RootRunner : ShellRunner {
     }.getOrDefault(false)
 }
 
-/** adb-shell-level access through Shizuku (no root needed): /Android/data, /Android/obb, /data/local/tmp... */
-object ShizukuRunner : ShellRunner {
+/**
+ * External Shizuku only (libshizuku newProcess). Used by [ElevatedAccess] when external is selected;
+ * [ShizukuRunner] is the public facade that also routes through embedded privilege.
+ */
+internal object ExternalShizuku : ShellRunner {
     const val REQUEST_CODE = 4127
 
     private val newProcess by lazy {
@@ -117,7 +123,6 @@ object ShizukuRunner : ShellRunner {
     fun granted(): Boolean = running() &&
         runCatching { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrDefault(false)
 
-    /** Returns true if already granted; otherwise triggers the Shizuku permission prompt. */
     fun request(onResult: (Boolean) -> Unit) {
         if (!running()) { onResult(false); return }
         if (granted()) { onResult(true); return }
@@ -131,4 +136,30 @@ object ShizukuRunner : ShellRunner {
         Shizuku.addRequestPermissionResultListener(l)
         Shizuku.requestPermission(REQUEST_CODE)
     }
+}
+
+/**
+ * Elevated shell facade: external Shizuku when granted, otherwise embedded self-ADB privilege.
+ * Call sites keep using this name; selection is in [ElevatedAccess].
+ */
+object ShizukuRunner : ShellRunner {
+    const val REQUEST_CODE = ExternalShizuku.REQUEST_CODE
+
+    override fun start(script: String): Process = when (ElevatedAccess.kind()) {
+        PrivilegeKind.EXTERNAL_SHIZUKU -> ExternalShizuku.start(script)
+        PrivilegeKind.EMBEDDED -> EmbeddedPrivilege.shellRunner()?.start(script)
+            ?: throw IOException("embedded privilege not running")
+        PrivilegeKind.NONE -> throw IOException("Shizuku / embedded privilege not available")
+    }
+
+    fun running(): Boolean = when (ElevatedAccess.kind()) {
+        PrivilegeKind.EXTERNAL_SHIZUKU -> true
+        PrivilegeKind.EMBEDDED -> EmbeddedPrivilege.alive()
+        PrivilegeKind.NONE -> ExternalShizuku.running() || EmbeddedPrivilege.alive()
+    }
+
+    fun granted(): Boolean = ElevatedAccess.granted()
+
+    /** Returns true if already granted; otherwise triggers Shizuku permission or reports false (open 内置提权). */
+    fun request(onResult: (Boolean) -> Unit) = ElevatedAccess.request(onResult)
 }
