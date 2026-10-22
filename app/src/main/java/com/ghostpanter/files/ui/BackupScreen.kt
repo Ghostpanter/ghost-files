@@ -159,9 +159,11 @@ fun BackupContent(ui: BackupUi, cb: BackupCallbacks, modifier: Modifier = Modifi
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(0.9f).fillMaxHeight().verticalScroll(rememberScrollState())) { SideColumn(ui, cb); Spacer(Modifier.height(16.dp)) }
                 } else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    // Phones: what is happening now goes first, above the lists.
+                    StatusCards(ui, cb)
                     MainColumn(ui, cb)
                     Spacer(Modifier.height(10.dp))
-                    SideColumn(ui, cb)
+                    SideColumn(ui, cb, status = false)
                     Spacer(Modifier.navigationBarsPadding().height(16.dp))
                 }
             }
@@ -263,16 +265,23 @@ private fun MainColumn(ui: BackupUi, cb: BackupCallbacks) {
 }
 
 @Composable
-private fun SideColumn(ui: BackupUi, cb: BackupCallbacks) {
+private fun StatusCards(ui: BackupUi, cb: BackupCallbacks) {
     val cs = MaterialTheme.colorScheme
+    ui.progress?.let { ProgressCard(it, cb); Spacer(Modifier.height(10.dp)) }
     ui.outcome?.let { OutcomeCard(it, cb); Spacer(Modifier.height(10.dp)) }
     if (ui.holdsSms) {
         Tip(Icons.Rounded.SwapHoriz, cs.error, t("双栏文件管理器现在是默认短信应用。恢复已完成，请切回系统「信息」，以免漏收彩信。", "This app is the default SMS app now. Switch back to your messaging app so MMS keep arriving."),
             t("切回默认短信应用", "Switch back"), cb.giveBackSms)
         Spacer(Modifier.height(10.dp))
     }
+}
+
+@Composable
+private fun SideColumn(ui: BackupUi, cb: BackupCallbacks, status: Boolean = true) {
+    val cs = MaterialTheme.colorScheme
+    if (status) StatusCards(ui, cb)
     val p = ui.progress
-    if (p != null) ProgressCard(p, cb)
+    if (p != null) Unit
     else if (ui.tab == BackupTab.BACKUP) {
         val n = ui.items.count { it.checked && it.enabled }
         Button(onClick = cb.start, enabled = n > 0, modifier = Modifier.fillMaxWidth().height(48.dp), shape = CircleShape) {
