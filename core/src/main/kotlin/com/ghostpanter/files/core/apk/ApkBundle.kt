@@ -1,5 +1,6 @@
 package com.ghostpanter.files.core.apk
 
+import com.ghostpanter.files.core.tr
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -20,6 +21,8 @@ data class ApkBundle(
     val versionName: String? = null,
     val versionCode: Long? = null,
     val iconEntry: String? = null,
+    /** Our own backups' ghost-app.json (original install source, source device); null for third-party bundles. */
+    val meta: BundleMeta? = null,
 ) {
     enum class Format { APKS, XAPK, APKM, FOLDER }
     enum class Kind { BASE, FEATURE, ABI, DENSITY, LANGUAGE, OTHER }
@@ -63,16 +66,66 @@ data class ApkBundle(
             val dens = group.filter { it.kind == Kind.DENSITY }
             bestDensity(dens, device.densityDpi)?.let { out += it.entry }
             val langs = group.filter { it.kind == Kind.LANGUAGE }
-            val matched = langs.filter { s ->
-                val q = s.qualifier!!.lowercase().removePrefix("b+").replace('+', '_')
-                wantLangs.any { w -> w == q || w.substringBefore('_') == q.substringBefore('_') }
-            }
+            val matched = langs.filter { s -> langMatches(s.qualifier!!, wantLangs) }
             (matched.ifEmpty { langs }).forEach { out += it.entry }
         }
         return out
     }
 
+    enum class Severity { ERROR, WARN, INFO }
+
+    /** One problem with the chosen split set for this device. */
+    data class SplitIssue(val severity: Severity, val kind: Kind, val owner: String, val text: String)
+
+    /**
+     * Checks that [selected] carries the config splits this [device] needs: per module (base and each selected
+     * feature) an ABI split the device can run when the module has ABI splits, a density split when it has
+     * density splits, and a language split when it has language splits. A backup taken on another model often
+     * only holds that model's ABI / density / languages.
+     */
+    fun integrity(device: Device, selected: Set<String>): List<SplitIssue> {
+        val out = ArrayList<SplitIssue>()
+        val wantAbis = device.abis.map { normAbi(it) }
+        val wantLangs = device.languages.map { it.replace('-', '_').lowercase() }.filter { it.isNotEmpty() }
+        for ((owner, group) in splits.groupBy { it.owner }) {
+            val head = group.firstOrNull { it.kind == Kind.BASE || it.kind == Kind.FEATURE }
+            if (head != null && head.entry !in selected) continue // feature module not being installed
+            val where = if (owner == "base") "" else tr("（模块 $owner）", " (module $owner)")
+            val abis = group.filter { it.kind == Kind.ABI }
+            if (abis.isNotEmpty()) {
+                val chosen = abis.filter { it.entry in selected }
+                val runnable = chosen.filter { normAbi(it.qualifier!!) in wantAbis }
+                if (runnable.isEmpty()) {
+                    val have = abis.joinToString("/") { it.qualifier!!.replace('_', '-') }
+                    val need = device.abis.firstOrNull().orEmpty()
+                    out += SplitIssue(Severity.ERROR, Kind.ABI, owner,
+                        if (abis.none { normAbi(it.qualifier!!) in wantAbis })
+                            tr("缺少本机架构（$need）的分包$where，包里只有 $have：安装后很可能闪退", "No $need split$where (only $have): the app will likely crash")
+                        else tr("没有勾选本机架构（$need）的分包$where", "The $need split$where is not selected"))
+                }
+            }
+            val dens = group.filter { it.kind == Kind.DENSITY }
+            if (dens.isNotEmpty() && dens.none { it.entry in selected }) out += SplitIssue(Severity.WARN, Kind.DENSITY, owner,
+                tr("没有屏幕密度分包$where：图标和图片可能缺失", "No density split$where: icons and images may be missing"))
+            val langs = group.filter { it.kind == Kind.LANGUAGE }
+            if (langs.isNotEmpty()) {
+                val chosen = langs.filter { it.entry in selected }
+                if (chosen.isEmpty()) out += SplitIssue(Severity.WARN, Kind.LANGUAGE, owner,
+                    tr("没有勾选任何语言分包$where：界面文字可能缺失", "No language split selected$where: UI text may be missing"))
+                else if (wantLangs.isNotEmpty() && chosen.none { langMatches(it.qualifier!!, wantLangs) }) out += SplitIssue(Severity.INFO, Kind.LANGUAGE, owner,
+                    tr("没有本机语言（${device.languages.first()}）的语言包$where，界面会用 ${chosen.joinToString("/") { it.qualifier!! }} 显示",
+                        "No ${device.languages.first()} language split$where; the UI will use ${chosen.joinToString("/") { it.qualifier!! }}"))
+            }
+        }
+        return out
+    }
+
     companion object {
+        internal fun langMatches(qualifier: String, wantLangs: List<String>): Boolean {
+            val q = qualifier.lowercase().removePrefix("b+").replace('+', '_')
+            return wantLangs.any { w -> w == q || w.substringBefore('_') == q.substringBefore('_') }
+        }
+
         val ABIS = listOf("arm64_v8a", "armeabi_v7a", "armeabi", "x86_64", "x86", "mips64", "mips", "riscv64")
         val DENSITIES = linkedMapOf(
             "ldpi" to 120, "mdpi" to 160, "tvdpi" to 213, "hdpi" to 240, "xhdpi" to 320,
@@ -182,7 +235,8 @@ data class ApkBundle(
                     obbs += Obb(e.name, e.size, if (tail.isNotEmpty()) "Android/obb/$tail" else "Android/obb/$pkg/${e.name.substringAfterLast('/')}")
                 }
                 val icon = listOf("icon.png", "icon.webp").firstOrNull { it in names }
-                return ApkBundle(format, file, order(splits), obbs, pkg, label, vName, vCode, icon)
+                val meta = text(BundleMeta.NAME)?.let { BundleMeta.parse(it) }
+                return ApkBundle(format, file, order(splits), obbs, pkg ?: meta?.packageName, label, vName ?: meta?.versionName, vCode ?: meta?.versionCode, icon, meta)
             }
         }
 
@@ -194,7 +248,8 @@ data class ApkBundle(
                 val loose = splits.filter { it.kind == Kind.OTHER }
                 if (loose.size == 1) splits = splits.map { if (it === loose[0]) it.copy(kind = Kind.BASE, owner = "base") else it }
             }
-            return ApkBundle(Format.FOLDER, dir, order(splits))
+            val meta = File(dir, BundleMeta.NAME).takeIf { it.isFile }?.let { BundleMeta.parse(it.readText()) }
+            return ApkBundle(Format.FOLDER, dir, order(splits), packageName = meta?.packageName, versionName = meta?.versionName, versionCode = meta?.versionCode, meta = meta)
         }
 
         /** True if [dir] looks like a split set: a base plus at least one split. */
