@@ -70,6 +70,7 @@ import com.ghostpanter.files.core.space.TRect
 import com.ghostpanter.files.core.space.TreemapLayout
 import com.ghostpanter.files.fs.RootRunner
 import com.ghostpanter.files.fs.ShizukuRunner
+import com.ghostpanter.files.privilege.ElevatedAccess
 import com.ghostpanter.files.space.DupBatch
 import com.ghostpanter.files.space.SpaceNotice
 import com.ghostpanter.files.space.SpaceSessions
@@ -268,7 +269,13 @@ fun SpaceScreen(vm: MainViewModel, s: Screen.Space) {
         notice = { id ->
             when (id) {
                 "usage" -> runCatching { ctx.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                "shizuku" -> ShizukuRunner.request { ok -> if (ok) session.refresh(false) else vm.toast(t("Shizuku 未运行或未授权", "Shizuku not running / not granted")) }
+                "shizuku" -> ShizukuRunner.request { ok ->
+                    if (ok) session.refresh(false)
+                    else {
+                        vm.toast(t("未授权。可安装 Shizuku，或在设置里启用「内置提权」。", "Not granted. Install Shizuku, or enable Built-in privilege in settings."))
+                        vm.screen = Screen.EmbeddedPrivilege
+                    }
+                }
             }
         },
         findDups = { session.findDuplicates() },
@@ -1162,7 +1169,7 @@ private fun SpaceScopeDialog(vm: MainViewModel, dismiss: () -> Unit, pick: (fsId
             Column {
                 ScopeRow(Icons.Rounded.PhoneAndroid, t("内部存储", "Internal storage"), when {
                     RootRunner.granted() -> t("Root：直接读 /data/media，更快", "Root: reads /data/media directly")
-                    ShizukuRunner.granted() -> t("Shizuku：含 Android/data、obb", "Shizuku: includes Android/data, obb")
+                    ShizukuRunner.granted() -> ElevatedAccess.label() + t("：含 Android/data、obb", ": includes Android/data, obb")
                     else -> t("非 Root", "No root")
                 }) { pick(LocalFs.ID, false) }
                 ScopeRow(Icons.Rounded.Security, t("整机（Root）", "Whole device (root)"), "/data · /system · /vendor · /product …") { pick(LocalFs.ID, true) }

@@ -79,6 +79,8 @@ sealed interface Screen {
     data class Space(val fsId: String = com.ghostpanter.files.core.LocalFs.ID, val path: String? = null, val whole: Boolean = false) : Screen
     /** 备份与恢复; [restorePath] opens the restore tab on that backup (folder, zip, sms-*.xml, .vcf …). */
     data class Backup(val restoreFs: String? = null, val restorePath: String? = null) : Screen
+    /** 内置提权（无线调试自启动 shell-uid 服务） */
+    data object EmbeddedPrivilege : Screen
 }
 
 sealed interface UiEvent {

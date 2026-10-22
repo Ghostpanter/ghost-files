@@ -115,7 +115,7 @@ data class RailDest(val label: String, val icon: ImageVector, val screen: Screen
 fun railDestinations(): List<RailDest> = listOf(
     RailDest(t("文件", "Files"), Icons.Rounded.Folder, Screen.Main) {
         it !is Screen.Transfers && it !is Screen.Servers && it !is Screen.LanScan && it !is Screen.Apps && it !is Screen.Trash && it !is Screen.Terminal &&
-            it !is Screen.Devices && it !is Screen.AdbTools
+            it !is Screen.Devices && it !is Screen.AdbTools && it !is Screen.EmbeddedPrivilege
     },
     RailDest(t("传输", "Transfers"), Icons.Rounded.SwapVert, Screen.Transfers) { it == Screen.Transfers },
     RailDest(t("本机服务", "Hosting"), Icons.Rounded.CloudUpload, Screen.Servers) { it == Screen.Servers },

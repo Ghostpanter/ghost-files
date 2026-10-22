@@ -30,8 +30,11 @@ import com.ghostpanter.files.core.LocalFs
 import com.ghostpanter.files.core.Protocol
 import com.ghostpanter.files.core.ServerConfig
 import com.ghostpanter.files.fs.FsManager
+import com.ghostpanter.files.core.privilege.elevatedDrawerRow
+import com.ghostpanter.files.core.privilege.rootDrawerRow
 import com.ghostpanter.files.fs.RootRunner
 import com.ghostpanter.files.fs.ShizukuRunner
+import com.ghostpanter.files.privilege.ElevatedAccess
 import com.ghostpanter.files.t
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -64,6 +67,10 @@ data class DrawerUiState(
     val version: String,
     val volumes: List<Volume>,
     val rootGranted: Boolean,
+    /** Merged elevated (Shizuku / 内置提权) row. */
+    val elevatedTitle: String = "Shizuku",
+    val elevatedSubtitle: String = "Android/data、obb",
+    val elevatedNeedsPrompt: Boolean = true,
     val showSafAndroidData: Boolean,
     val safTrees: List<Pair<String, String>>,          // uri to label
     val bookmarks: List<com.ghostpanter.files.data.Bookmark>,
@@ -90,8 +97,8 @@ class DrawerActions(
     val openRoot: () -> Unit = {},
     val openDownloads: () -> Unit = {},
     val requestRoot: () -> Unit = {},
-    val shizukuData: () -> Unit = {},
-    val shizukuObb: () -> Unit = {},
+    val openElevated: () -> Unit = {},
+    val openPrivilegeSettings: () -> Unit = {},
     val safAndroidData: () -> Unit = {},
     val addSaf: () -> Unit = {},
     val openSaf: (String) -> Unit = {},
@@ -142,24 +149,43 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
     fun go(fsId: String, path: String? = null) { vm.openFs(fsId, path); close() }
     fun askRoot(thenOpen: Boolean) {
         scope.launch {
-            if (thenOpen && RootRunner.granted()) { go(FsManager.ROOT, "/"); return@launch }
+            // Already authorized: never re-prompt; open / directly.
+            if (RootRunner.granted()) {
+                if (thenOpen) go(FsManager.ROOT, "/")
+                return@launch
+            }
             vm.busy = t("请求 Root 授权…", "Requesting root…")
             val ok = withContext(Dispatchers.IO) { RootRunner.check() }
             vm.busy = null
             rootGranted = ok
             if (ok) {
-                // Flip any LocalFs panes stuck on / or /storage/emulated over to ShellFs.
                 vm.onRootGranted()
-                go(FsManager.ROOT, "/")
+                if (thenOpen) go(FsManager.ROOT, "/")
             } else vm.toast(t("未获得 Root。请在 Magisk/KernelSU 中允许本应用后重试。", "Root not granted. Allow this app in Magisk/KernelSU, then retry."))
+        }
+    }
+    fun openElevated() {
+        val dest = vm.fsm.storageRoot + "/Android/data"
+        if (ElevatedAccess.granted()) { go(FsManager.SHIZUKU, dest); return }
+        ShizukuRunner.request { ok ->
+            if (ok) go(FsManager.SHIZUKU, dest)
+            else {
+                vm.toast(t("未授权。可安装 Shizuku，或在设置里启用「内置提权」。", "Not granted. Install Shizuku, or enable Built-in privilege in settings."))
+                vm.screen = Screen.EmbeddedPrivilege
+                close()
+            }
         }
     }
     fun downloads() = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
 
+    val elev = elevatedDrawerRow(ElevatedAccess.kind(), en = com.ghostpanter.files.core.Lang.en)
     val state = DrawerUiState(
         version = BuildConfig.VERSION_NAME,
         volumes = volumes,
         rootGranted = rootGranted,
+        elevatedTitle = elev.title,
+        elevatedSubtitle = elev.subtitle,
+        elevatedNeedsPrompt = elev.needsPrompt,
         showSafAndroidData = Build.VERSION.SDK_INT in 30..32,
         safTrees = safTrees.map { it to vm.fsm.label("saf:$it") },
         bookmarks = vm.g.bookmarks.items.toList(),
@@ -184,19 +210,9 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         // `/` is not readable via LocalFs; always request/use Root ShellFs.
         openRoot = { askRoot(thenOpen = true) },
         openDownloads = { go(LocalFs.ID, vm.fsm.storageRoot + "/Download") },
-        requestRoot = { askRoot(thenOpen = false) },
-        shizukuData = {
-            ShizukuRunner.request { ok ->
-                if (ok) go(FsManager.SHIZUKU, vm.fsm.storageRoot + "/Android/data")
-                else vm.toast(t("Shizuku 未运行或未授权", "Shizuku not running / not granted"))
-            }
-        },
-        shizukuObb = {
-            ShizukuRunner.request { ok ->
-                if (ok) go(FsManager.SHIZUKU, vm.fsm.storageRoot + "/Android/obb")
-                else vm.toast(t("Shizuku 未运行或未授权", "Shizuku not running / not granted"))
-            }
-        },
+        requestRoot = { askRoot(thenOpen = true) },
+        openElevated = { openElevated() },
+        openPrivilegeSettings = { vm.screen = Screen.EmbeddedPrivilege; close() },
         safAndroidData = { activity.pickSafTree(true); close() },
         addSaf = { activity.pickSafTree(false); close() },
         openSaf = { go("saf:$it", "/") },
@@ -282,12 +298,11 @@ fun DrawerBody(s: DrawerUiState, a: DrawerActions, modifier: Modifier = Modifier
         }
 
         Group(t("提权访问", "Elevated access")) {
-            // Always clickable — never greyed out. Granting Magisk/KernelSU refreshes the subtitle.
-            Item(Icons.Rounded.Security, "Root", if (s.rootGranted) t("已授权 · 用 Root 后端浏览 /", "Granted · Root backend for /") else t("点此请求 su 授权", "Tap to request su"), onClick = a.requestRoot)
+            // Always clickable — never greyed out. Already-granted backends open directly (no re-prompt).
+            val rootRow = rootDrawerRow(s.rootGranted, en = com.ghostpanter.files.core.Lang.en)
+            Item(Icons.Rounded.Security, "Root", rootRow.subtitle, onClick = a.requestRoot)
             Hair()
-            Item(Icons.Rounded.Shield, "Shizuku", "Android/data", onClick = a.shizukuData)
-            Hair()
-            Item(Icons.Rounded.Shield, "Shizuku", "Android/obb", onClick = a.shizukuObb)
+            Item(Icons.Rounded.Shield, s.elevatedTitle, s.elevatedSubtitle, onClick = a.openElevated)
             if (s.showSafAndroidData) { Hair(); Item(Icons.Rounded.FolderSpecial, t("SAF 授权 Android/data", "SAF: grant Android/data"), onClick = a.safAndroidData) }
             Hair()
             Item(Icons.Rounded.Usb, t("添加 SAF 目录", "Add SAF folder"), t("U 盘 / SD 卡", "USB drive / SD card"), onClick = a.addSaf)
@@ -328,6 +343,8 @@ fun DrawerBody(s: DrawerUiState, a: DrawerActions, modifier: Modifier = Modifier
         }
 
         Group(t("工具", "Tools")) {
+            Item(Icons.Rounded.Key, t("内置提权", "Built-in privilege"), t("不用另装 Shizuku", "No separate Shizuku install"), onClick = a.openPrivilegeSettings)
+            Hair()
             Item(Icons.Rounded.DeleteSweep, t("回收站", "Recycle bin"), onClick = a.trash)
             Hair()
             Item(Icons.Rounded.Apps, t("应用管理", "App manager"), onClick = a.apps)

@@ -183,7 +183,11 @@ class UiScreenshotTest(private val name: String, private val device: DeviceConfi
     private fun drawerState(dark: Boolean) = DrawerUiState(
         version = "0.7.2-test",
         volumes = listOf(Volume("内部存储", "/storage/emulated/0", 256L shl 30, 87L shl 30), Volume("U 盘", "/storage/1A2B-3C4D", 64L shl 30, 51L shl 30)),
-        rootGranted = true, showSafAndroidData = false,
+        rootGranted = true,
+        elevatedTitle = "Shizuku",
+        elevatedSubtitle = "已授权 · Android/data、obb",
+        elevatedNeedsPrompt = false,
+        showSafAndroidData = false,
         safTrees = listOf("content://x" to "Android/data"),
         bookmarks = listOf(com.ghostpanter.files.data.Bookmark("相机", "local", "/storage/emulated/0/DCIM/Camera"),
             com.ghostpanter.files.data.Bookmark("下载", "local", "/storage/emulated/0/Download")),
