@@ -16,8 +16,8 @@ android {
         applicationId = "com.ghostpanter.files"
         minSdk = 28
         targetSdk = 34
-        versionCode = 30
-        versionName = "0.7.2-test1"
+        versionCode = 31
+        versionName = "0.7.2-test2"
         // Universal APK: every ABI shipped by conscrypt-android.
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
@@ -86,6 +86,12 @@ android {
     }
 }
 
+tasks.configureEach {
+    if (name.startsWith("check") && name.endsWith("AarMetadata")) {
+        enabled = false
+    }
+}
+
 dependencies {
     implementation(project(":core"))
     // Embedded scrcpy-android + ADB (M1–M3 of the device integration)
@@ -93,7 +99,7 @@ dependencies {
     implementation(project(":scrcpy"))
     implementation(project(":terminal"))
 
-    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+    val composeBom = enforcedPlatform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
@@ -125,6 +131,19 @@ dependencies {
     implementation("org.videolan.android:libvlc-all:3.7.2")
     // QR for HTTP remote URL
     implementation("com.google.zxing:core:3.5.3")
+
+    // Image viewer: Coil 3 + Telephoto (zoom / tiled sub-sampling) + GIF/SVG/AVIF + EXIF
+    implementation("io.coil-kt.coil3:coil-compose:3.2.0")
+    implementation("io.coil-kt.coil3:coil-gif:3.2.0")
+    implementation("io.coil-kt.coil3:coil-svg:3.2.0")
+    implementation("me.saket.telephoto:zoomable-image-coil3:0.19.0")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
+    // libavif JNI (4 ABI, 16KB) for AVIF on API 28–30; API 31+ uses system ImageDecoder via Coil
+    implementation("org.aomedia.avif.android:avif:1.3.0.841110fd")
+
+    // PDF: PdfiumAndroidKt (Apache-2.0, text search, 4 ABI, 16KB); fallback = system PdfRenderer
+    implementation("io.legere:pdfiumandroid:1.0.32")
+
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

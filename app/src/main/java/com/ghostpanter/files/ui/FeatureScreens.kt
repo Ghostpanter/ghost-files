@@ -2,6 +2,7 @@ package com.ghostpanter.files.ui
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import coil3.BitmapImage
 import android.graphics.Canvas
 import android.media.MediaMetadataRetriever
 import androidx.compose.foundation.Image
@@ -432,6 +433,15 @@ object Thumbnails {
     }
 
     private fun decodeImage(f: File, size: Int): Bitmap? {
+        val ext = f.extension.lowercase()
+        // AVIF / SVG (and animated formats' first frame) go through shared Coil cache.
+        if (ext == "avif" || ext == "svg" || ext == "apng") {
+            return decodeImageCoil(f, size) ?: if (ext == "avif") null else decodeImageBitmapFactory(f, size)
+        }
+        return decodeImageBitmapFactory(f, size) ?: decodeImageCoil(f, size)
+    }
+
+    private fun decodeImageBitmapFactory(f: File, size: Int): Bitmap? {
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(f.path, o)
         if (o.outWidth <= 0 || o.outHeight <= 0) return null
@@ -440,6 +450,22 @@ object Thumbnails {
         val b = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
         return centerCrop(b, size)
     }
+
+    /** Prefer Coil so list thumbs share the image-viewer disk cache (video thumbs unchanged). */
+    private fun decodeImageCoil(f: File, size: Int): Bitmap? = runCatching {
+        val ctx = com.ghostpanter.files.GhostApp.instance
+        val loader = com.ghostpanter.files.ui.image.GhostImageLoader.get(ctx)
+        val result = kotlinx.coroutines.runBlocking {
+            loader.execute(
+                coil3.request.ImageRequest.Builder(ctx)
+                    .data(f)
+                    .size(size * 2)
+                    .build(),
+            )
+        }
+        val img = (result as? coil3.request.SuccessResult)?.image as? BitmapImage ?: return@runCatching null
+        centerCrop(img.bitmap, size)
+    }.getOrNull()
 
     /**
      * First usable frame: embedded cover art if present, else the sync frame near 1 s, decoded straight to

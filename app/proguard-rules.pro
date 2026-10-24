@@ -100,3 +100,15 @@
 -keep class com.ghostpanter.files.privilege.IPrivilegeService** { *; }
 -keep class com.ghostpanter.files.privilege.PrivilegeBinderProvider { *; }
 -keep class com.ghostpanter.files.core.NioListing { *; }
+
+# Coil 3 + Telephoto + libavif + Pdfium (0.7.2-test2)
+-keep class coil3.** { *; }
+-keep class me.saket.telephoto.** { *; }
+-keep class org.aomedia.avif.android.** { *; }
+-keep class io.legere.pdfiumandroid.** { *; }
+-keepclassmembers class io.legere.pdfiumandroid.** { native <methods>; *; }
+-dontwarn coil3.**
+-dontwarn me.saket.telephoto.**
+-dontwarn org.aomedia.avif.android.**
+-dontwarn io.legere.pdfiumandroid.**
+-dontwarn com.caverock.androidsvg.**

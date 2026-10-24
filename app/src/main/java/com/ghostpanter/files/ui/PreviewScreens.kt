@@ -63,7 +63,10 @@ fun PreviewScreen(vm: MainViewModel, s: Screen.Preview) {
             when {
                 err != null -> Text(err!!, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error)
                 local == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                s.kind == "pdf" -> PdfPages(local!!)
+                s.kind == "pdf" -> PdfPreview(local!!, onOpenExternal = { vm.openWithOtherApp(s.fsId, s.path) })
+                s.kind == "docx" || s.kind == "xlsx" -> com.ghostpanter.files.ui.office.OfficeWebPreview(
+                    local!!, s.kind, onOpenExternal = { vm.openWithOtherApp(s.fsId, s.path) },
+                )
                 s.kind == "md" -> MarkdownView(local!!)
                 s.kind == "epub" -> EpubView(local!!)
                 s.kind == "font" -> FontPreview(local!!)
@@ -75,7 +78,15 @@ fun PreviewScreen(vm: MainViewModel, s: Screen.Preview) {
 
 
 @Composable
-private fun PdfPages(file: File) {
+private fun PdfPreview(file: File, onOpenExternal: () -> Unit) {
+    var useSystem by remember { mutableStateOf(false) }
+    if (useSystem) SystemPdfPages(file)
+    else com.ghostpanter.files.ui.pdf.PdfiumViewer(file, onFallback = { useSystem = true })
+}
+
+/** System PdfRenderer fallback when Pdfium fails to load/open. */
+@Composable
+private fun SystemPdfPages(file: File) {
     var page by remember { mutableIntStateOf(0) }
     var pageCount by remember { mutableIntStateOf(0) }
     var bmp by remember { mutableStateOf<Bitmap?>(null) }

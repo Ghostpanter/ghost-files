@@ -52,7 +52,7 @@ import java.nio.charset.CodingErrorAction
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SubScaffold(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}, content: @Composable (PaddingValues) -> Unit) {
+internal fun SubScaffold(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}, content: @Composable (PaddingValues) -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -409,62 +409,7 @@ fun EditorScreen(vm: MainViewModel, s: Screen.Editor) {
 
 @Composable
 fun ImageScreen(vm: MainViewModel, s: Screen.Image) {
-    var index by remember { mutableIntStateOf(s.siblings.indexOf(s.path).coerceAtLeast(0)) }
-    val path = s.siblings.getOrNull(index) ?: s.path
-    var bmp by remember(path) { mutableStateOf<Bitmap?>(null) }
-    var err by remember(path) { mutableStateOf<String?>(null) }
-    var scale by remember(path) { mutableFloatStateOf(1f) }
-    var offset by remember(path) { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-    LaunchedEffect(path) {
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val fs = vm.fsm.get(s.fsId)
-                val sz = runCatching { fs.stat(path)?.size }.getOrNull() ?: -1L
-                if (sz > 256L shl 20) error(t("图片过大（>256MB），无法预览", "Image too large (>256 MB) to preview"))
-                // Local files decode in place; other backends stream to a temp file (never the whole file in RAM).
-                val local = if (s.fsId == com.ghostpanter.files.core.LocalFs.ID) java.io.File(path).takeIf { it.isFile && it.canRead() } else null
-                val tmp = if (local == null) java.io.File.createTempFile("view", ".img", vm.getApplication<android.app.Application>().cacheDir) else null
-                try {
-                    if (tmp != null) fs.openRead(path).use { input -> tmp.outputStream().use { input.copyTo(it, 64 * 1024) } }
-                    val f = local ?: tmp!!
-                    val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeFile(f.path, o)
-                    var sample = 1
-                    while (o.outWidth / sample > 4096 || o.outHeight / sample > 4096) sample *= 2
-                    BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })
-                } finally { tmp?.delete() }
-                    ?: error(t("无法解码图片", "Cannot decode image"))
-            }.onSuccess { bmp = it }.onFailure { err = it.message }
-        }
-    }
-    SubScaffold("${VPath.name(path)}  (${index + 1}/${s.siblings.size.coerceAtLeast(1)})", { vm.screen = Screen.Main }) { pad ->
-        Box(
-            Modifier.padding(pad).fillMaxSize().background(Color.Black)
-                .pointerInput(path) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        scale = (scale * zoom).coerceIn(1f, 8f)
-                        offset = if (scale == 1f) androidx.compose.ui.geometry.Offset.Zero else offset + pan
-                    }
-                }
-                .pointerInput(path) {
-                    detectTapGestures(onDoubleTap = { scale = if (scale > 1f) 1f else 2.5f; offset = androidx.compose.ui.geometry.Offset.Zero }, onTap = { pos ->
-                        if (scale > 1f) return@detectTapGestures
-                        if (pos.x < size.width / 3f && index > 0) index--
-                        else if (pos.x > size.width * 2 / 3f && index < s.siblings.size - 1) index++
-                    })
-                },
-        ) {
-            val b = bmp
-            when {
-                b != null -> Image(
-                    b.asImageBitmap(), null,
-                    Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y),
-                )
-                err != null -> Text(err!!, color = Color.White, modifier = Modifier.align(Alignment.Center))
-                else -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-            }
-        }
-    }
+    com.ghostpanter.files.ui.image.ImageViewerScreen(vm, s)
 }
 
 // ------------------------------------------------------------------ APK info

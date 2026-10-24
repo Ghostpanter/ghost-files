@@ -839,6 +839,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
             !chooser && com.ghostpanter.files.core.backup.BackupManifest.opensRestore(e.name) -> screen = Screen.Backup(tab.fsId, e.path)
             !chooser && ext in PREVIEW_MD -> screen = Screen.Preview(tab.fsId, e.path, "md")
             !chooser && ext == "pdf" -> screen = Screen.Preview(tab.fsId, e.path, "pdf")
+            !chooser && (ext == "docx" || ext == "xlsx") -> screen = Screen.Preview(tab.fsId, e.path, ext)
             !chooser && ext == "epub" -> screen = Screen.Preview(tab.fsId, e.path, "epub")
             !chooser && ext in FONT_EXT -> screen = Screen.Preview(tab.fsId, e.path, "font")
             !chooser && ext in TEXT_EXT -> screen = Screen.Editor(tab.fsId, e.path)
