@@ -44,10 +44,12 @@ object ShizukuFileService {
 
     /** Never blocks the main thread; elsewhere waits up to 6 s for the first bind. */
     fun get(): IFileService? {
+        // Root covers Shizuku: skip UserService and let ShellFs use Root via ShizukuRunner.
+        if (com.ghostpanter.files.fs.RootRunner.granted()) return null
         // Embedded PrivilegeServer exposes the same IFileService shape.
         ElevatedAccess.fileService()?.let { return it }
         svc?.let { s -> if (runCatching { s.asBinder().pingBinder() }.getOrDefault(false)) return s; svc = null; bound = false }
-        if (System.currentTimeMillis() < downUntil || !ShizukuRunner.granted()) return null
+        if (System.currentTimeMillis() < downUntil || !ShizukuRunner.shellGranted()) return null
         // Embedded-only: no external Shizuku UserService to bind.
         if (ElevatedAccess.kind() == com.ghostpanter.files.core.privilege.PrivilegeKind.EMBEDDED) return null
         if (runCatching { Shizuku.getVersion() }.getOrDefault(0) < 10) { downUntil = Long.MAX_VALUE; return null }

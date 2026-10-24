@@ -28,6 +28,18 @@ object RootRunner : ShellRunner {
     /** True after the last successful [check]. */
     fun granted(): Boolean = grantedFlag.get()
 
+    /** Drop cached su form so the next [check]/[reauthorize] re-prompts Magisk/KernelSU. */
+    fun clearGrantCache() {
+        resolved.set(null)
+        grantedFlag.set(false)
+    }
+
+    /** Clear cache and re-run [check] (re-apply for su). */
+    fun reauthorize(timeoutSec: Long = 25): Boolean {
+        clearGrantCache()
+        return check(timeoutSec)
+    }
+
     /**
      * True if any known su binary is present on disk (PATH "su" always counts as maybe).
      * Does not prompt Magisk.
@@ -123,9 +135,9 @@ internal object ExternalShizuku : ShellRunner {
     fun granted(): Boolean = running() &&
         runCatching { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrDefault(false)
 
-    fun request(onResult: (Boolean) -> Unit) {
+    fun request(onResult: (Boolean) -> Unit, force: Boolean = false) {
         if (!running()) { onResult(false); return }
-        if (granted()) { onResult(true); return }
+        if (!force && granted()) { onResult(true); return }
         val l = object : Shizuku.OnRequestPermissionResultListener {
             override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
                 if (requestCode != REQUEST_CODE) return
@@ -139,27 +151,41 @@ internal object ExternalShizuku : ShellRunner {
 }
 
 /**
- * Elevated shell facade: external Shizuku when granted, otherwise embedded self-ADB privilege.
- * Call sites keep using this name; selection is in [ElevatedAccess].
+ * Elevated shell facade with Root > Shizuku hierarchy:
+ * when Root is granted, shell scripts and [granted] prefer Root; otherwise external Shizuku
+ * or embedded self-ADB privilege via [ElevatedAccess].
  */
 object ShizukuRunner : ShellRunner {
     const val REQUEST_CODE = ExternalShizuku.REQUEST_CODE
 
-    override fun start(script: String): Process = when (ElevatedAccess.kind()) {
-        PrivilegeKind.EXTERNAL_SHIZUKU -> ExternalShizuku.start(script)
-        PrivilegeKind.EMBEDDED -> EmbeddedPrivilege.shellRunner()?.start(script)
-            ?: throw IOException("embedded privilege not running")
-        PrivilegeKind.NONE -> throw IOException("Shizuku / embedded privilege not available")
+    override fun start(script: String): Process {
+        if (RootRunner.granted()) return RootRunner.start(script)
+        return when (ElevatedAccess.kind()) {
+            PrivilegeKind.EXTERNAL_SHIZUKU -> ExternalShizuku.start(script)
+            PrivilegeKind.EMBEDDED -> EmbeddedPrivilege.shellRunner()?.start(script)
+                ?: throw IOException("embedded privilege not running")
+            PrivilegeKind.NONE -> throw IOException("Shizuku / embedded privilege not available")
+        }
     }
 
-    fun running(): Boolean = when (ElevatedAccess.kind()) {
-        PrivilegeKind.EXTERNAL_SHIZUKU -> true
-        PrivilegeKind.EMBEDDED -> EmbeddedPrivilege.alive()
-        PrivilegeKind.NONE -> ExternalShizuku.running() || EmbeddedPrivilege.alive()
+    fun running(): Boolean {
+        if (RootRunner.granted()) return true
+        return when (ElevatedAccess.kind()) {
+            PrivilegeKind.EXTERNAL_SHIZUKU -> true
+            PrivilegeKind.EMBEDDED -> EmbeddedPrivilege.alive()
+            PrivilegeKind.NONE -> ExternalShizuku.running() || EmbeddedPrivilege.alive()
+        }
     }
 
-    fun granted(): Boolean = ElevatedAccess.granted()
+    /** True when Root or any shell elevated backend is available. */
+    fun granted(): Boolean = RootRunner.granted() || ElevatedAccess.granted()
+
+    /** Shell-layer only (ignores Root). */
+    fun shellGranted(): Boolean = ElevatedAccess.shellGranted()
 
     /** Returns true if already granted; otherwise triggers Shizuku permission or reports false (open 内置提权). */
     fun request(onResult: (Boolean) -> Unit) = ElevatedAccess.request(onResult)
+
+    /** Re-request shell permission / restart embedded, even if already granted. */
+    fun reauthorize(onResult: (Boolean) -> Unit) = ElevatedAccess.reauthorize(onResult)
 }

@@ -74,7 +74,7 @@ class FsManager(
     fun label(id: String): String = when {
         id == LocalFs.ID -> t("本机", "Local")
         id == ROOT -> "Root"
-        id == SHIZUKU -> ElevatedAccess.label()
+        id == SHIZUKU -> ElevatedAccess.shellLabel()
         id.startsWith("net:") -> servers.get(id.removePrefix("net:"))?.let { "${it.name} (${it.protocol.label})" } ?: id
         id.startsWith("saf:") -> "SAF: " + (Uri.parse(id.removePrefix("saf:")).lastPathSegment?.substringAfter(':') ?: "?")
         com.ghostpanter.adb.AdbFs.isAdbId(id) -> "ADB · " + adbLabel(com.ghostpanter.adb.AdbFs.serialOf(id), id.startsWith(com.ghostpanter.adb.AdbFs.PREFIX_SU))
@@ -113,7 +113,8 @@ class FsManager(
      * switch to the Root backend id. Magisk grant alone does not change LocalFs behaviour.
      */
     fun elevateFsId(fsId: String, path: String): String {
-        if (fsId == LocalFs.ID && RootRunner.granted() && prefersRoot(path)) return ROOT
+        // Root > Shizuku: prefer Root backend for paths that need elevation.
+        if (RootRunner.granted() && prefersRoot(path) && (fsId == LocalFs.ID || fsId == SHIZUKU)) return ROOT
         return fsId
     }
 

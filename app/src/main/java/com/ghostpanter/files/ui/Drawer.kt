@@ -6,6 +6,8 @@ import android.os.StatFs
 import android.os.storage.StorageManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.*
@@ -67,10 +69,16 @@ data class DrawerUiState(
     val version: String,
     val volumes: List<Volume>,
     val rootGranted: Boolean,
-    /** Merged elevated (Shizuku / 内置提权) row. */
+    val rootSubtitle: String = "点此请求 su 授权",
+    val rootNeedsPrompt: Boolean = true,
+    val rootCanReauth: Boolean = false,
+    val rootCanAuthorizeInMenu: Boolean = false,
+    /** Merged elevated (Shizuku / 内置提权) row — Root covers when granted. */
     val elevatedTitle: String = "Shizuku",
     val elevatedSubtitle: String = "Android/data、obb",
     val elevatedNeedsPrompt: Boolean = true,
+    val elevatedCanReauth: Boolean = false,
+    val elevatedCanAuthorizeInMenu: Boolean = false,
     val showSafAndroidData: Boolean,
     val safTrees: List<Pair<String, String>>,          // uri to label
     val bookmarks: List<com.ghostpanter.files.data.Bookmark>,
@@ -97,7 +105,10 @@ class DrawerActions(
     val openRoot: () -> Unit = {},
     val openDownloads: () -> Unit = {},
     val requestRoot: () -> Unit = {},
+    val reauthRoot: () -> Unit = {},
     val openElevated: () -> Unit = {},
+    val reauthElevated: () -> Unit = {},
+    val authorizeElevatedQuiet: () -> Unit = {},
     val openPrivilegeSettings: () -> Unit = {},
     val safAndroidData: () -> Unit = {},
     val addSaf: () -> Unit = {},
@@ -147,26 +158,35 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
     val adb = com.ghostpanter.files.ui.adb.rememberSavedDevices()
 
     fun go(fsId: String, path: String? = null) { vm.openFs(fsId, path); close() }
-    fun askRoot(thenOpen: Boolean) {
+    fun askRoot(thenOpen: Boolean, forceReauth: Boolean = false) {
         scope.launch {
-            // Already authorized: never re-prompt; open / directly.
-            if (RootRunner.granted()) {
+            if (!forceReauth && RootRunner.granted()) {
                 if (thenOpen) go(FsManager.ROOT, "/")
                 return@launch
             }
-            vm.busy = t("请求 Root 授权…", "Requesting root…")
-            val ok = withContext(Dispatchers.IO) { RootRunner.check() }
+            vm.busy = t(
+                if (forceReauth) "重新请求 Root 授权…" else "请求 Root 授权…",
+                if (forceReauth) "Re-requesting root…" else "Requesting root…",
+            )
+            val ok = withContext(Dispatchers.IO) {
+                if (forceReauth) RootRunner.reauthorize() else RootRunner.check()
+            }
             vm.busy = null
             rootGranted = ok
             if (ok) {
                 vm.onRootGranted()
                 if (thenOpen) go(FsManager.ROOT, "/")
-            } else vm.toast(t("未获得 Root。请在 Magisk/KernelSU 中允许本应用后重试。", "Root not granted. Allow this app in Magisk/KernelSU, then retry."))
+            } else if (forceReauth || !ElevatedAccess.shellGranted()) {
+                // Avoid nag toast when Shizuku already covers and user only soft-tapped Root.
+                vm.toast(t("未获得 Root。请在 Magisk/KernelSU 中允许本应用后重试。", "Root not granted. Allow this app in Magisk/KernelSU, then retry."))
+            }
         }
     }
     fun openElevated() {
         val dest = vm.fsm.storageRoot + "/Android/data"
-        if (ElevatedAccess.granted()) { go(FsManager.SHIZUKU, dest); return }
+        // Root > Shizuku: browse Android/data via Root backend when available.
+        if (RootRunner.granted()) { go(FsManager.ROOT, dest); return }
+        if (ElevatedAccess.shellGranted()) { go(FsManager.SHIZUKU, dest); return }
         ShizukuRunner.request { ok ->
             if (ok) go(FsManager.SHIZUKU, dest)
             else {
@@ -176,16 +196,35 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
             }
         }
     }
+    fun reauthElevated() {
+        vm.busy = t("重新授权提权…", "Re-authorizing privilege…")
+        ShizukuRunner.reauthorize { ok ->
+            vm.busy = null
+            if (!ok) vm.toast(t("重新授权未完成。可到「内置提权」设置重试。", "Re-authorize unfinished. Retry in Built-in privilege settings."))
+        }
+    }
+    fun authorizeElevatedQuiet() {
+        // Menu-only: authorize shell while Root covers; no toast / no navigation on failure.
+        ShizukuRunner.request { /* quiet */ }
+    }
     fun downloads() = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
 
-    val elev = elevatedDrawerRow(ElevatedAccess.kind(), en = com.ghostpanter.files.core.Lang.en)
+    val shellKind = ElevatedAccess.kind()
+    val elev = elevatedDrawerRow(rootGranted, shellKind, en = com.ghostpanter.files.core.Lang.en)
+    val rootRow = rootDrawerRow(rootGranted, shellKind, en = com.ghostpanter.files.core.Lang.en)
     val state = DrawerUiState(
         version = BuildConfig.VERSION_NAME,
         volumes = volumes,
         rootGranted = rootGranted,
+        rootSubtitle = rootRow.subtitle,
+        rootNeedsPrompt = rootRow.needsPrompt,
+        rootCanReauth = rootRow.canReauth,
+        rootCanAuthorizeInMenu = rootRow.canAuthorizeInMenu,
         elevatedTitle = elev.title,
         elevatedSubtitle = elev.subtitle,
         elevatedNeedsPrompt = elev.needsPrompt,
+        elevatedCanReauth = elev.canReauth,
+        elevatedCanAuthorizeInMenu = elev.canAuthorizeInMenu,
         showSafAndroidData = Build.VERSION.SDK_INT in 30..32,
         safTrees = safTrees.map { it to vm.fsm.label("saf:$it") },
         bookmarks = vm.g.bookmarks.items.toList(),
@@ -211,7 +250,10 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         openRoot = { askRoot(thenOpen = true) },
         openDownloads = { go(LocalFs.ID, vm.fsm.storageRoot + "/Download") },
         requestRoot = { askRoot(thenOpen = true) },
+        reauthRoot = { askRoot(thenOpen = false, forceReauth = true) },
         openElevated = { openElevated() },
+        reauthElevated = { reauthElevated() },
+        authorizeElevatedQuiet = { authorizeElevatedQuiet() },
         openPrivilegeSettings = { vm.screen = Screen.EmbeddedPrivilege; close() },
         safAndroidData = { activity.pickSafTree(true); close() },
         addSaf = { activity.pickSafTree(false); close() },
@@ -298,11 +340,21 @@ fun DrawerBody(s: DrawerUiState, a: DrawerActions, modifier: Modifier = Modifier
         }
 
         Group(t("提权访问", "Elevated access")) {
-            // Always clickable — never greyed out. Already-granted backends open directly (no re-prompt).
-            val rootRow = rootDrawerRow(s.rootGranted, en = com.ghostpanter.files.core.Lang.en)
-            Item(Icons.Rounded.Security, "Root", rootRow.subtitle, onClick = a.requestRoot)
+            // Hierarchy Root > Shizuku > user. Covered lower tiers never nag "点击授权".
+            val rootMenu = buildList {
+                if (s.rootCanReauth) add(t("重新授权", "Re-authorize") to a.reauthRoot)
+                if (s.rootCanAuthorizeInMenu) add(t("单独授权 Root", "Authorize Root alone") to a.reauthRoot)
+            }
+            Item(Icons.Rounded.Security, "Root", s.rootSubtitle, onClick = a.requestRoot, menuItems = rootMenu)
             Hair()
-            Item(Icons.Rounded.Shield, s.elevatedTitle, s.elevatedSubtitle, onClick = a.openElevated)
+            val elevMenu = buildList {
+                if (s.elevatedCanReauth) add(t("重新授权", "Re-authorize") to a.reauthElevated)
+                if (s.elevatedCanAuthorizeInMenu) {
+                    add(t("单独授权 Shizuku", "Authorize Shizuku alone") to a.authorizeElevatedQuiet)
+                    add(t("内置提权设置", "Built-in privilege settings") to a.openPrivilegeSettings)
+                }
+            }
+            Item(Icons.Rounded.Shield, s.elevatedTitle, s.elevatedSubtitle, onClick = a.openElevated, menuItems = elevMenu)
             if (s.showSafAndroidData) { Hair(); Item(Icons.Rounded.FolderSpecial, t("SAF 授权 Android/data", "SAF: grant Android/data"), onClick = a.safAndroidData) }
             Hair()
             Item(Icons.Rounded.Usb, t("添加 SAF 目录", "Add SAF folder"), t("U 盘 / SD 卡", "USB drive / SD card"), onClick = a.addSaf)
@@ -434,19 +486,51 @@ private fun IconBox(icon: ImageVector) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Item(icon: ImageVector, label: String, sub: String? = null, onClick: () -> Unit, trailing: (@Composable () -> Unit)? = null) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(onClick = onClick).padding(start = 14.dp, end = if (trailing != null) 4.dp else 14.dp, top = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconBox(icon)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
-            if (sub != null) Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+private fun Item(
+    icon: ImageVector,
+    label: String,
+    sub: String? = null,
+    onClick: () -> Unit,
+    trailing: (@Composable () -> Unit)? = null,
+    menuItems: List<Pair<String, () -> Unit>> = emptyList(),
+) {
+    var menu by remember { mutableStateOf(false) }
+    val hasMenu = menuItems.isNotEmpty()
+    Box(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .then(
+                    if (hasMenu) Modifier.combinedClickable(onClick = onClick, onLongClick = { menu = true })
+                    else Modifier.clickable(onClick = onClick),
+                )
+                .padding(start = 14.dp, end = if (trailing != null || hasMenu) 4.dp else 14.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconBox(icon)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
+                if (sub != null) Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+            }
+            if (hasMenu) {
+                IconButton(onClick = { menu = true }) {
+                    Icon(Icons.Rounded.MoreVert, t("更多", "More"), Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline)
+                }
+            }
+            trailing?.invoke()
         }
-        trailing?.invoke()
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            menuItems.forEach { (title, action) ->
+                DropdownMenuItem(
+                    text = { Text(title) },
+                    onClick = { menu = false; action() },
+                )
+            }
+        }
     }
 }
 
