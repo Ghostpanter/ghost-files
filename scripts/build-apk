@@ -65,6 +65,13 @@ with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(dst, "w") as zout:
         # in code) and would be unsigned META-INF entries under V1.
         if name.startswith("META-INF/services/"):
             continue
+        # Unsigned license/notice blobs from transitive AARs break ColorOS V1 checks.
+        base = name.rsplit("/", 1)[-1].upper()
+        if name.startswith("META-INF/") and base in {
+            "LICENSE", "LICENSE.TXT", "LICENSE.MD", "NOTICE", "NOTICE.TXT", "NOTICE.MD",
+            "DEPENDENCIES", "ASL2.0", "LGPL2.1",
+        }:
+            continue
         data = zin.read(name)
         new = zipfile.ZipInfo(filename=name, date_time=info.date_time)
         new.compress_type = info.compress_type
