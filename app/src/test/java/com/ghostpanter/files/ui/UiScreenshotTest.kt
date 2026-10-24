@@ -180,13 +180,18 @@ class UiScreenshotTest(private val name: String, private val device: DeviceConfi
         ))
     }
 
-    private fun drawerState(dark: Boolean) = DrawerUiState(
-        version = "0.7.2-test",
+    /** Root granted — Shizuku row covered with「Root 已授权」. */
+    private fun drawerStateRoot(dark: Boolean) = DrawerUiState(
+        version = "0.7.2-test1",
         volumes = listOf(Volume("内部存储", "/storage/emulated/0", 256L shl 30, 87L shl 30), Volume("U 盘", "/storage/1A2B-3C4D", 64L shl 30, 51L shl 30)),
         rootGranted = true,
+        rootSubtitle = "已授权 · 用 Root 后端浏览 /",
+        rootNeedsPrompt = false,
+        rootCanReauth = true,
         elevatedTitle = "Shizuku",
-        elevatedSubtitle = "已授权 · Android/data、obb",
+        elevatedSubtitle = "Root 已授权 · Android/data、obb",
         elevatedNeedsPrompt = false,
+        elevatedCanAuthorizeInMenu = true,
         showSafAndroidData = false,
         safTrees = listOf("content://x" to "Android/data"),
         bookmarks = listOf(com.ghostpanter.files.data.Bookmark("相机", "local", "/storage/emulated/0/DCIM/Camera"),
@@ -200,8 +205,21 @@ class UiScreenshotTest(private val name: String, private val device: DeviceConfi
         foldersFirst = true, recycleBin = true, jobs = 3, jobsPerServer = 2,
     )
 
-    @Test fun drawer() {
-        if (device.orientation == ScreenOrientation.LANDSCAPE) return
+    /** Shizuku only — Root row shows「Shizuku 已授权 · 无 Root」. */
+    private fun drawerStateShizuku(dark: Boolean) = drawerStateRoot(dark).copy(
+        rootGranted = false,
+        rootSubtitle = "Shizuku 已授权 · 无 Root（shell 权限）",
+        rootNeedsPrompt = false,
+        rootCanReauth = false,
+        rootCanAuthorizeInMenu = true,
+        elevatedTitle = "Shizuku",
+        elevatedSubtitle = "已授权 · Android/data、obb",
+        elevatedNeedsPrompt = false,
+        elevatedCanReauth = true,
+        elevatedCanAuthorizeInMenu = false,
+    )
+
+    private fun snapshotDrawer(state: DrawerUiState) {
         val dark = device.nightMode == NightMode.NIGHT
         paparazzi.snapshot {
             GhostTheme(dark = dark) {
@@ -212,10 +230,20 @@ class UiScreenshotTest(private val name: String, private val device: DeviceConfi
                         androidx.compose.ui.Modifier.fillMaxHeight().width(312.dp),
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
                         color = androidx.compose.material3.MaterialTheme.colorScheme.background,
-                    ) { DrawerBody(drawerState(dark), DrawerActions()) }
+                    ) { DrawerBody(state, DrawerActions()) }
                 }
             }
         }
+    }
+
+    @Test fun drawer() {
+        if (device.orientation == ScreenOrientation.LANDSCAPE) return
+        snapshotDrawer(drawerStateRoot(device.nightMode == NightMode.NIGHT))
+    }
+
+    @Test fun drawerShizukuOnly() {
+        if (device.orientation == ScreenOrientation.LANDSCAPE) return
+        snapshotDrawer(drawerStateShizuku(device.nightMode == NightMode.NIGHT))
     }
 
     @Test fun androidData() {
