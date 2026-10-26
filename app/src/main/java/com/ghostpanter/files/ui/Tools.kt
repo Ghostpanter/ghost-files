@@ -40,6 +40,7 @@ import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.ops.Archives
 import com.ghostpanter.files.core.ops.BatchRename
 import com.ghostpanter.files.core.ops.Checksums
+import com.ghostpanter.files.core.ops.AppBackupFiles.Part
 import com.ghostpanter.files.fs.RootRunner
 import com.ghostpanter.files.t
 import kotlinx.coroutines.Dispatchers
@@ -393,15 +394,6 @@ fun hexRow(b: ByteArray, row: Int, base: Long): String {
 private class AppRow(val label: String, val pkg: String, val version: String, val system: Boolean, val apk: String, val splits: List<String>, val size: Long, val info: ApplicationInfo,
     val versionCode: Long = 0, val installer: String? = null)
 
-private data class BatchBackupProgress(
-    val mode: String,
-    val index: Int,
-    val total: Int,
-    val currentLabel: String,
-    val ok: Int,
-    val fail: Int,
-)
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
@@ -414,8 +406,12 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
     var detail by remember { mutableStateOf<AppRow?>(null) }
     var selecting by remember { mutableStateOf(false) }
     var selectedPkgs by remember { mutableStateOf(setOf<String>()) }
-    var batchProgress by remember { mutableStateOf<BatchBackupProgress?>(null) }
+    var progress by remember { mutableStateOf<AppOpProgress?>(null) }
     var batchBusy by remember { mutableStateOf(false) }
+    var backupPick by remember { mutableStateOf<List<AppRow>?>(null) }
+    var restorePick by remember { mutableStateOf<List<AppRow>?>(null) }
+    var restoreConfirm by remember { mutableStateOf<Pair<List<AppRow>, Part>?>(null) }
+    var result by remember { mutableStateOf<Pair<String, String>?>(null) }
     val rootOk = RootRunner.granted()
 
     LaunchedEffect(Unit) {
@@ -446,54 +442,58 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
 
     fun selectedApps(shown: List<AppRow>): List<AppRow> = shown.filter { it.pkg in selectedPkgs }
 
-    fun runBatchApk(targets: List<AppRow>) {
+    fun runBackup(targets: List<AppRow>, part: Part) {
         if (targets.isEmpty() || batchBusy) return
         batchBusy = true
+        val title = t("备份", "Backup") + " · " + AppBackupOps.partLabel(part)
         scope.launch {
-            var ok = 0
-            var fail = 0
-            val total = targets.size
+            val rs = ArrayList<PartResult>()
             for ((i, a) in targets.withIndex()) {
-                batchProgress = BatchBackupProgress("apk", i + 1, total, a.label, ok, fail)
-                val r = withContext(Dispatchers.IO) { runCatching { backupApk(ctx, a) } }
-                if (r.isSuccess) ok++ else fail++
+                progress = AppOpProgress(title, i + 1, targets.size, a.label, null)
+                rs += withContext(Dispatchers.IO) {
+                    AppBackupOps.backup(ctx, vm, a.target(), part) { pt -> progress = AppOpProgress(title, i + 1, targets.size, a.label, pt) }
+                }
             }
-            batchProgress = null
+            progress = null
             batchBusy = false
-            exitSelect()
-            vm.toast(
-                t("批量备份 APK 完成：成功 $ok，失败 $fail", "Batch APK backup: $ok ok, $fail failed") +
-                    " → ${backupDir().path}",
-            )
+            if (targets.size > 1) exitSelect()
+            val body = if (targets.size == 1) AppBackupOps.summary(rs[0]) else AppBackupOps.batchSummary(rs)
+            result = title to (body + "\n" + AppBackupOps.dir().path)
         }
     }
 
-    fun runBatchData(targets: List<AppRow>) {
+    fun runRestore(targets: List<AppRow>, part: Part) {
         if (targets.isEmpty() || batchBusy) return
         batchBusy = true
+        val title = t("恢复", "Restore") + " · " + AppBackupOps.partLabel(part)
         scope.launch {
-            var ok = 0
-            var fail = 0
-            val total = targets.size
+            val rs = ArrayList<PartResult>()
             for ((i, a) in targets.withIndex()) {
-                batchProgress = BatchBackupProgress("data", i + 1, total, a.label, ok, fail)
-                val r = withContext(Dispatchers.IO) {
-                    runCatching {
-                        val shell = vm.fsm.root
-                        val dir = backupDir().apply { mkdirs() }
-                        val out = File(dir, a.pkg + "-data.tar")
-                        com.ghostpanter.files.core.ops.AppDataBackup.backup(shell, a.pkg, out)
-                        out.path
-                    }
+                progress = AppOpProgress(title, i + 1, targets.size, a.label, null)
+                val (apk, tar) = withContext(Dispatchers.IO) {
+                    (if (part.apk) AppBackupOps.findApk(ctx, a.pkg) else null) to (if (part.data) AppBackupOps.findData(a.pkg) else null)
                 }
-                if (r.isSuccess) ok++ else fail++
+                rs += AppBackupOps.restore(ctx, vm, a.pkg, part, apk, tar) { pt -> progress = AppOpProgress(title, i + 1, targets.size, a.label, pt) }
             }
-            batchProgress = null
+            progress = null
             batchBusy = false
-            exitSelect()
-            vm.toast(
-                t("批量数据备份完成：成功 $ok，失败 $fail（需 Root）", "Batch data backup: $ok ok, $fail failed (needs Root)"),
-            )
+            if (targets.size > 1) exitSelect()
+            result = title to (if (targets.size == 1) AppBackupOps.summary(rs[0]) else AppBackupOps.batchSummary(rs))
+        }
+    }
+
+    /** Single app, APK only: hand the backup to the normal install UI (source choice, silent toggle). */
+    fun openApkInstaller(a: AppRow) {
+        scope.launch {
+            val f = withContext(Dispatchers.IO) { AppBackupOps.findApk(ctx, a.pkg) }
+            if (f == null) {
+                vm.toast(t("没找到 ${a.label} 的 APK 备份，请在备份目录中选择", "No APK backup for ${a.label}; pick one in the backup folder"))
+                vm.openFs(com.ghostpanter.files.core.LocalFs.ID, AppBackupOps.dir().path)
+                vm.screen = Screen.Main
+                return@launch
+            }
+            if (f.name.endsWith(".apk", true)) vm.screen = Screen.Apk(f, f.name)
+            else { vm.screen = Screen.Main; vm.bundleInstall = BundleRequest(f, f.name) }
         }
     }
 
@@ -541,13 +541,11 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
                             (query.isBlank() || it.label.contains(query, true) || it.pkg.contains(query, true))
                     }.orEmpty()
                     val targets = selectedApps(shown)
-                    TextButton(enabled = !batchBusy && targets.isNotEmpty(), onClick = { runBatchApk(targets) }) {
-                        Text(t("备份 APK（${targets.size}）", "Backup APK (${targets.size})"))
+                    TextButton(enabled = !batchBusy && targets.isNotEmpty(), onClick = { backupPick = targets }) {
+                        Text(t("备份（${targets.size}）", "Backup (${targets.size})"))
                     }
-                    if (rootOk) {
-                        TextButton(enabled = !batchBusy && targets.isNotEmpty(), onClick = { runBatchData(targets) }) {
-                            Text(t("备份数据 Root（${targets.size}）", "Backup data Root (${targets.size})"))
-                        }
+                    TextButton(enabled = !batchBusy && targets.isNotEmpty(), onClick = { restorePick = targets }) {
+                        Text(t("恢复（${targets.size}）", "Restore (${targets.size})"))
                     }
                 }
             }
@@ -633,30 +631,8 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
             },
             confirmButton = {
                 Column(horizontalAlignment = Alignment.End) {
-                    TextButton(onClick = {
-                        dismiss()
-                        scope.launch {
-                            val r = withContext(Dispatchers.IO) { runCatching { backupApk(ctx, a) } }
-                            r.onSuccess { vm.toast(t("已备份到 ", "Saved to ") + it) }
-                                .onFailure { vm.toast(t("备份失败：", "Backup failed: ") + it.message) }
-                        }
-                    }) { Text(t("备份 APK", "Backup APK") + if (a.splits.isNotEmpty()) "（APKS）" else "") }
-                    TextButton(onClick = {
-                        dismiss()
-                        scope.launch {
-                            val r = withContext(Dispatchers.IO) {
-                                runCatching {
-                                    val shell = vm.fsm.root
-                                    val dir = backupDir().apply { mkdirs() }
-                                    val out = File(dir, a.pkg + "-data.tar")
-                                    com.ghostpanter.files.core.ops.AppDataBackup.backup(shell, a.pkg, out)
-                                    out.path
-                                }
-                            }
-                            r.onSuccess { vm.toast(t("数据已备份到 ", "Data backed up to ") + it) }
-                                .onFailure { vm.toast(t("数据备份失败（需 Root）：", "Data backup failed (needs Root): ") + it.message) }
-                        }
-                    }) { Text(t("备份应用数据（Root）", "Backup app data (Root)")) }
+                    TextButton(onClick = { dismiss(); backupPick = listOf(a) }) { Text(t("备份…", "Backup…")) }
+                    TextButton(onClick = { dismiss(); restorePick = listOf(a) }) { Text(t("恢复…", "Restore…")) }
                     TextButton(onClick = {
                         dismiss()
                         selecting = true
@@ -667,7 +643,7 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
                     if (!a.system) TextButton(onClick = { dismiss(); runCatching { ctx.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:" + a.pkg))) } }) { Text(t("卸载", "Uninstall")) }
                     TextButton(onClick = {
                         dismiss()
-                        vm.openFs(com.ghostpanter.files.core.LocalFs.ID, backupDir().path)
+                        vm.openFs(com.ghostpanter.files.core.LocalFs.ID, AppBackupOps.dir().path)
                         vm.screen = Screen.Main
                     }) { Text(t("打开备份目录", "Open backup folder")) }
                 }
@@ -675,41 +651,81 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
         )
     }
 
-    batchProgress?.let { p ->
+    backupPick?.let { targets ->
+        AppPartDialog(
+            title = if (targets.size == 1) t("备份「${targets[0].label}」", "Back up ${targets[0].label}") else t("备份 ${targets.size} 个应用", "Back up ${targets.size} apps"),
+            options = backupOptions(rootOk, targets.singleOrNull()?.splits?.size ?: 0),
+            note = if (!rootOk) t("应用数据在 /data/data，需 Root 才能读取", "App data lives in /data/data and needs Root") else null,
+            confirmLabel = t("开始备份", "Back up"),
+            dismiss = { backupPick = null },
+        ) { part -> runBackup(targets, part) }
+    }
+
+    restorePick?.let { targets ->
+        val single = targets.singleOrNull()
+        val silentOk = remember { com.ghostpanter.files.install.BundleInstaller.elevated() != null }
+        var found by remember(targets) { mutableStateOf<Pair<File?, File?>?>(null) }
+        if (single != null) LaunchedEffect(single.pkg) {
+            found = withContext(Dispatchers.IO) { AppBackupOps.findApk(ctx, single.pkg) to AppBackupOps.findData(single.pkg) }
+        }
+        val f = found
+        if (single != null && f == null) {
+            AlertDialog(onDismissRequest = { restorePick = null }, title = { Text(t("查找备份…", "Looking for backups…")) },
+                text = { LinearProgressIndicator(Modifier.fillMaxWidth()) }, confirmButton = {})
+        } else {
+            AppPartDialog(
+                title = if (single != null) t("恢复「${single.label}」", "Restore ${single.label}") else t("恢复 ${targets.size} 个应用", "Restore ${targets.size} apps"),
+                options = restoreOptions(
+                    rootOk = rootOk, silentOk = silentOk,
+                    hasApk = single == null || f?.first != null, hasData = single == null || f?.second != null,
+                    installed = true, allowSystemInstaller = single != null,
+                ),
+                note = if (single == null) t("从备份目录按包名匹配，缺的会记为失败", "Matched by package in the backup folder; missing ones count as failed") else null,
+                confirmLabel = t("下一步", "Next"),
+                extra = if (single != null) { {
+                    Spacer(Modifier.height(6.dp))
+                    Text("APK：" + (f?.first?.name ?: t("无", "none")), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(t("数据：", "Data: ") + (f?.second?.name ?: t("无", "none")), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (f?.first == null) TextButton(onClick = {
+                        restorePick = null
+                        vm.openFs(com.ghostpanter.files.core.LocalFs.ID, AppBackupOps.dir().path)
+                        vm.screen = Screen.Main
+                    }) { Text(t("去备份目录选择 APK", "Pick an APK in the backup folder")) }
+                } } else null,
+                dismiss = { restorePick = null },
+            ) { part ->
+                if (single != null && part == Part.APK) openApkInstaller(single)
+                else restoreConfirm = targets to part
+            }
+        }
+    }
+
+    restoreConfirm?.let { (targets, part) ->
+        val who = targets.singleOrNull()?.label?.let { "「$it」" } ?: t(" ${targets.size} 个应用", " ${targets.size} apps")
         AlertDialog(
-            onDismissRequest = {},
-            title = {
+            onDismissRequest = { restoreConfirm = null },
+            title = { Text(t("确认恢复", "Confirm restore")) },
+            text = {
                 Text(
-                    if (p.mode == "data") t("批量备份应用数据", "Batch backup app data")
-                    else t("批量备份 APK", "Batch backup APKs"),
+                    when (part) {
+                        Part.APK -> t("将用备份覆盖安装$who 的 APK。", "Reinstall $who from the backup APK.")
+                        Part.DATA -> t("将强制停止$who，并用备份覆盖它当前的全部数据，无法撤销。", "Force-stops $who and replaces all its current data. This cannot be undone.")
+                        Part.BOTH -> t("先覆盖安装$who 的 APK，再强制停止并用备份覆盖全部数据，无法撤销。", "Reinstalls $who, then force-stops it and replaces all its data. This cannot be undone.")
+                    },
                 )
             },
-            text = {
-                Column {
-                    Text(t("正在处理 ${p.index} / ${p.total}", "Processing ${p.index} / ${p.total}"))
-                    Text(p.currentLabel, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(8.dp))
-                    LinearProgressIndicator(
-                        progress = { p.index.toFloat() / p.total.coerceAtLeast(1) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        t("成功 ${p.ok} · 失败 ${p.fail}", "OK ${p.ok} · failed ${p.fail}"),
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.outline,
-                    )
-                    if (p.mode == "data") {
-                        Text(
-                            t("内部 /data/data 仅 Root 可读，非 MT 免授权。", "Internal /data/data needs Root; not MT-style no-auth."),
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.outline,
-                        )
-                    }
-                }
-            },
-            confirmButton = {},
+            confirmButton = { TextButton(onClick = { restoreConfirm = null; runRestore(targets, part) }) { Text(t("恢复", "Restore"), color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { restoreConfirm = null }) { Text(t("取消", "Cancel")) } },
         )
+    }
+
+    progress?.let { AppOpProgressDialog(it) }
+
+    result?.let { (title, body) ->
+        AppOpResultDialog(title, body, onOpenFolder = {
+            vm.openFs(com.ghostpanter.files.core.LocalFs.ID, AppBackupOps.dir().path)
+            vm.screen = Screen.Main
+        }) { result = null }
     }
 }
 
@@ -778,30 +794,4 @@ private fun InstalledAppSource(vm: MainViewModel, pkg: String) {
     )
 }
 
-private fun backupDir() = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "GhostFiles/apks")
-
-/**
- * Copies base.apk (or base + splits as an .apks zip) to Download/GhostFiles/apks. The .apks carries ghost-app.json
- * with the original install source and this device's ABI / density / languages.
- */
-private fun backupApk(ctx: Context, a: AppRow): String {
-    val dir = backupDir().apply { mkdirs() }
-    val safe = (a.label + "_" + a.version).replace(Regex("[\\\\/:*?\"<>|\\s]+"), "_")
-    if (a.splits.isEmpty()) {
-        val out = File(dir, "$safe.apk")
-        File(a.apk).inputStream().use { i -> out.outputStream().use { i.copyTo(it, 256 * 1024) } }
-        return out.path
-    }
-    val out = File(dir, "$safe.apks")
-    java.util.zip.ZipOutputStream(out.outputStream().buffered()).use { z ->
-        z.putNextEntry(java.util.zip.ZipEntry(com.ghostpanter.files.core.apk.BundleMeta.NAME))
-        z.write(com.ghostpanter.files.install.AppSource.meta(ctx, a.pkg, a.version, a.versionCode).toJson().toByteArray())
-        z.closeEntry()
-        for (p in listOf(a.apk) + a.splits) {
-            z.putNextEntry(java.util.zip.ZipEntry(File(p).name))
-            File(p).inputStream().use { it.copyTo(z, 256 * 1024) }
-            z.closeEntry()
-        }
-    }
-    return out.path
-}
+private fun AppRow.target() = AppBackupTarget(pkg, label, version, versionCode, apk, splits)
