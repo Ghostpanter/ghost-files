@@ -88,6 +88,7 @@ fun MainScreen(vm: MainViewModel, activity: MainActivity) {
         vm.pendingExtract = null; vm.extract(tab, e, sub, pw)
     } }
     vm.bundleInstall?.let { r -> InstallSheet(r, vm) { vm.bundleInstall = null } }
+    vm.dataTarRestore?.let { r -> DataTarRestoreDialog(vm, r) { vm.dataTarRestore = null } }
     vm.busy?.let { BusyDialog(it) { vm.cancelBusy() } }
     if (serverEditorOpen) ServerEditor(vm, editingServer) { serverEditorOpen = false }
 }

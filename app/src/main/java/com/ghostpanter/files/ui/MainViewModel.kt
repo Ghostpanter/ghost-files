@@ -842,6 +842,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
         when {
             asText -> screen = Screen.Editor(tab.fsId, e.path)
             !chooser && com.ghostpanter.files.core.backup.BackupManifest.opensRestore(e.name) -> screen = Screen.Backup(tab.fsId, e.path)
+            !chooser && com.ghostpanter.files.core.ops.AppBackupFiles.dataTarPackage(e.name) != null -> {
+                val pkg = com.ghostpanter.files.core.ops.AppBackupFiles.dataTarPackage(e.name)!!
+                withFile(tab, e) { f -> dataTarRestore = DataTarRequest(tab, e, f, pkg) }
+            }
             !chooser && ext in PREVIEW_MD -> screen = Screen.Preview(tab.fsId, e.path, "md")
             !chooser && ext == "pdf" -> screen = Screen.Preview(tab.fsId, e.path, "pdf")
             !chooser && (ext == "docx" || ext == "xlsx") -> screen = Screen.Preview(tab.fsId, e.path, ext)
@@ -865,6 +869,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     }
 
     var pendingExtract by mutableStateOf<Pair<TabState, FileEntry>?>(null)
+
+    /** A tapped `<pkg>-data.tar`: offer app-data restore (or plain extract). */
+    var dataTarRestore by mutableStateOf<DataTarRequest?>(null)
 
     /** Split-APK bundle (or folder of splits) waiting in the install sheet. */
     var bundleInstall by mutableStateOf<BundleRequest?>(null)
