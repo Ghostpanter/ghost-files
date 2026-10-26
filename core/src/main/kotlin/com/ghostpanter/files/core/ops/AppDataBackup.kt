@@ -33,20 +33,24 @@ object AppDataBackup {
         return destTar
     }
 
-    fun restore(shell: ShellFs, packageName: String, srcTar: File, timeoutSec: Long = 600) {
-        if (!packageName.matches(Regex("[A-Za-z0-9._]+"))) throw FsException(tr("非法包名", "Invalid package name"))
+    /**
+     * Restores [srcTar] into /data/data/<pkg> for an installed app with [uid]: clears the current data,
+     * copies the backup in, fixes owner (uid / cache gid) and SELinux labels. See [AppBackupFiles.restoreScript].
+     */
+    fun restore(shell: ShellFs, packageName: String, srcTar: File, uid: Int, timeoutSec: Long = 600) {
+        if (!AppBackupFiles.validPackage(packageName)) throw FsException(tr("非法包名", "Invalid package name"))
         if (!srcTar.isFile) throw FsException(tr("备份文件不存在", "Backup file not found"))
         val tmp = "/data/local/tmp/gf-restore-$packageName.tar"
         shell.openWrite(tmp).use { out -> srcTar.inputStream().use { it.copyTo(out, 256 * 1024) } }
-        val script = """
-            set -e
-            tar -C /data/data -xf $tmp
-            rm -f $tmp
-            echo OK
-        """.trimIndent()
-        val r = shell.exec(script, timeoutSec)
+        val r = shell.exec(AppBackupFiles.restoreScript(packageName, uid, tmp), timeoutSec)
         if (!r.ok || !r.stdout.contains("OK")) {
-            throw FsException(tr("恢复失败", "Restore failed") + ": ${r.stderr.trim().ifEmpty { r.stdout.trim().ifEmpty { "exit ${r.code}" } }}")
+            runCatching { shell.exec("rm -rf /data/local/tmp/gf-restore-$packageName $tmp", 30) }
+            val why = when (AppBackupFiles.explainRestore(r.stderr)) {
+                "NOT_INSTALLED" -> tr("应用未安装", "App is not installed")
+                "BAD_TAR" -> tr("备份内容与包名不符", "Backup does not match this package")
+                else -> r.stderr.trim().ifEmpty { r.stdout.trim().ifEmpty { "exit ${r.code}" } }
+            }
+            throw FsException(tr("恢复失败", "Restore failed") + ": " + why)
         }
     }
 
