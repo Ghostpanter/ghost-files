@@ -161,6 +161,25 @@ object BundleInstaller {
         installWithPm(sh, files.map { f -> Item(f.name, f.length()) { f.inputStream() } }, installer) { _, _ -> }
     }
 
+    /**
+     * Silently installs one backup file through `pm` ([sh] = Root/Shizuku): a plain .apk, or an
+     * .apks/.xapk/.apkm with the splits this device needs. Keeps the install source recorded in
+     * ghost-app.json when [installer] is null. Used by app restore.
+     */
+    suspend fun installFile(ctx: Context, file: File, sh: ShellRunner, installer: String? = null, onProgress: (Long, Long) -> Unit = { _, _ -> }) =
+        withContext(Dispatchers.IO) {
+            if (file.name.endsWith(".apk", true)) {
+                installWithPm(sh, listOf(Item(file.name, file.length()) { file.inputStream() }), installer, onProgress)
+            } else {
+                val b = ApkBundle.read(file)
+                val sel = b.select(device(ctx))
+                val entries = b.splits.filter { it.entry in sel }
+                require(entries.any { it.kind == ApkBundle.Kind.BASE }) { "base APK required" }
+                installWithPm(sh, entries.map { e -> Item(e.name, e.size) { b.open(e.entry) } }, installer ?: b.meta?.source?.installer, onProgress)
+                runCatching { copyObbs(b, sh) }
+            }
+        }
+
     private fun installWithPm(sh: ShellRunner, entries: List<Item>, installer: String?, onProgress: (Long, Long) -> Unit) {
         val total = entries.sumOf { it.size.coerceAtLeast(0) }.coerceAtLeast(1)
         val created = run(sh, com.ghostpanter.files.core.apk.InstallSource.pmCreate(total, installer))
