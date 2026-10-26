@@ -23,6 +23,8 @@ class TabState(fsId: String, path: String) {
     var selected by mutableStateOf<Set<String>>(emptySet())
     /** MT-style multi-select mode (stays on even when nothing is ticked yet). */
     var multiSelect by mutableStateOf(false)
+    /** MT 连选锚点：上一次滑动选中的文件路径（见 [swipeSelect]）。 */
+    var swipeAnchor: String? = null
     var filter by mutableStateOf("")
     var highlight by mutableStateOf<String?>(null)
     val history = ArrayDeque<Pair<String, String>>()

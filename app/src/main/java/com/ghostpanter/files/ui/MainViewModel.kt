@@ -171,6 +171,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
             tab.forward.clear()
         }
         tab.multiSelect = false
+        tab.swipeAnchor = null
         tab.scroll[tab.fsId + tab.path] = if (g.settings.gridView) tab.gridState.firstVisibleItemIndex to tab.gridState.firstVisibleItemScrollOffset
             else tab.listState.firstVisibleItemIndex to tab.listState.firstVisibleItemScrollOffset
         val oldPath = tab.path
@@ -356,8 +357,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
 
     override fun onEntrySwipe(pane: PaneState, e: FileEntry) {
         activePane = pane.index
-        pane.tab.multiSelect = true
-        toggle(pane.tab, e)
+        val tab = pane.tab
+        tab.multiSelect = true
+        // MT: swipe selects; a second swipe selects everything between it and the previous swipe.
+        val r = swipeSelect(tab.selected, tab.swipeAnchor, computeVisible(prefs, tab).map { it.path }, e.path)
+        tab.selected = r.selected
+        tab.swipeAnchor = r.anchor
     }
 
     override fun navigateTo(pane: PaneState, path: String) {
@@ -496,7 +501,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     fun invertSelection(tab: TabState, visible: List<FileEntry>) {
         tab.selected = visible.map { it.path }.filterNot { it in tab.selected }.toSet()
     }
-    fun clearSelection(tab: TabState) { tab.selected = emptySet(); tab.multiSelect = false }
+    fun clearSelection(tab: TabState) { tab.selected = emptySet(); tab.multiSelect = false; tab.swipeAnchor = null }
 
     /** MT "类选": adds every visible entry whose type (extension / folder) matches something already selected. */
     fun selectSameType(tab: TabState, visible: List<FileEntry>) {

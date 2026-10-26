@@ -524,6 +524,7 @@ fun FileRow(
     val swipePx = with(LocalDensity.current) { 40.dp.toPx() }
     val shadow = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
     val latestLong by rememberUpdatedState(onLongClick)
+    val latestSwipe by rememberUpdatedState(onSwipe)
     val latestDrag by rememberUpdatedState(dragData)
     Row(
         Modifier.fillMaxWidth()
@@ -543,7 +544,8 @@ fun FileRow(
                     }
                 }
             }
-            // MT: a horizontal swipe on a row toggles its selection (enters multi-select).
+            // MT: a horizontal swipe on a row selects it (enters multi-select); swiping a second row
+            // selects the whole range between the two swipes (MainViewModel.onEntrySwipe / swipeSelect).
             .then(if (touchDrag) Modifier else Modifier.pointerInput(e.path, dragData != null) {
                 var acc = 0f
                 var fired = false
@@ -554,7 +556,7 @@ fun FileRow(
                         mouse = change.type == PointerType.Mouse && dragData != null
                         if (!mouse) {
                             acc += d
-                            if (!fired && kotlin.math.abs(acc) > swipePx) { fired = true; onSwipe() }
+                            if (!fired && kotlin.math.abs(acc) > swipePx) { fired = true; latestSwipe() }
                             change.consume()
                         }
                     },
