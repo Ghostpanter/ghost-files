@@ -283,4 +283,53 @@ class SpaceScreenshotTest(private val name: String, private val device: DeviceCo
             tab = SpaceTab.TOP, version = 1, scannedAt = now - 600_000, now = now, thumbs = thumbs,
         ))
     }
+
+    // ------------------------------------------------------------------ 0.7.3: multi-select + leftovers
+
+    /** 大文件 multi-select: checks + bottom actions (删除 / 分享 / 复制 / 移动). */
+    @Test fun largestMultiSelect() {
+        val base = "/storage/emulated/0"
+        val b = SpaceTreeBuilder(base); storage(b, base)
+        val top = com.ghostpanter.files.core.space.SpaceQueries.topFiles(b.root, 100, SpaceFilter())
+        render(SpaceUi(
+            scopeLabel = "内部存储", tier = SpaceTier.BASIC, tree = b.tree, current = b.root, selected = null, filter = SpaceFilter(),
+            tab = SpaceTab.TOP, version = 1, scannedAt = now - 600_000, now = now,
+            topSelected = top.take(4).map { it.path() }.toSet() + top[6].path(),
+        ))
+    }
+
+    private fun residueScan(limited: Boolean): com.ghostpanter.files.space.ResidueScan {
+        val s = "/storage/emulated/0"
+        fun r(pkg: String, kind: com.ghostpanter.files.core.space.ResidueKind, sub: String, mb: Long) =
+            com.ghostpanter.files.core.space.Residue(pkg, "$sub/$pkg", kind, mb * MB, "$sub/$pkg")
+        val items = if (limited) listOf(r("com.old.removed.game", com.ghostpanter.files.core.space.ResidueKind.PUBLIC, s, 320), r("com.baidu.netdisk", com.ghostpanter.files.core.space.ResidueKind.PUBLIC, s, 45)) else listOf(
+            r("com.old.removed.game", com.ghostpanter.files.core.space.ResidueKind.DATA, "$s/Android/data", 2_600), r("com.old.removed.game", com.ghostpanter.files.core.space.ResidueKind.OBB, "$s/Android/obb", 1_900),
+            r("com.old.removed.game", com.ghostpanter.files.core.space.ResidueKind.PRIVATE, "/data/data", 210), r("com.old.removed.game", com.ghostpanter.files.core.space.ResidueKind.PUBLIC, s, 320),
+            r("com.netease.cloudmusic", com.ghostpanter.files.core.space.ResidueKind.DATA, "$s/Android/data", 1_400), r("com.netease.cloudmusic", com.ghostpanter.files.core.space.ResidueKind.MEDIA, "$s/Android/media", 88),
+            r("com.uninstalled.video", com.ghostpanter.files.core.space.ResidueKind.DATA, "$s/Android/data", 1_200),
+            r("com.legacy.removed", com.ghostpanter.files.core.space.ResidueKind.OBB, "$s/Android/obb", 900), r("com.legacy.removed", com.ghostpanter.files.core.space.ResidueKind.PRIVATE_DE, "/data/user_de/0", 1),
+        )
+        return com.ghostpanter.files.space.ResidueScan(com.ghostpanter.files.core.space.Residues.group(items), if (limited) null else "Root", limited)
+    }
+
+    @Test fun leftovers() {
+        val base = "/storage/emulated/0"
+        val b = SpaceTreeBuilder(base); storage(b, base)
+        val scan = residueScan(limited = false)
+        render(SpaceUi(
+            scopeLabel = "内部存储", tier = SpaceTier.ROOT, tree = b.tree, current = b.root, selected = null, filter = SpaceFilter(),
+            tab = SpaceTab.RESIDUE, version = 1, scannedAt = now - 600_000, now = now,
+            residues = scan, residueSelected = com.ghostpanter.files.core.space.Residues.defaultSelection(scan.groups),
+            residueApp = { apps[it] },
+        ))
+    }
+
+    @Test fun leftoversNoShell() {
+        val base = "/storage/emulated/0"
+        val b = SpaceTreeBuilder(base); storage(b, base)
+        render(SpaceUi(
+            scopeLabel = "内部存储", tier = SpaceTier.BASIC, tree = b.tree, current = b.root, selected = null, filter = SpaceFilter(),
+            tab = SpaceTab.RESIDUE, version = 1, scannedAt = now - 600_000, now = now, residues = residueScan(limited = true),
+        ))
+    }
 }

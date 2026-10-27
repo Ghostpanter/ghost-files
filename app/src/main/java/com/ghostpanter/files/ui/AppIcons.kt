@@ -59,6 +59,18 @@ object AppIconCache {
         else runCatching { pkg in listing(scope.removePrefix("adb:")) }.getOrNull()
     }
 
+    /**
+     * Label + icon this app saved while [pkg] was still installed (the disk cache is keyed by
+     * versionCode and outlives the uninstall): lets 卸载残留 show 「微信」 instead of a bare package name.
+     */
+    fun remembered(ctx: Context, pkg: String): AppMeta? = runCatching {
+        val txt = disk(ctx).listFiles { f -> f.name.startsWith("${pkg}_") && f.name.endsWith(".txt") &&
+            f.name.removePrefix("${pkg}_").removeSuffix(".txt").all { it.isDigit() || it == '-' } }
+            ?.maxByOrNull { it.lastModified() } ?: return null
+        val png = File(txt.path.removeSuffix(".txt") + ".png")
+        AppMeta(txt.readText().ifEmpty { pkg }, if (png.isFile) BitmapFactory.decodeFile(png.path) else null)
+    }.getOrNull()
+
     private fun disk(ctx: Context) = File(ctx.cacheDir, "app-icons").apply { mkdirs() }
 
     private fun local(ctx: Context, pkg: String): AppMeta? {

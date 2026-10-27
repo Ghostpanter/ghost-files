@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -61,6 +62,11 @@ import com.ghostpanter.files.core.space.NodeFlags
 import com.ghostpanter.files.core.space.NodeKind
 import com.ghostpanter.files.core.space.Placed
 import com.ghostpanter.files.core.space.Protection
+import com.ghostpanter.files.core.space.Residue
+import com.ghostpanter.files.core.space.ResidueGroup
+import com.ghostpanter.files.core.space.ResidueKind
+import com.ghostpanter.files.core.space.Residues
+import com.ghostpanter.files.core.transfer.TransferOp
 import com.ghostpanter.files.core.space.SpaceFilter
 import com.ghostpanter.files.core.space.SpaceNode
 import com.ghostpanter.files.core.space.SpacePolicy
@@ -72,6 +78,7 @@ import com.ghostpanter.files.fs.RootRunner
 import com.ghostpanter.files.fs.ShizukuRunner
 import com.ghostpanter.files.privilege.ElevatedAccess
 import com.ghostpanter.files.space.DupBatch
+import com.ghostpanter.files.space.ResidueScan
 import com.ghostpanter.files.space.SpaceNotice
 import com.ghostpanter.files.space.SpaceSessions
 import com.ghostpanter.files.space.SpaceSummary
@@ -84,7 +91,7 @@ import kotlinx.coroutines.withContext
 
 // ====================================================================== plain UI model
 
-enum class SpaceTab { MAP, TOP, DUPS, EMPTY }
+enum class SpaceTab { MAP, TOP, DUPS, EMPTY, RESIDUE }
 
 /** Everything the analysis page shows (renderable in Paparazzi from a fake tree). */
 class SpaceUi(
@@ -116,6 +123,16 @@ class SpaceUi(
     val thumbs: SpaceThumbs? = null,
     /** Initial horizontal offset of path lines (screenshots of a scrolled path). */
     val pathScroll: Int = 0,
+    /** 大文件 multi-select (tree paths); empty = not selecting. */
+    val topSelected: Set<String> = emptySet(),
+    /** 卸载残留 scan result (null = not scanned yet). */
+    val residues: ResidueScan? = null,
+    val residueScanning: Boolean = false,
+    val residueError: String? = null,
+    /** Chosen leftover paths. */
+    val residueSelected: Set<String> = emptySet(),
+    /** Label + icon of an uninstalled package (remembered from when it was installed). */
+    val residueApp: (String) -> AppMeta? = { null },
 )
 
 /** Row thumbnails (reuses the panes' thumbnail + APK icon pipeline). */
@@ -145,6 +162,18 @@ class SpaceCallbacks(
     val longPath: (String) -> Unit = {},
     /** 「保留最优，删除其他」 for these groups (one, or all). */
     val dedupe: (List<DuplicateFinder.Group>) -> Unit = {},
+    /** 大文件: tap toggles while selecting; swipe = MT range select over [visible]. */
+    val topToggle: (String) -> Unit = {},
+    val topSwipe: (String, List<String>) -> Unit = { _, _ -> },
+    val topAll: (List<String>) -> Unit = {},
+    val topClear: () -> Unit = {},
+    /** "delete" / "share" / "copy" / "move". */
+    val topAction: (String) -> Unit = {},
+    val residueScan: () -> Unit = {},
+    /** Turn these leftover paths on / off. */
+    val residueSet: (Collection<String>, Boolean) -> Unit = { _, _ -> },
+    val residueClean: () -> Unit = {},
+    val residueOpen: (Residue) -> Unit = {},
 )
 
 // ====================================================================== stateful screen
@@ -163,6 +192,23 @@ fun SpaceScreen(vm: MainViewModel, s: Screen.Space) {
     var deleting by remember { mutableStateOf<SpaceNode?>(null) }
     var scopePicker by remember { mutableStateOf(false) }
     var dedupeAsk by remember { mutableStateOf<List<DuplicateFinder.Group>?>(null) }
+    // 大文件 multi-select (tree paths) + MT swipe anchor.
+    var topSel by remember(session) { mutableStateOf<Set<String>>(emptySet()) }
+    var topAnchor by remember(session) { mutableStateOf<String?>(null) }
+    var topDeleteAsk by remember { mutableStateOf<List<String>?>(null) }
+    // 卸载残留 selection (defaults to everything but the guessed storage-root folders).
+    var resSel by remember(session) { mutableStateOf<Set<String>>(emptySet()) }
+    var resAsk by remember { mutableStateOf<List<Residue>?>(null) }
+    val remembered = remember { mutableStateMapOf<String, AppMeta?>() }
+    LaunchedEffect(session.residues) {
+        val r = session.residues ?: return@LaunchedEffect
+        resSel = Residues.defaultSelection(r.groups)
+        val miss = r.groups.map { it.pkg }.filter { it !in remembered }
+        if (session.adbSerial == null && miss.isNotEmpty()) {
+            val got = withContext(Dispatchers.IO) { miss.associateWith { AppIconCache.remembered(ctx, it) } }
+            remembered.putAll(got)
+        }
+    }
     val scope = rememberCoroutineScope()
     // Tree swapped (refresh finished): keep the same folder by path.
     val cur = remember(tree, currentNode, session.version) { resolveNode(tree, currentNode) }
@@ -180,7 +226,15 @@ fun SpaceScreen(vm: MainViewModel, s: Screen.Space) {
         val p = cur?.parent ?: return false
         currentNode = p; selected = null; return true
     }
-    BackHandler { if (tab != SpaceTab.MAP) tab = SpaceTab.MAP else if (!goUp()) vm.screen = Screen.Main }
+    // Files gone from the tree (deleted / moved anywhere) leave the selection right away.
+    val topLive = remember(topSel, tree, session.version) { if (tree == null) emptySet() else synchronized(tree.lock) { topSel.filterTo(LinkedHashSet()) { tree.find(it) != null } } }
+    BackHandler {
+        when {
+            topLive.isNotEmpty() && tab == SpaceTab.TOP -> { topSel = emptySet(); topAnchor = null }
+            tab != SpaceTab.MAP -> tab = SpaceTab.MAP
+            !goUp() -> vm.screen = Screen.Main
+        }
+    }
 
     fun openInPane(n: SpaceNode) {
         val (fsId, p) = session.locate(n)
@@ -211,6 +265,9 @@ fun SpaceScreen(vm: MainViewModel, s: Screen.Space) {
                 if (n.kind == NodeKind.DIR) add(t("进入", "Drill in"), Icons.Filled.ZoomIn) { currentNode = n; selected = null }
                 add(if (n.kind == NodeKind.DIR) t("在面板中打开", "Open in pane") else t("打开", "Open"), Icons.Filled.FolderOpen) { openInPane(n) }
                 add(t("在面板中定位", "Show in pane"), Icons.Filled.MyLocation) { locateInPane(n) }
+                if (tab == SpaceTab.TOP && n.kind == NodeKind.FILE) add(t("多选", "Select"), Icons.Filled.Checklist, t("横滑也能多选", "or swipe a row")) {
+                    val p = n.path(); topSel = topLive + p; topAnchor = p
+                }
                 if (pkg != null && session.adbSerial == null) add(t("应用详情", "App info"), Icons.Filled.Info) { appDetails(pkg) }
                 if (pkg != null && canClean && !n.has(NodeFlags.RESIDUE)) add(t("清理此应用缓存", "Clear this app's cache"), Icons.Filled.CleaningServices) {
                     session.clearCaches(pkg) { vm.toast(it); session.refresh(false) }
@@ -246,6 +303,10 @@ fun SpaceScreen(vm: MainViewModel, s: Screen.Space) {
         currentPath = session.current, scannedAt = tree?.scannedAt ?: 0, error = session.error, notices = session.notices,
         dups = session.dups, dupProgress = session.dupProgress, app = appOf,
         keepOf = { g -> DupGroups.keepOf(g, session.keepChosen, session::mtimeOf) },
+        topSelected = topLive,
+        residues = session.residues, residueScanning = session.residueScanning, residueError = session.residueError,
+        residueSelected = resSel,
+        residueApp = { pkg -> remembered[pkg] ?: if (session.adbSerial != null) appOf(pkg) else null },
         thumbs = remember(session) { object : SpaceThumbs {
             private fun entry(path: String, dir: Boolean): Pair<String, FileEntry> {
                 val (fsId, p) = session.locate(SpaceNode(path, NodeKind.FILE))
@@ -263,14 +324,18 @@ fun SpaceScreen(vm: MainViewModel, s: Screen.Space) {
         long = { n -> menuFor(n) },
         crumb = { n -> currentNode = n; selected = null },
         filter = { filter = it },
-        tab = { tab = it; if (it == SpaceTab.DUPS && session.dups == null && session.dupProgress == null) session.findDuplicates() },
+        tab = {
+            tab = it
+            if (it == SpaceTab.DUPS && session.dups == null && session.dupProgress == null) session.findDuplicates()
+            if (it == SpaceTab.RESIDUE && session.residues == null && !session.residueScanning) session.scanResidues()
+        },
         refresh = { session.refresh(full = true) },
         cancel = { session.cancel() },
         notice = { id ->
             when (id) {
                 "usage" -> runCatching { ctx.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                 "shizuku" -> ShizukuRunner.request { ok ->
-                    if (ok) session.refresh(false)
+                    if (ok) { session.refresh(false); if (tab == SpaceTab.RESIDUE) session.scanResidues() }
                     else {
                         vm.toast(t("未授权。可安装 Shizuku，或在设置里启用「内置提权」。", "Not granted. Install Shizuku, or enable Built-in privilege in settings."))
                         vm.screen = Screen.EmbeddedPrivilege
@@ -300,6 +365,44 @@ fun SpaceScreen(vm: MainViewModel, s: Screen.Space) {
             val (fsId, lp) = session.locate(SpaceNode(p, NodeKind.FILE)); vm.openFs(fsId, VPath.parent(lp))
         } },
         dedupe = { groups -> if (session.batch == null) dedupeAsk = groups },
+        topToggle = { p -> topSel = if (p in topLive) topLive - p else topLive + p },
+        topSwipe = { p, visible -> swipeSelect(topLive, topAnchor, visible, p).let { r -> topSel = r.selected; topAnchor = r.anchor } },
+        topAll = { visible -> topSel = topLive + visible },
+        topClear = { topSel = emptySet(); topAnchor = null },
+        topAction = { action ->
+            val paths = topLive.toList()
+            val located = paths.map { p -> val (fsId, lp) = session.locate(SpaceNode(p, NodeKind.FILE)); Triple(p, fsId, lp) }
+            fun entries() = located.map { (p, _, lp) -> val n = session.tree?.find(p); FileEntry(lp, VPath.name(lp), false, n?.size ?: 0, n?.mtime ?: 0) }
+            val oneFs = located.map { it.second }.distinct().singleOrNull()
+            when (action) {
+                "delete" -> if (session.batch == null && paths.isNotEmpty()) topDeleteAsk = paths
+                "share", "copy", "move" -> if (oneFs == null) vm.toast(t("所选文件在不同位置，请分开操作", "Selected files are on different backends; handle them separately"))
+                else if (action == "share") vm.share(TabState(oneFs, VPath.parent(located.first().third)), entries())
+                else {
+                    val op = if (action == "copy") TransferOp.COPY else TransferOp.MOVE
+                    vm.clip = Clip(op, oneFs, entries())
+                    topSel = emptySet(); topAnchor = null
+                    vm.toast(t("已${if (op == TransferOp.COPY) "复制" else "剪切"} ${paths.size} 项，到目标目录点粘贴", "${paths.size} item(s) on clipboard; paste in the target folder"))
+                }
+            }
+        },
+        residueScan = { session.scanResidues() },
+        residueSet = { paths, on -> resSel = if (on) resSel + paths else resSel - paths.toSet() },
+        residueClean = {
+            val items = session.residues?.groups?.flatMap { it.items }?.filter { it.path in resSel }.orEmpty()
+            if (items.isNotEmpty() && session.batch == null) resAsk = items
+        },
+        residueOpen = { r ->
+            val fm = com.ghostpanter.files.fs.FsManager
+            val (fsId, p) = when {
+                session.adbSerial != null -> session.target.fsId to r.path
+                !r.path.startsWith("/storage/") && !com.ghostpanter.files.core.space.PathCanon.isUserStorage(r.path) -> fm.ROOT to r.path
+                (r.kind == ResidueKind.DATA || r.kind == ResidueKind.OBB) && android.os.Build.VERSION.SDK_INT >= 30 ->
+                    if (RootRunner.granted()) fm.ROOT to com.ghostpanter.files.core.space.PathCanon.canonical(r.path) else fm.SHIZUKU to r.shown
+                else -> LocalFs.ID to r.shown
+            }
+            vm.openFs(fsId, p)
+        },
     )
     // Returning from the usage-access page: recompute aggregates.
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -332,6 +435,26 @@ fun SpaceScreen(vm: MainViewModel, s: Screen.Space) {
             val sizes = HashMap<String, Long>(); groups.forEach { g -> g.paths.forEach { sizes[it] = g.size } }
             selected = null
             session.deleteDuplicates(plan.delete, sizes, trash, vm.trash) { vm.toast(it) }
+        }
+    }
+    topDeleteAsk?.let { paths ->
+        val trashOn = vm.g.settings.recycleBin
+        val local = paths.all { session.locate(SpaceNode(it, NodeKind.FILE)).first == LocalFs.ID }
+        val sizes = remember(paths) { paths.associateWith { session.tree?.find(it)?.size ?: 0L } }
+        TopDeleteDialog(paths, sizes.values.sum(), if (!trashOn) DupConfirm.Trash.OFF else if (local) DupConfirm.Trash.ON else DupConfirm.Trash.PARTIAL, dismiss = { topDeleteAsk = null }) {
+            topDeleteAsk = null
+            // System read-only partitions are never batch-deleted.
+            val del = paths.filter { SpacePolicy.protection(it) != Protection.SYSTEM_READ_ONLY }
+            if (del.size < paths.size) vm.toast(t("已跳过系统只读分区里的文件", "Skipped files on read-only system partitions"))
+            if (selected?.path() in del) selected = null
+            topSel = emptySet(); topAnchor = null
+            session.deleteDuplicates(del, sizes, trashOn, vm.trash, title = t("正在删除所选文件…", "Deleting selected files…")) { vm.toast(it) }
+        }
+    }
+    resAsk?.let { items ->
+        ResidueConfirmDialog(items, dismiss = { resAsk = null }) {
+            resAsk = null
+            session.deleteResidues(items) { vm.toast(it) }
         }
     }
     session.batch?.let { b -> DupProgressDialog(b) { session.cancelBatch() } }
@@ -394,6 +517,10 @@ fun SpaceContent(ui: SpaceUi, cb: SpaceCallbacks, modifier: Modifier = Modifier)
                 },
             )
         },
+        bottomBar = {
+            if (ui.tab == SpaceTab.TOP && ui.topSelected.isNotEmpty()) TopSelectBar(ui, cb)
+            else if (ui.tab == SpaceTab.RESIDUE && ui.residueSelected.isNotEmpty() && !ui.residueScanning) ResidueCleanBar(ui, cb)
+        },
     ) { pad ->
         BoxWithConstraints(Modifier.padding(pad).fillMaxSize()) {
             val tablet = maxWidth >= 720.dp
@@ -421,6 +548,17 @@ fun SpaceContent(ui: SpaceUi, cb: SpaceCallbacks, modifier: Modifier = Modifier)
                 item { Spacer(Modifier.navigationBarsPadding().height(16.dp)) }
             }
         }
+    }
+}
+
+@Composable
+private fun NoticeCard(n: SpaceNotice, cb: SpaceCallbacks) {
+    val cs = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(cs.primaryContainer.copy(alpha = 0.6f)).padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.Info, null, Modifier.size(16.dp), tint = cs.primary)
+        Spacer(Modifier.width(8.dp))
+        Text(n.text, fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurface, modifier = Modifier.weight(1f))
+        if (n.action != null) TextButton(onClick = { n.actionId?.let(cb.notice) }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text(n.action, fontSize = 13.sp) }
     }
 }
 
@@ -472,12 +610,7 @@ private fun Header(ui: SpaceUi, cb: SpaceCallbacks) {
         }
         ui.notices.forEach { n ->
             Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(cs.primaryContainer.copy(alpha = 0.6f)).padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Info, null, Modifier.size(16.dp), tint = cs.primary)
-                Spacer(Modifier.width(8.dp))
-                Text(n.text, fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurface, modifier = Modifier.weight(1f))
-                if (n.action != null) TextButton(onClick = { n.actionId?.let(cb.notice) }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text(n.action, fontSize = 13.sp) }
-            }
+            NoticeCard(n, cb)
         }
         Spacer(Modifier.height(12.dp))
         Crumbs(ui, cb)
@@ -650,7 +783,7 @@ fun catLabel(c: FileCategory) = when (c) {
 private fun TabsRow(ui: SpaceUi, cb: SpaceCallbacks) {
     val cs = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().clip(CircleShape).background(cs.surfaceVariant).padding(3.dp)) {
-        listOf(SpaceTab.MAP to t("目录", "Folders"), SpaceTab.TOP to t("大文件", "Largest"), SpaceTab.DUPS to t("重复", "Duplicates"), SpaceTab.EMPTY to t("空文件夹", "Empty")).forEach { (tab, label) ->
+        listOf(SpaceTab.MAP to t("目录", "Folders"), SpaceTab.TOP to t("大文件", "Largest"), SpaceTab.DUPS to t("重复", "Duplicates"), SpaceTab.EMPTY to t("空文件夹", "Empty"), SpaceTab.RESIDUE to t("残留", "Leftovers")).forEach { (tab, label) ->
             val on = ui.tab == tab
             Box(
                 Modifier.weight(1f).height(32.dp).clip(CircleShape).background(if (on) cs.surface else Color.Transparent).clickable { cb.tab(tab) },
@@ -677,8 +810,19 @@ private fun LazyListScope.tabItems(ui: SpaceUi, cb: SpaceCallbacks, tablet: Bool
             val top = synchronized(ui.tree?.lock ?: Any()) { SpaceQueries.topFiles(root, 100, ui.filter) }
             val max = top.firstOrNull()?.size ?: 1
             val share = (if (ui.filter.active) synchronized(ui.tree?.lock ?: Any()) { ui.filter.apply(root) } else root.size).coerceAtLeast(max)
-            item { CardTop(t("最大的 ${top.size} 个文件", "Largest ${top.size} files") + " · " + rootLabel(ui, root)) }
-            items(top, key = { System.identityHashCode(it) }) { n -> NodeRow(ui, cb, n, n.size, share, showPath = true, last = n === top.last()) }
+            val visible = top.map { it.path() }
+            val selecting = ui.topSelected.isNotEmpty()
+            item {
+                if (selecting) SelectTop(t("已选 ${ui.topSelected.size} 项", "${ui.topSelected.size} selected"), all = ui.topSelected.containsAll(visible), toggleAll = { if (ui.topSelected.containsAll(visible)) cb.topClear() else cb.topAll(visible) })
+                else CardTop(t("最大的 ${top.size} 个文件", "Largest ${top.size} files") + " · " + rootLabel(ui, root) + t(" · 横滑多选", " · swipe to select"))
+            }
+            items(top, key = { System.identityHashCode(it) }) { n ->
+                val p = n.path()
+                NodeRow(ui, cb, n, n.size, share, showPath = true, last = n === top.last(),
+                    checked = if (selecting) p in ui.topSelected else null,
+                    onClick = if (selecting) ({ cb.topToggle(p) }) else null,
+                    onSwipe = { cb.topSwipe(p, visible) })
+            }
             if (top.isEmpty()) item { EmptyCard(t("没有文件", "No files")) }
         }
         SpaceTab.DUPS -> {
@@ -701,6 +845,7 @@ private fun LazyListScope.tabItems(ui: SpaceUi, cb: SpaceCallbacks, tablet: Bool
                 if (d.isEmpty()) item { EmptyCard(t("没有找到重复文件", "No duplicates found")) }
             }
         }
+        SpaceTab.RESIDUE -> residueItems(ui, cb)
         SpaceTab.EMPTY -> {
             val root = ui.current ?: return
             val e = synchronized(ui.tree?.lock ?: Any()) { SpaceQueries.emptyDirs(root) }
@@ -738,14 +883,32 @@ private fun EmptyCard(text: String, action: String? = null, onAction: () -> Unit
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun NodeRow(ui: SpaceUi, cb: SpaceCallbacks, n: SpaceNode, bytes: Long, total: Long, showPath: Boolean = false, last: Boolean = false) {
+private fun NodeRow(
+    ui: SpaceUi, cb: SpaceCallbacks, n: SpaceNode, bytes: Long, total: Long, showPath: Boolean = false, last: Boolean = false,
+    /** Multi-select checkbox state (null = not selecting). */
+    checked: Boolean? = null, onClick: (() -> Unit)? = null, onSwipe: (() -> Unit)? = null,
+) {
     val cs = MaterialTheme.colorScheme
-    val sel = ui.selected === n
+    val sel = checked ?: (ui.selected === n)
     val color = blockColor(n)
     val shape = if (last) RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp) else RoundedCornerShape(0.dp)
+    val swipePx = with(LocalDensity.current) { 40.dp.toPx() }
+    val latestSwipe by rememberUpdatedState(onSwipe)
     Row(
         Modifier.fillMaxWidth().clip(shape).background(if (sel) cs.primaryContainer else cs.surface)
-            .combinedClickable(onClick = { cb.open(n) }, onLongClick = { cb.long(n) })
+            // MT: a horizontal swipe selects the row; a second swipe selects the range in between.
+            .then(if (onSwipe == null) Modifier else Modifier.pointerInput(n) {
+                var acc = 0f; var fired = false
+                detectHorizontalDragGestures(
+                    onDragStart = { acc = 0f; fired = false },
+                    onHorizontalDrag = { change, d ->
+                        acc += d
+                        if (!fired && kotlin.math.abs(acc) > swipePx) { fired = true; latestSwipe?.invoke() }
+                        change.consume()
+                    },
+                )
+            })
+            .combinedClickable(onClick = { if (onClick != null) onClick() else cb.open(n) }, onLongClick = { cb.long(n) })
             .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -785,7 +948,239 @@ private fun NodeRow(ui: SpaceUi, cb: SpaceCallbacks, n: SpaceNode, bytes: Long, 
             Text(formatSize(bytes.takeIf { it > 0 } ?: n.size), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             if (total > 1 && bytes > 0) Text("%.1f%%".format(bytes * 100.0 / total), fontSize = 11.sp, color = cs.outline)
         }
+        if (checked != null) SelectMark(checked, Modifier.padding(start = 10.dp))
     }
+}
+
+/** Round check like the panes' multi-select. */
+@Composable
+private fun SelectMark(on: Boolean, modifier: Modifier = Modifier, partial: Boolean = false) {
+    val cs = MaterialTheme.colorScheme
+    Box(modifier.size(22.dp).clip(CircleShape).background(if (on || partial) cs.primary else Color.Transparent)
+        .border(1.5.dp, if (on || partial) cs.primary else cs.outline, CircleShape), contentAlignment = Alignment.Center) {
+        if (on) Icon(Icons.Rounded.Check, null, Modifier.size(15.dp), tint = cs.onPrimary)
+        else if (partial) Icon(Icons.Rounded.Remove, null, Modifier.size(15.dp), tint = cs.onPrimary)
+    }
+}
+
+@Composable
+private fun SelectTop(text: String, all: Boolean, toggleAll: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)).background(cs.surface).padding(start = 16.dp, end = 6.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, fontSize = 12.sp, color = cs.primary, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        TextButton(onClick = toggleAll, contentPadding = PaddingValues(horizontal = 10.dp)) { Text(if (all) t("全不选", "Select none") else t("全选", "Select all"), fontSize = 12.sp) }
+    }
+}
+
+/** Bottom actions for the selected largest files. */
+@Composable
+private fun TopSelectBar(ui: SpaceUi, cb: SpaceCallbacks) {
+    val cs = MaterialTheme.colorScheme
+    val bytes = remember(ui.topSelected, ui.version) { synchronized(ui.tree?.lock ?: Any()) { ui.topSelected.sumOf { ui.tree?.find(it)?.size ?: 0 } } }
+    Surface(color = cs.surface, tonalElevation = 3.dp, shadowElevation = 6.dp) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(t("已选 ${ui.topSelected.size} 项 · ", "${ui.topSelected.size} selected · ") + formatSize(bytes), fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f))
+                IconButton(onClick = cb.topClear, modifier = Modifier.size(32.dp)) { Icon(Icons.Rounded.Close, t("退出多选", "Done"), Modifier.size(18.dp)) }
+            }
+            Row(Modifier.fillMaxWidth()) {
+                BarAction(Icons.Rounded.Delete, t("删除", "Delete"), cs.error) { cb.topAction("delete") }
+                BarAction(Icons.Rounded.Share, t("分享", "Share")) { cb.topAction("share") }
+                BarAction(Icons.Rounded.ContentCopy, t("复制", "Copy")) { cb.topAction("copy") }
+                BarAction(Icons.Rounded.DriveFileMove, t("移动", "Move")) { cb.topAction("move") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.BarAction(icon: ImageVector, label: String, tint: Color = Color.Unspecified, onClick: () -> Unit) {
+    val c = if (tint == Color.Unspecified) MaterialTheme.colorScheme.onSurface else tint
+    Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(icon, label, Modifier.size(22.dp), tint = c)
+        Spacer(Modifier.height(2.dp))
+        Text(label, fontSize = 11.sp, color = c)
+    }
+}
+
+// ---------------------------------------------------------------------- 卸载残留
+
+fun residueKindLabel(k: ResidueKind) = when (k) {
+    ResidueKind.DATA -> "data"; ResidueKind.OBB -> "obb"; ResidueKind.MEDIA -> "media"
+    ResidueKind.PRIVATE -> t("私有数据", "private"); ResidueKind.PRIVATE_DE -> t("私有数据 DE", "private DE")
+    ResidueKind.PUBLIC -> t("根目录", "storage root")
+}
+
+private fun LazyListScope.residueItems(ui: SpaceUi, cb: SpaceCallbacks) {
+    val r = ui.residues
+    if (ui.residueScanning && r == null) {
+        item {
+            CardTop(t("正在查找已卸载应用留下的文件夹…", "Looking for folders left by uninstalled apps…"))
+            ResidueProgress()
+        }
+        return
+    }
+    if (r == null) {
+        item {
+            CardTop(t("卸载残留", "Uninstall leftovers"))
+            EmptyCard(ui.residueError ?: t("查找 Android/data、obb、media 和根目录里已卸载应用的文件夹；Root 下还会查 /data/data", "Finds folders of uninstalled apps in Android/data, obb, media and the storage root; /data/data too with root"),
+                action = if (ui.residueError != null) t("重试", "Retry") else t("查找残留", "Find leftovers"), onAction = cb.residueScan)
+        }
+        return
+    }
+    val all = r.groups.flatMap { g -> g.items.map { it.path } }
+    val total = r.groups.sumOf { it.bytes }
+    if (r.limited) item(key = "res-limited") {
+        NoticeCard(SpaceNotice(t("未授权 Root / Shizuku：只能查看根目录的包名文件夹，Android/data、obb 和 /data/data 里的残留看不到。", "No root / Shizuku: only package folders in the storage root are checked; Android/data, obb and /data/data are skipped."),
+            t("用 Shizuku", "Use Shizuku"), "shizuku"), cb)
+        Spacer(Modifier.height(10.dp))
+    }
+    item(key = "res-top") {
+        val cs = MaterialTheme.colorScheme
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)).background(cs.surface).padding(start = 16.dp, end = 6.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(t("${r.groups.size} 个已卸载应用 · ", "${r.groups.size} uninstalled apps · ") + formatSize(total) + (r.via?.let { " · $it" } ?: ""),
+                fontSize = 12.sp, color = cs.outline, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (all.isNotEmpty()) TextButton(onClick = { cb.residueSet(all, !ui.residueSelected.containsAll(all)) }, contentPadding = PaddingValues(horizontal = 10.dp)) {
+                Text(if (ui.residueSelected.containsAll(all)) t("全不选", "Select none") else t("全选", "Select all"), fontSize = 12.sp)
+            }
+            IconButton(onClick = cb.residueScan, enabled = !ui.residueScanning, modifier = Modifier.size(36.dp)) { Icon(Icons.Rounded.Refresh, t("重新查找", "Rescan"), Modifier.size(18.dp)) }
+        }
+    }
+    if (ui.residueScanning) item(key = "res-busy") { ResidueProgress(square = true) }
+    val shown = r.groups.take(300)
+    shown.forEach { g -> item(key = "res-" + g.pkg) { ResidueGroupRow(ui, cb, g, last = g === shown.last()) } }
+    if (r.groups.isEmpty()) item { EmptyCard(t("没有发现卸载残留", "No leftovers found")) }
+}
+
+@Composable
+private fun ResidueProgress(square: Boolean = false) {
+    val cs = MaterialTheme.colorScheme
+    Box(Modifier.fillMaxWidth().then(if (square) Modifier else Modifier.clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))).background(cs.surface).padding(horizontal = 16.dp, vertical = 12.dp)) {
+        LinearProgressIndicator(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape), trackColor = cs.surfaceVariant)
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ResidueGroupRow(ui: SpaceUi, cb: SpaceCallbacks, g: ResidueGroup, last: Boolean) {
+    val cs = MaterialTheme.colorScheme
+    val paths = g.items.map { it.path }
+    val on = ui.residueSelected.containsAll(paths)
+    val some = !on && paths.any { it in ui.residueSelected }
+    val meta = ui.residueApp(g.pkg)
+    val shape = if (last) RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp) else RoundedCornerShape(0.dp)
+    Column(Modifier.fillMaxWidth().clip(shape).background(cs.surface).padding(bottom = 6.dp)) {
+        HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = cs.outlineVariant.copy(alpha = 0.6f))
+        Row(Modifier.fillMaxWidth().clickable { cb.residueSet(paths, !on) }.padding(start = 14.dp, end = 14.dp, top = 9.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            val color = Ghost.colors.archive
+            Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(color.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+                val icon = meta?.icon
+                if (icon != null) androidx.compose.foundation.Image(icon.asImageBitmap(), null, Modifier.size(26.dp))
+                else Icon(Icons.Rounded.FolderDelete, null, Modifier.size(19.dp), tint = color)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(meta?.label?.takeIf { it.isNotEmpty() && it != g.pkg } ?: g.pkg, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (meta?.label?.takeIf { it != g.pkg } != null) g.pkg else t("已卸载", "Uninstalled") + " · " + t("${g.items.size} 处", "${g.items.size} folders"),
+                    fontSize = 11.sp, color = cs.outline, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(formatSize(g.bytes), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            SelectMark(on, Modifier.padding(start = 10.dp), partial = some)
+        }
+        g.items.forEach { it ->
+            val sel = it.path in ui.residueSelected
+            Row(Modifier.fillMaxWidth().combinedClickable(onClick = { cb.residueSet(listOf(it.path), !sel) }, onLongClick = { cb.residueOpen(it) })
+                .padding(start = 60.dp, end = 14.dp, top = 3.dp, bottom = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                val kc = if (it.kind == ResidueKind.PUBLIC) cs.outline else if (it.kind == ResidueKind.PRIVATE || it.kind == ResidueKind.PRIVATE_DE) cs.error else cs.primary
+                Text(residueKindLabel(it.kind), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = kc, maxLines = 1,
+                    modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(kc.copy(alpha = 0.13f)).padding(horizontal = 5.dp, vertical = 1.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(displayPath(it.shown), fontSize = 11.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(8.dp))
+                Text(formatSize(it.bytes), fontSize = 11.sp, color = cs.outline)
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) { SelectMark(sel, Modifier.size(18.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResidueCleanBar(ui: SpaceUi, cb: SpaceCallbacks) {
+    val cs = MaterialTheme.colorScheme
+    val chosen = ui.residues?.groups?.flatMap { it.items }?.filter { it.path in ui.residueSelected }.orEmpty()
+    Surface(color = cs.surface, tonalElevation = 3.dp, shadowElevation = 6.dp) {
+        Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Button(onClick = cb.residueClean, enabled = chosen.isNotEmpty(), modifier = Modifier.fillMaxWidth().height(46.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = cs.error, contentColor = cs.onError)) {
+                Icon(Icons.Rounded.CleaningServices, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                Text(t("清理所选 ${chosen.size} 处 · ", "Remove ${chosen.size} · ") + formatSize(chosen.sumOf { it.bytes }))
+            }
+        }
+    }
+}
+
+/** 清理残留 confirmation (direct delete, no recycle bin). */
+@Composable
+fun ResidueConfirmDialog(items: List<Residue>, dismiss: () -> Unit, confirm: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val apps = items.map { it.pkg }.distinct()
+    val private = items.any { it.kind == ResidueKind.PRIVATE || it.kind == ResidueKind.PRIVATE_DE }
+    val public = items.any { it.kind == ResidueKind.PUBLIC }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        icon = { Icon(Icons.Rounded.CleaningServices, null, tint = cs.error) },
+        title = { Text(t("清理卸载残留", "Remove leftovers")) },
+        text = {
+            Column {
+                Text(t("${apps.size} 个已卸载应用，${items.size} 个文件夹，共 ", "${apps.size} uninstalled apps, ${items.size} folders, ") + formatSize(items.sumOf { it.bytes }), fontSize = 14.sp)
+                Spacer(Modifier.height(8.dp))
+                Text(apps.take(4).joinToString("、") + if (apps.size > 4) t(" 等", " …") else "", fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(10.dp))
+                Text(t("将直接删除，不进回收站，不可恢复。", "Deleted directly (no recycle bin); this cannot be undone."), fontSize = 13.sp, color = cs.error)
+                if (private) Text(t("含 /data/data 私有数据：重装这些应用后不会再恢复登录和设置。", "Includes /data/data private data: reinstalling won't bring back logins or settings."), fontSize = 12.sp, color = cs.onSurfaceVariant)
+                if (public) Text(t("「根目录」项是按文件夹名推断的，可能是别的应用写的，请确认。", "\"Storage root\" items are guessed from the folder name; check them."), fontSize = 12.sp, color = cs.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton(onClick = confirm) { Text(t("删除", "Delete"), color = cs.error) } },
+        dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
+    )
+}
+
+/** Batch delete of the selected largest files. */
+@Composable
+fun TopDeleteDialog(paths: List<String>, bytes: Long, trash: DupConfirm.Trash, dismiss: () -> Unit, confirm: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val risky = paths.any { SpacePolicy.protection(it) == Protection.CAUTION }
+    var ack by remember { mutableStateOf(false) }
+    val ok = !risky || ack
+    AlertDialog(
+        onDismissRequest = dismiss,
+        icon = if (risky) ({ Icon(Icons.Rounded.WarningAmber, null, tint = cs.error) }) else null,
+        title = { Text(t("删除 ${paths.size} 个文件", "Delete ${paths.size} files")) },
+        text = {
+            Column {
+                Text(formatSize(bytes) + " · " + paths.take(3).joinToString("、") { VPath.name(it) } + if (paths.size > 3) t(" 等", " …") else "", fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(8.dp))
+                val (ti, tc) = when (trash) {
+                    DupConfirm.Trash.ON -> t("移入回收站，可在回收站恢复", "Moved to the recycle bin (restorable)") to cs.primary
+                    DupConfirm.Trash.PARTIAL -> t("部分位置不支持回收站，这些文件将直接删除", "Some locations have no recycle bin; those files are deleted for good") to cs.error
+                    DupConfirm.Trash.OFF -> t("将直接删除，不可恢复", "Deleted for good") to cs.error
+                }
+                Text(ti, fontSize = 12.sp, color = tc)
+                if (risky) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(t("其中有应用或系统数据目录里的文件，删除可能导致应用异常。", "Some are in app or system data; deleting them can break apps."), color = cs.error, fontSize = 13.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { ack = !ack }) {
+                        Checkbox(ack, { ack = it }); Text(t("我了解风险", "I understand the risk"), fontSize = 13.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = confirm, enabled = ok) { Text(t("删除", "Delete"), color = if (ok) cs.error else cs.outline) } },
+        dismissButton = { TextButton(onClick = dismiss) { Text(t("取消", "Cancel")) } },
+    )
 }
 
 @Composable
@@ -1147,7 +1542,7 @@ fun DupProgressDialog(b: DupBatch, stop: () -> Unit) {
     androidx.compose.ui.window.Dialog(onDismissRequest = {}, properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
         val cs = MaterialTheme.colorScheme
         Column(Modifier.widthIn(max = 420.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(cs.surfaceContainerHigh).padding(24.dp)) {
-            Text(t("正在删除重复文件…", "Deleting duplicates…"), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text(b.title.ifEmpty { t("正在删除重复文件…", "Deleting duplicates…") }, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(12.dp))
             LinearProgressIndicator(progress = { if (b.total > 0) b.done.toFloat() / b.total else 0f }, Modifier.fillMaxWidth().clip(CircleShape))
             Spacer(Modifier.height(8.dp))

@@ -24,6 +24,10 @@ import com.ghostpanter.files.core.space.LocalWalker
 import com.ghostpanter.files.core.space.NodeFlags
 import com.ghostpanter.files.core.space.NodeKind
 import com.ghostpanter.files.core.space.PathCanon
+import com.ghostpanter.files.core.space.Residue
+import com.ghostpanter.files.core.space.ResidueGroup
+import com.ghostpanter.files.core.space.ResidueKind
+import com.ghostpanter.files.core.space.Residues
 import com.ghostpanter.files.core.space.ScanCancelled
 import com.ghostpanter.files.core.space.ScanControl
 import com.ghostpanter.files.core.space.ShellStreamScan
@@ -78,7 +82,10 @@ data class SpaceNotice(val text: String, val action: String? = null, val actionI
 data class SpaceSummary(val total: Long, val free: Long, val categories: CategoryTotals?)
 
 /** Progress of a 「保留最优，删除其他」 batch. */
-data class DupBatch(val done: Int, val total: Int, val bytes: Long, val failed: Int = 0, val current: String = "")
+data class DupBatch(val done: Int, val total: Int, val bytes: Long, val failed: Int = 0, val current: String = "", val title: String = "")
+
+/** Where the 卸载残留 scan looked and with what access. */
+data class ResidueScan(val groups: List<ResidueGroup>, val via: String?, val limited: Boolean)
 
 /**
  * One analysis (kept per target for the process lifetime): loads the cached tree instantly,
@@ -106,6 +113,10 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
     /** Keep choices the user tapped (one path per group; others use [com.ghostpanter.files.core.space.DupRanker]). */
     var keepChosen by mutableStateOf<Set<String>>(emptySet()); private set
     var batch by mutableStateOf<DupBatch?>(null); private set
+    /** 卸载残留 (null = not scanned yet in this process). */
+    var residues by mutableStateOf<ResidueScan?>(null); private set
+    var residueScanning by mutableStateOf(false); private set
+    var residueError by mutableStateOf<String?>(null); private set
     @Volatile private var batchCancel = false
     private val pendingRemoved = HashSet<String>()
     /** Root of the raw scan (inside an aggregated [tree]). */
@@ -499,17 +510,20 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
      * Deletes [paths] (the non-kept copies) one by one, to the recycle bin when [useTrash] and the file
      * is on local storage; progress in [batch]; finished files update the page right away.
      */
-    fun deleteDuplicates(paths: List<String>, bytesEach: Map<String, Long>, useTrash: Boolean, trash: com.ghostpanter.files.core.ops.RecycleBin, done: (String) -> Unit) {
+    fun deleteDuplicates(
+        paths: List<String>, bytesEach: Map<String, Long>, useTrash: Boolean, trash: com.ghostpanter.files.core.ops.RecycleBin,
+        title: String = t("正在删除重复文件…", "Deleting duplicates…"), done: (String) -> Unit,
+    ) {
         if (batch != null || paths.isEmpty()) return
         batchCancel = false
-        batch = DupBatch(0, paths.size, 0)
+        batch = DupBatch(0, paths.size, 0, title = title)
         scope.launch {
             var ok = 0; var failed = 0; var freed = 0L; var firstErr: String? = null
             val removed = ArrayList<String>()
             for ((i, p) in paths.withIndex()) {
                 if (batchCancel) break
                 val cur = freed; val f = failed
-                withContext(Dispatchers.Main) { batch = DupBatch(i, paths.size, cur, f, VPath.name(p)) }
+                withContext(Dispatchers.Main) { batch = DupBatch(i, paths.size, cur, f, VPath.name(p), title) }
                 val (fsId, lp) = locate(SpaceNode(p, NodeKind.FILE))
                 val err = runCatching { if (useTrash && fsId == LocalFs.ID) trash.moveToTrash(lp) else fsm.get(fsId).delete(lp, false) }.exceptionOrNull()
                 if (err == null) {
@@ -526,6 +540,112 @@ class SpaceSession(val ctx: Context, val fsm: FsManager, val target: SpaceTarget
                     if (failed > 0) { append(t("；失败 ", "; failed ")); append(failed); firstErr?.let { append(" (" + it + ")") } }
                 })
             }
+        }
+    }
+
+    // ------------------------------------------------------------------ 卸载残留
+
+    /** Shell used for leftovers: Root > Shizuku (built-in / external) > none; ADB targets use the device. */
+    private fun residueShell(): Triple<ShellRunner?, Boolean, String?> = when {
+        tier == SpaceTier.ADB_ROOT -> Triple(com.ghostpanter.adb.AdbPool.device(adbSerial!!).runner(true), true, "ADB · Root")
+        tier == SpaceTier.ADB -> Triple(com.ghostpanter.adb.AdbPool.device(adbSerial!!).runner(false), false, "ADB")
+        RootRunner.granted() -> Triple(RootRunner, true, "Root")
+        ShizukuRunner.granted() -> Triple(ShizukuRunner, false, "Shizuku")
+        else -> Triple(null, false, null)
+    }
+
+    private fun residueParents(root: Boolean, shell: Boolean): List<Pair<String, ResidueKind>> {
+        val storage = if (root) "/data/media/0" else "/storage/emulated/0"
+        val all = Residues.parents(storage, root)
+        // Without a shell only what this app can list itself: Android/data|obb are hidden on Android 11+.
+        return if (shell) all else all.filter { (_, k) -> Build.VERSION.SDK_INT < 30 || (k != ResidueKind.DATA && k != ResidueKind.OBB) }
+    }
+
+    val residueSupported get() = tier != SpaceTier.OTHER
+
+    fun scanResidues() {
+        if (residueScanning || !residueSupported) return
+        residueScanning = true; residueError = null
+        scope.launch {
+            val r = runCatching { findResidues() }
+            withContext(Dispatchers.Main) {
+                r.onSuccess { residues = it }.onFailure { residueError = it.message ?: it.toString() }
+                residueScanning = false
+            }
+        }
+    }
+
+    private fun findResidues(): ResidueScan {
+        val (runner, root, via) = residueShell()
+        val parents = residueParents(root, runner != null)
+        val adb = adbSerial != null
+        // Installed = every user's packages (dual apps / work profile) + apps uninstalled with 「保留数据」.
+        val installed = HashSet<String>()
+        if (!adb) runCatching {
+            @Suppress("DEPRECATION")
+            ctx.packageManager.getInstalledPackages(android.content.pm.PackageManager.MATCH_UNINSTALLED_PACKAGES).forEach { installed.add(it.packageName) }
+        }
+        val candidates: List<Residue>
+        val sizes: Map<String, Long>
+        if (runner != null) {
+            val pm = Residues.PACKAGES_SCRIPT + "pm list packages -u 2>/dev/null; exit 0\n"
+            installed += Residues.parsePackages(com.ghostpanter.files.core.Proc.run(runner, pm, 60_000, what = "pm list packages").stdout)
+            val out = com.ghostpanter.files.core.Proc.run(runner, Residues.listScript(parents.map { it.first }), 60_000, what = t("扫描残留", "scan leftovers")).stdout
+            candidates = Residues.leftovers(Residues.parseListing(out, parents), installed, ctx.packageName)
+            sizes = if (candidates.isEmpty()) emptyMap() else Residues.parseSizes(
+                com.ghostpanter.files.core.Proc.run(runner, Residues.sizeScript(candidates.map { it.path }), 300_000, what = t("计算残留大小", "size leftovers")).stdout
+            )
+        } else {
+            val listing = parents.flatMap { (p, _) -> File(p).listFiles()?.filter { it.isDirectory }?.map { it.path } ?: emptyList() }
+            candidates = Residues.leftovers(Residues.parseListing(listing.joinToString("\n"), parents), installed, ctx.packageName)
+            sizes = candidates.associate { it.path to runCatching { File(it.path).walkTopDown().filter { f -> f.isFile }.sumOf { f -> f.length() } }.getOrDefault(0) }
+        }
+        if (installed.size < 5) error(t("读不到已安装应用列表，为安全起见未标记残留", "Couldn't read the installed app list; nothing flagged to stay safe"))
+        val items = candidates.map { r -> r.copy(bytes = sizes[r.path] ?: 0, shown = if (root && !adb) PathCanon.userVisible(r.path) else r.path) }
+        return ResidueScan(Residues.group(items), via, limited = runner == null)
+    }
+
+    /** Deletes the chosen leftovers (direct, no recycle bin), keeps every analysis in sync, then rescans. */
+    fun deleteResidues(items: List<Residue>, done: (String) -> Unit) {
+        if (batch != null || items.isEmpty()) return
+        batchCancel = false
+        val title = t("正在清理卸载残留…", "Removing leftovers…")
+        batch = DupBatch(0, items.size, 0, title = title)
+        scope.launch {
+            val (runner, root, _) = residueShell()
+            val parents = residueParents(root, runner != null)
+            var ok = 0; var failed = 0; var freed = 0L; var firstErr: String? = null
+            val gone = HashSet<String>()
+            for ((i, r) in items.withIndex()) {
+                if (batchCancel) break
+                val cur = freed; val f = failed
+                withContext(Dispatchers.Main) { batch = DupBatch(i, items.size, cur, f, r.pkg, title) }
+                val err = runCatching {
+                    require(Residues.deletable(r.path, parents)) { t("路径不在残留目录内: ", "Not a leftover path: ") + r.shown }
+                    if (runner != null) {
+                        val out = com.ghostpanter.files.core.Proc.run(runner, Residues.deleteScript(listOf(r.path)), 300_000, what = t("清理残留", "remove leftovers")).stdout
+                        if (Residues.parseLeft(out).isNotEmpty()) error(t("部分文件没能删除", "Some files could not be removed"))
+                    } else fsm.get(LocalFs.ID).delete(r.path, true)
+                }.exceptionOrNull()
+                if (err == null) {
+                    ok++; freed += r.bytes; gone.add(r.path)
+                    val (fsId, p) = when {
+                        adbSerial != null -> target.fsId to r.path
+                        PathCanon.isUserStorage(r.path) || r.path.startsWith("/storage/") -> LocalFs.ID to PathCanon.userVisible(PathCanon.canonical(r.path))
+                        else -> FsManager.ROOT to r.path
+                    }
+                    SpaceSessions.notifyRemoved(fsId, listOf(p))
+                } else { failed++; if (firstErr == null) firstErr = err.message ?: err.toString() }
+            }
+            withContext(Dispatchers.Main) {
+                residues = residues?.let { s -> s.copy(groups = s.groups.mapNotNull { g -> g.items.filter { it.path !in gone }.takeIf { it.isNotEmpty() }?.let { ResidueGroup(g.pkg, it) } }) }
+                batch = null
+                done(buildString {
+                    append(t("已清理 ", "Removed ")); append(ok); append(t(" 处残留，释放 ", " leftovers, freed ")); append(formatSize(freed))
+                    if (failed > 0) { append(t("；失败 ", "; failed ")); append(failed); firstErr?.let { append(" (" + it + ")") } }
+                })
+            }
+            withContext(Dispatchers.Main) { scanResidues() }
         }
     }
 
