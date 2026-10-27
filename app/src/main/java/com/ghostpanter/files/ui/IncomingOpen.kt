@@ -124,6 +124,9 @@ object IncomingOpen {
         if (doc.isBlank()) return null
         val decoded = Uri.decode(doc)
         return when {
+            // DownloadsProvider / MediaProvider raw absolute path (common on OEM ROMs)
+            decoded.startsWith("raw:") -> decoded.removePrefix("raw:")
+            decoded.startsWith("/storage/") || decoded.startsWith("/sdcard/") || decoded.startsWith("/mnt/") -> decoded
             decoded.startsWith("primary:") ->
                 "/storage/emulated/0/" + decoded.removePrefix("primary:").replace('/', File.separatorChar)
             Regex("^[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}:").containsMatchIn(decoded) -> {

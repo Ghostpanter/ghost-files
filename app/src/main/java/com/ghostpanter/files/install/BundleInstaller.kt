@@ -110,7 +110,7 @@ object BundleInstaller {
                     PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                         @Suppress("DEPRECATION")
                         val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-                        if (confirm != null) runCatching { c.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        if (confirm != null) runCatching { c.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)) }
                             .onFailure { done(c, this); if (cont.isActive) cont.resumeWithException(it) }
                     }
                     PackageInstaller.STATUS_SUCCESS -> { done(c, this); if (cont.isActive) cont.resume(Unit) }
