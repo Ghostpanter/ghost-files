@@ -112,3 +112,14 @@
 -dontwarn org.aomedia.avif.android.**
 -dontwarn io.legere.pdfiumandroid.**
 -dontwarn com.caverock.androidsvg.**
+
+# FileProvider / Compose / Parcelable / JNI natives used across modules
+-keep class androidx.core.content.FileProvider { *; }
+-keep class * extends android.os.Binder { *; }
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keepclasseswithmembernames class * { native <methods>; }
+# Keep mapping useful; don't strip line numbers for crash reports
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

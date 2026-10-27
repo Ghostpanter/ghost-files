@@ -116,5 +116,8 @@ echo "build-apk: ABIs $native_line"
 mkdir -p "$ROOT/artifacts"
 cp -f "$APK" "$ROOT/artifacts/ghost-files.apk"
 ( cd "$ROOT/artifacts" && sha256sum ghost-files.apk > ghost-files.apk.sha256 )
+# Keep R8 mapping for crash deobfuscation (not committed; artifacts/ only).
+MAP="$ROOT/app/build/outputs/mapping/release/mapping.txt"
+if [ -f "$MAP" ]; then cp -f "$MAP" "$ROOT/artifacts/mapping.txt"; echo "build-apk: mapping -> artifacts/mapping.txt"; fi
 echo "build-apk: $(cat "$ROOT/artifacts/ghost-files.apk.sha256")"
 echo "build-apk: size $(stat -c %s "$ROOT/artifacts/ghost-files.apk") bytes"
