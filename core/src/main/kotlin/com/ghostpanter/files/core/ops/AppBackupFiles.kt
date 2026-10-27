@@ -1,7 +1,7 @@
 package com.ghostpanter.files.core.ops
 
 /**
- * Naming and matching for app backups in Download/GhostFiles/apks:
+ * Naming and matching for app backups in Download/DualPane/apks:
  *  - APK:  `<pkg>_<label>_<version>.apk` or `.apks` (older builds wrote `<label>_<version>.apk(s)`)
  *  - data: `<pkg>-data.tar`
  * Both start with the package name, so a pair sorts next to each other.

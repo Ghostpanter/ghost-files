@@ -1,7 +1,6 @@
 package com.ghostpanter.files.ui
 
 import android.content.Context
-import android.os.Environment
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -37,7 +36,7 @@ data class PartResult(val apk: Result<String>? = null, val data: Result<String>?
 
 /** Shared backup / restore for the Apps screen and `*-data.tar` in the file list. */
 object AppBackupOps {
-    fun dir(): File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "GhostFiles/apks")
+    fun dir(): File = com.ghostpanter.files.BrandPaths.apkBackupDir().also { it.mkdirs() }
 
     fun partLabel(p: Part): String = when (p) {
         Part.APK -> t("APK", "APK")
@@ -95,11 +94,16 @@ object AppBackupOps {
     private fun candidates(folder: File) = folder.listFiles().orEmpty().filter { it.isFile }
         .map { AppBackupFiles.Candidate(it.name, it.lastModified()) }
 
-    fun findApk(ctx: Context, pkg: String, folder: File = dir()): File? =
-        AppBackupFiles.pickApk(candidates(folder), pkg) { n -> packageOf(ctx, File(folder, n)) }?.let { File(folder, it.name) }
+    fun findApk(ctx: Context, pkg: String, folder: File = dir()): File? {
+        fun inDir(d: File) = AppBackupFiles.pickApk(candidates(d), pkg) { n -> packageOf(ctx, File(d, n)) }?.let { File(d, it.name) }
+        return inDir(folder) ?: inDir(com.ghostpanter.files.BrandPaths.legacyApkBackupDir())
+    }
 
-    fun findData(pkg: String, folder: File = dir()): File? =
-        File(folder, AppBackupFiles.dataTarName(pkg)).takeIf { it.isFile }
+    fun findData(pkg: String, folder: File = dir()): File? {
+        val name = AppBackupFiles.dataTarName(pkg)
+        return File(folder, name).takeIf { it.isFile }
+            ?: File(com.ghostpanter.files.BrandPaths.legacyApkBackupDir(), name).takeIf { it.isFile }
+    }
 
     fun installedUid(ctx: Context, pkg: String): Int? = runCatching {
         ctx.packageManager.getApplicationInfo(pkg, 0).uid

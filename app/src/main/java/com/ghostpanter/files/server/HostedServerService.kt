@@ -166,13 +166,13 @@ class HostedServerService : Service() {
     private fun acquireLocks() {
         runCatching {
             wake = (getSystemService(POWER_SERVICE) as PowerManager)
-                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GhostFiles:hosted").apply {
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DualPane:hosted").apply {
                     setReferenceCounted(false); acquire(12 * 60 * 60 * 1000L)
                 }
         }
         runCatching {
             wifi = (applicationContext.getSystemService(WIFI_SERVICE) as WifiManager)
-                .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "GhostFiles:hosted").apply {
+                .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "DualPane:hosted").apply {
                     setReferenceCounted(false); acquire()
                 }
         }

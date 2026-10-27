@@ -88,7 +88,7 @@ object ApkSign {
 
         val manifest = Manifest()
         manifest.mainAttributes.putValue("Manifest-Version", "1.0")
-        manifest.mainAttributes.putValue("Created-By", "TwinPane")
+        manifest.mainAttributes.putValue("Created-By", "Dual-Pane File Manager")
         for ((name, dig) in digests) {
             val attrs = java.util.jar.Attributes()
             attrs.putValue("SHA-256-Digest", dig)
@@ -98,7 +98,7 @@ object ApkSign {
         // Build SF
         val sf = Manifest()
         sf.mainAttributes.putValue("Signature-Version", "1.0")
-        sf.mainAttributes.putValue("Created-By", "TwinPane")
+        sf.mainAttributes.putValue("Created-By", "Dual-Pane File Manager")
         val manBytes = java.io.ByteArrayOutputStream().also { manifest.write(it) }.toByteArray()
         sf.mainAttributes.putValue("SHA-256-Digest-Manifest", Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-256").digest(manBytes)))
         for ((name, attrs) in manifest.entries) {

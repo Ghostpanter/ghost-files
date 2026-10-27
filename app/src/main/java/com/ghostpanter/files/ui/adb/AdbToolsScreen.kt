@@ -111,10 +111,9 @@ import java.util.concurrent.TimeUnit
 
 suspend fun <T> io(block: () -> T): Result<T> = withContext(Dispatchers.IO) { runCatching(block) }
 
-/** Public GhostFiles folder (Pictures / Movies / Download), app-private fallback. */
+/** Public DualPane folder (Pictures / Movies / Download), with GhostFiles fallback, then app-private. */
 fun outDir(ctx: Context, kind: String): File {
-    @Suppress("DEPRECATION")
-    val d = File(Environment.getExternalStoragePublicDirectory(kind), "GhostFiles")
+    val d = com.ghostpanter.files.BrandPaths.publicDir(kind)
     if (d.isDirectory || d.mkdirs()) return d
     return (ctx.getExternalFilesDir(kind) ?: ctx.filesDir).also { it.mkdirs() }
 }

@@ -47,7 +47,7 @@ object ServiceProbe {
             (ctx.socketFactory.createSocket(raw, host, port, true) as SSLSocket).also { it.startHandshake() }
         } else raw
         s.use {
-            val req = "OPTIONS / HTTP/1.1\r\nHost: $host:$port\r\nUser-Agent: GhostFiles-LanScan\r\nConnection: close\r\n\r\n"
+            val req = "OPTIONS / HTTP/1.1\r\nHost: $host:$port\r\nUser-Agent: DualPane-LanScan\r\nConnection: close\r\n\r\n"
             it.getOutputStream().apply { write(req.toByteArray(Charsets.ISO_8859_1)); flush() }
             parseHttpHead(it.getInputStream(), port, tls)
         }

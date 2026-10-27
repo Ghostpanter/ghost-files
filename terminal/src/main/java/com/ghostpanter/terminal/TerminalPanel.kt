@@ -300,7 +300,7 @@ class TerminalPanel(
             }.show()
     }
 
-    private fun exportFile(): File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "GhostFiles/terminal-favorites.json")
+    private fun exportFile(): File = File(File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "DualPane").also { it.mkdirs() }, "terminal-favorites.json")
 
     private fun favoritesIo() {
         val items = arrayOf(context.getString(R.string.term_fav_import), context.getString(R.string.term_fav_import_file), context.getString(R.string.term_fav_export))

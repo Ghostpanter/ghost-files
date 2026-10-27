@@ -288,12 +288,12 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         setJobsPerServer = { perServer = it; settings.jobsPerServer = it },
         exportBackup = {
             val dest = downloads(); dest?.mkdirs()
-            vm.exportBackup(java.io.File(dest, "ghost-files-backup.gfbackup").absolutePath); close()
+            vm.exportBackup(java.io.File(dest, com.ghostpanter.files.BrandPaths.CONFIG_BACKUP).absolutePath); close()
         },
         importBackup = {
-            val f = java.io.File(downloads(), "ghost-files-backup.gfbackup")
-            if (f.isFile) { vm.importBackup(f.absolutePath); close() }
-            else vm.toast(t("请将备份放到 Download/ghost-files-backup.gfbackup", "Place backup at Download/ghost-files-backup.gfbackup"))
+            val f = com.ghostpanter.files.BrandPaths.findConfigBackup(downloads())
+            if (f != null) { vm.importBackup(f.absolutePath); close() }
+            else vm.toast(t("请将备份放到 Download/dualpane-backup.gfbackup", "Place backup at Download/dualpane-backup.gfbackup"))
         },
     )
     DrawerBody(state, actions)
@@ -310,7 +310,7 @@ fun DrawerBody(s: DrawerUiState, a: DrawerActions, modifier: Modifier = Modifier
             }
             Spacer(Modifier.width(12.dp))
             Column {
-                Text(t("双栏文件管理器", "TwinPane Files"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(t("双栏文件管理器", "Dual-Pane File Manager"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1)
                 Text("v${s.version}", fontSize = 12.sp, color = cs.outline)
             }
         }

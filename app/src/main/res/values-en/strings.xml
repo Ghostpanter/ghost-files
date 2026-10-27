@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">TwinPane File Manager</string>
+    <string name="app_name">Dual-Pane File Manager</string>
     <string name="transfer_channel">File transfers</string>
     <string name="hosted_channel">Hosted services</string>
 </resources>

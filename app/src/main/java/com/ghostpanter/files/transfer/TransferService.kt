@@ -109,11 +109,11 @@ class TransferService : Service() {
     private fun acquireLocks() {
         runCatching {
             wake = (getSystemService(POWER_SERVICE) as PowerManager)
-                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GhostFiles:transfer").apply { setReferenceCounted(false); acquire(6 * 60 * 60 * 1000L) }
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DualPane:transfer").apply { setReferenceCounted(false); acquire(6 * 60 * 60 * 1000L) }
         }
         runCatching {
             wifi = (applicationContext.getSystemService(WIFI_SERVICE) as WifiManager)
-                .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "GhostFiles:transfer").apply { setReferenceCounted(false); acquire() }
+                .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "DualPane:transfer").apply { setReferenceCounted(false); acquire() }
         }
     }
 

@@ -119,7 +119,7 @@ class HttpRemoteServer : HostedServer {
             val req = readRequest(input) ?: return
             if (!cfg.anonymous && !checkAuth(req, cfg)) {
                 write(output, 401, "text/plain; charset=utf-8", "Unauthorized".toByteArray(),
-                    extra = listOf("WWW-Authenticate: Basic realm=\"GhostFiles\""))
+                    extra = listOf("WWW-Authenticate: Basic realm=\"DualPane\""))
                 return
             }
             when (req.method) {

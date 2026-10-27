@@ -208,7 +208,7 @@ private fun FontPreview(file: File) {
                     textSize = 22f
                     setTextColor(0xFFEEEEEE.toInt())
                     setLineSpacing(0f, 1.3f)
-                    text = "双栏文件管理器 TwinPane File Manager\nABCDEFG abcdefg 0123456789\n天地玄黄 宇宙洪荒\nThe quick brown fox jumps over the lazy dog."
+                    text = "双栏文件管理器 Dual-Pane File Manager\nABCDEFG abcdefg 0123456789\n天地玄黄 宇宙洪荒\nThe quick brown fox jumps over the lazy dog."
                 }
             },
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp),

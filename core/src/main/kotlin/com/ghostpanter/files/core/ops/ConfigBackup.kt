@@ -12,7 +12,8 @@ import java.util.zip.ZipOutputStream
  * Passwords stay as the app's Crypto ciphertext blobs.
  */
 object ConfigBackup {
-    const val FORMAT = "ghost-files-backup"
+    const val FORMAT = "dualpane-backup"
+    const val LEGACY_FORMAT = "ghost-files-backup"
     const val VERSION = 1
 
     data class Snapshot(
@@ -51,7 +52,7 @@ object ConfigBackup {
                 val body = zip.readBytes().toString(Charsets.UTF_8)
                 when (e.name.substringAfterLast('/')) {
                     "manifest.json" -> {
-                        require(body.contains("\"$FORMAT\"") || body.contains(FORMAT)) { tr("不是 Ghost 文件备份包", "Not a 双栏文件管理器 backup file") }
+                        require(body.contains("\"$FORMAT\"") || body.contains(FORMAT) || body.contains("\"$LEGACY_FORMAT\"") || body.contains(LEGACY_FORMAT)) { tr("不是双栏文件管理器备份包", "Not a Dual-Pane File Manager backup file") }
                         exportedAt = Regex("\"exportedAt\"\\s*:\\s*(\\d+)").find(body)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
                     }
                     "settings.json" -> settings = body
