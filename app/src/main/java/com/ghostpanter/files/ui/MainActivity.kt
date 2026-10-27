@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
             intent?.action == "com.ghostpanter.files.action.SHOW_TRANSFERS" -> vm.screen = Screen.Transfers
             intent?.action == "com.ghostpanter.files.action.SCAN_LAN" -> vm.screen = Screen.LanScan
         }
-        intent?.let { handleAdbIntent(it) }
+        intent?.let { handleAdbIntent(it); handleOpenIntent(it) }
         if (com.ghostpanter.files.BuildConfig.DEBUG) intent?.getStringExtra("debug_fs")?.let { fs ->
             vm.openFs(fs, intent.getStringExtra("debug_path") ?: "/")
         }
@@ -101,6 +101,20 @@ class MainActivity : ComponentActivity() {
             intent.getBooleanExtra(EXTRA_SHOW_TRANSFERS, false) -> vm.screen = Screen.Transfers
         }
         handleAdbIntent(intent)
+        handleOpenIntent(intent)
+    }
+
+    /** System "Open with" / share-in: text, APK, video, image, PDF, archives, … */
+    private fun handleOpenIntent(i: Intent) {
+        val action = i.action ?: return
+        if (action != Intent.ACTION_VIEW && action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return
+        val uris = IncomingOpen.urisFrom(i)
+        if (uris.isEmpty()) return
+        // Consume so rotation / re-delivery does not reopen forever.
+        i.action = null
+        i.data = null
+        runCatching { i.removeExtra(Intent.EXTRA_STREAM) }
+        vm.openIncomingUris(uris, i.type)
     }
 
     /** From the embedded scrcpy panel: open the ADB tools page or browse the device in the active pane. */

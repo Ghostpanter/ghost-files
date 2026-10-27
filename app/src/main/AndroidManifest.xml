@@ -61,6 +61,7 @@
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|uiMode"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -80,6 +81,98 @@
                 <action android:name="com.ghostpanter.files.action.SHOW_SERVERS" />
                 <action android:name="com.ghostpanter.files.action.SCAN_LAN" />
                 <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <!-- Open with: MIME types (content:// + file://). File-oriented only — no http(s). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="application/xhtml+xml" />
+                <data android:mimeType="application/javascript" />
+                <data android:mimeType="application/vnd.android.package-archive" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/vnd.rar" />
+                <data android:mimeType="application/x-7z-compressed" />
+                <data android:mimeType="application/x-tar" />
+                <data android:mimeType="application/gzip" />
+                <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/msword" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:mimeType="application/vnd.ms-excel" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+
+            <!-- Open with: extension pathPatterns for OEM file managers that omit/mangle MIME. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" android:host="*" />
+                <data android:scheme="content" android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.txt" />
+                <data android:pathPattern=".*\\.log" />
+                <data android:pathPattern=".*\\.json" />
+                <data android:pathPattern=".*\\.xml" />
+                <data android:pathPattern=".*\\.md" />
+                <data android:pathPattern=".*\\.csv" />
+                <data android:pathPattern=".*\\.apk" />
+                <data android:pathPattern=".*\\.apks" />
+                <data android:pathPattern=".*\\.xapk" />
+                <data android:pathPattern=".*\\.apkm" />
+                <data android:pathPattern=".*\\.pdf" />
+                <data android:pathPattern=".*\\.mp4" />
+                <data android:pathPattern=".*\\.mkv" />
+                <data android:pathPattern=".*\\.avi" />
+                <data android:pathPattern=".*\\.mp3" />
+                <data android:pathPattern=".*\\.flac" />
+                <data android:pathPattern=".*\\.jpg" />
+                <data android:pathPattern=".*\\.jpeg" />
+                <data android:pathPattern=".*\\.png" />
+                <data android:pathPattern=".*\\.gif" />
+                <data android:pathPattern=".*\\.webp" />
+                <data android:pathPattern=".*\\.avif" />
+                <data android:pathPattern=".*\\.svg" />
+                <data android:pathPattern=".*\\.zip" />
+                <data android:pathPattern=".*\\.rar" />
+                <data android:pathPattern=".*\\.7z" />
+                <data android:pathPattern=".*\\.tar" />
+                <data android:pathPattern=".*\\.docx" />
+                <data android:pathPattern=".*\\.xlsx" />
+                <data android:pathPattern=".*\\.epub" />
+                <!-- One extra path segment (common on content:// Downloads) -->
+                <data android:pathPattern=".*\\..*\\.txt" />
+                <data android:pathPattern=".*\\..*\\.apk" />
+                <data android:pathPattern=".*\\..*\\.pdf" />
+                <data android:pathPattern=".*\\..*\\.mp4" />
+                <data android:pathPattern=".*\\..*\\.jpg" />
+                <data android:pathPattern=".*\\..*\\.png" />
+                <data android:pathPattern=".*\\..*\\.zip" />
+            </intent-filter>
+
+            <!-- Share-in: single / multiple files -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
 

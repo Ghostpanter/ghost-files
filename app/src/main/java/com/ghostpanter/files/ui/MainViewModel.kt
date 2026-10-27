@@ -836,6 +836,52 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
         return out
     }
 
+    /**
+     * Open a file handed over by the system chooser (ACTION_VIEW / SEND).
+     * Copies content:// into cache when the OEM provider has no real path.
+     * Chinese ROMs often pass null/empty MIME — [IncomingOpen] falls back to extension.
+     */
+    fun openIncomingUri(uri: android.net.Uri, mimeHint: String? = null) {
+        busyJob?.cancel()
+        busy = t("打开…", "Opening…")
+        busyJob = viewModelScope.launch {
+            try {
+                val (r, e, tab) = withContext(Dispatchers.IO) {
+                    val resolved = IncomingOpen.materialize(getApplication(), uri, mimeHint)
+                    val localPath = resolved.file.absolutePath
+                    val parent = VPath.parent(localPath)
+                    val entry = runCatching { fsm.get(LocalFs.ID).stat(localPath) }.getOrNull()
+                        ?: FileEntry(
+                            path = localPath,
+                            name = resolved.displayName.ifBlank { resolved.file.name },
+                            isDirectory = false,
+                            size = resolved.file.length(),
+                            lastModified = resolved.file.lastModified(),
+                        )
+                    val t = TabState(LocalFs.ID, parent)
+                    if (resolved.file.parentFile?.canRead() == true) {
+                        runCatching { t.entries = fsm.get(LocalFs.ID).list(parent) }
+                    }
+                    Triple(resolved, entry, t)
+                }
+                busy = null
+                openEntry(tab, e, chooser = false)
+            } catch (ex: CancellationException) {
+                busy = null
+            } catch (ex: Exception) {
+                busy = null
+                toast(ex.message ?: ex.javaClass.simpleName)
+            }
+        }
+    }
+
+    fun openIncomingUris(uris: List<android.net.Uri>, mimeHint: String? = null) {
+        if (uris.isEmpty()) return
+        if (uris.size == 1) { openIncomingUri(uris[0], mimeHint); return }
+        openIncomingUri(uris[0], mimeHint)
+        if (uris.size > 1) toast(t("已打开第 1 个，共 ${uris.size} 个", "Opened 1 of ${uris.size}"))
+    }
+
     fun openEntry(tab: TabState, e: FileEntry, chooser: Boolean = false, asText: Boolean = false) {
         if (e.isDirectory && !chooser) { navigate(tab, tab.fsId, e.path); return }
         val ext = e.extension
