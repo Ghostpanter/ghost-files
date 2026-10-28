@@ -27,15 +27,26 @@ object PrivilegeServer {
         val appUid = args[1].toIntOrNull() ?: run {
             System.err.println("$TAG bad uid"); System.exit(2); return
         }
-        // Keep the process alive for binder; ActivityThread is required for ContentProvider calls.
+        log("start pid=${android.os.Process.myPid()} uid=${android.os.Process.myUid()} sdk=${android.os.Build.VERSION.SDK_INT} pkg=$pkg appUid=$appUid")
         prepareLooper()
         val stub = PrivilegeService(appUid)
-        try {
-            BinderSender.send(pkg, PrivilegeBinderProvider.AUTHORITY_SUFFIX, stub)
-            System.err.println("$TAG binder sent to $pkg")
-        } catch (t: Throwable) {
-            System.err.println("$TAG send binder failed: ${t.message}")
-            // Still stay up — the app may retry fetch via a fresh start.
+        // Retry: the provider can be briefly unavailable (app cold-starting, ROM freezing cached apps).
+        var sent = false
+        for (attempt in 1..15) {
+            try {
+                BinderSender.send(pkg, PrivilegeBinderProvider.AUTHORITY_SUFFIX, stub, appUid / 100_000)
+                log("binder sent to $pkg (attempt $attempt)")
+                sent = true
+                break
+            } catch (t: Throwable) {
+                log("send binder failed (attempt $attempt): ${describe(t)}")
+                if (attempt == 1) unwrap(t).printStackTrace()
+                Thread.sleep(if (attempt < 5) 500L else 2_000L)
+            }
+        }
+        if (!sent) {
+            log("giving up: provider never accepted the binder")
+            System.exit(1)
         }
         // Block forever (binder threads serve calls).
         try {
@@ -45,21 +56,27 @@ object PrivilegeServer {
         }
     }
 
+    private fun log(msg: String) {
+        System.err.println("$TAG $msg")
+        System.err.flush()
+    }
+
+    internal fun unwrap(t: Throwable): Throwable {
+        var c = t
+        while ((c is java.lang.reflect.InvocationTargetException || c is java.lang.reflect.UndeclaredThrowableException) && c.cause != null) c = c.cause!!
+        return c
+    }
+
+    internal fun describe(t: Throwable): String {
+        val c = unwrap(t)
+        return c.javaClass.name + ": " + (c.message ?: "")
+    }
+
     private fun prepareLooper() {
-        try {
-            val at = Class.forName("android.app.ActivityThread")
-            val sysMain = at.getDeclaredMethod("systemMain")
-            sysMain.isAccessible = true
-            val thread = sysMain.invoke(null)
-            val getSm = at.getDeclaredMethod("getSystemContext")
-            getSm.isAccessible = true
-            getSm.invoke(thread) // warm system context
-            android.os.Looper.prepareMainLooper()
-        } catch (t: Throwable) {
-            // Best-effort; ContentProvider path may still work via ActivityManager.
-            System.err.println("$TAG prepareLooper: ${t.message}")
-            runCatching { android.os.Looper.prepareMainLooper() }
-        }
+        // No ActivityThread.systemMain(): it builds a *system* context, which a shell-uid process cannot
+        // do cleanly on many ROMs. Binder threads are already started by app_process.
+        runCatching { android.os.Looper.prepareMainLooper() }
+            .onFailure { log("prepareMainLooper: ${describe(it)}") }
     }
 }
 
@@ -153,12 +170,11 @@ internal object BinderSender {
     private const val METHOD = PrivilegeBinderProvider.METHOD_SEND
     private const val KEY = PrivilegeBinderProvider.KEY_BINDER
 
-    fun send(packageName: String, authoritySuffix: String, binder: IBinder) {
+    fun send(packageName: String, authoritySuffix: String, binder: IBinder, userId: Int = 0) {
         val authority = "$packageName.$authoritySuffix"
         val am = activityManager()
         val token = Binder()
-        val holder = getContentProviderExternal(am, authority, token)
-            ?: throw IllegalStateException("provider $authority unavailable")
+        val holder = getContentProviderExternal(am, authority, userId, token)
         try {
             val provider = providerFromHolder(holder)
                 ?: throw IllegalStateException("provider field null")
@@ -180,19 +196,25 @@ internal object BinderSender {
         return c.getDeclaredMethod("getDefault").invoke(null)!!
     }
 
-    private fun getContentProviderExternal(am: Any, authority: String, token: IBinder): Any? {
+    private fun getContentProviderExternal(am: Any, authority: String, userId: Int, token: IBinder): Any {
         val methods = am.javaClass.methods.filter { it.name == "getContentProviderExternal" }
+        if (methods.isEmpty()) throw IllegalStateException("IActivityManager.getContentProviderExternal missing")
+        var last: Throwable? = null
         for (m in methods.sortedByDescending { it.parameterTypes.size }) {
             val r = runCatching {
                 when (m.parameterTypes.size) {
-                    4 -> m.invoke(am, authority, 0, token, null)
-                    3 -> m.invoke(am, authority, 0, token)
+                    4 -> m.invoke(am, authority, userId, token, "ghost-priv")
+                    3 -> m.invoke(am, authority, userId, token)
                     else -> null
                 }
-            }.getOrNull()
-            if (r != null) return r
+            }
+            r.exceptionOrNull()?.let { last = it }
+            r.getOrNull()?.let { return it }
         }
-        return null
+        throw IllegalStateException(
+            "provider $authority (user $userId) unavailable" +
+                (last?.let { " — " + PrivilegeServer.describe(it) } ?: " — returned null (app not installed for this user / provider disabled?)"),
+        )
     }
 
     private fun removeContentProviderExternal(am: Any, authority: String, token: IBinder) {
@@ -221,27 +243,45 @@ internal object BinderSender {
         var last: Throwable? = null
         for (m in methods.sortedByDescending { it.parameterTypes.size }) {
             val attempt = runCatching { m.invoke(provider, *adjustArgs(m, authority, extras)) }
-            if (attempt.isSuccess) return
+            if (attempt.isSuccess) {
+                val reply = attempt.getOrNull() as? android.os.Bundle
+                if (reply != null && !reply.getBoolean("ok", true)) throw IllegalStateException("provider rejected the binder")
+                return
+            }
             last = attempt.exceptionOrNull()
         }
         throw last ?: IllegalStateException("no working ContentProvider.call overload")
     }
 
+    private fun callerPackage(): String =
+        if (android.os.Process.myUid() == 0) "root" else "com.android.shell"
+
+    /** API 31+: build an AttributionSource for shell/root; prefer the public Builder. */
+    private fun attributionSource(cls: Class<*>): Any {
+        val uid = android.os.Process.myUid()
+        runCatching {
+            val b = Class.forName("android.content.AttributionSource\$Builder")
+                .getConstructor(Int::class.javaPrimitiveType).newInstance(uid)
+            b.javaClass.getMethod("setPackageName", String::class.java).invoke(b, callerPackage())
+            return b.javaClass.getMethod("build").invoke(b)!!
+        }
+        return cls.getConstructor(Int::class.javaPrimitiveType, String::class.java, String::class.java)
+            .newInstance(uid, callerPackage(), null)
+    }
+
     private fun adjustArgs(m: java.lang.reflect.Method, authority: String, extras: android.os.Bundle): Array<Any?> {
         val pts = m.parameterTypes
         return when (pts.size) {
-            4 -> arrayOf("android", METHOD, null, extras)
+            4 -> arrayOf(callerPackage(), METHOD, null, extras)
             5 -> {
                 if (pts[0].name.contains("AttributionSource")) {
-                    val attr = pts[0].getConstructor(Int::class.javaPrimitiveType, String::class.java, String::class.java)
-                        .newInstance(android.os.Process.myUid(), "shell", null)
-                    arrayOf(attr, authority, METHOD, null, extras)
+                    arrayOf(attributionSource(pts[0]), authority, METHOD, null, extras)
                 } else {
                     // callingPkg, authority, method, arg, extras
-                    arrayOf("android", authority, METHOD, null, extras)
+                    arrayOf(callerPackage(), authority, METHOD, null, extras)
                 }
             }
-            6 -> arrayOf("android", null, authority, METHOD, null, extras)
+            6 -> arrayOf(callerPackage(), null, authority, METHOD, null, extras)
             else -> throw IllegalArgumentException("unsupported call arity ${pts.size}")
         }
     }

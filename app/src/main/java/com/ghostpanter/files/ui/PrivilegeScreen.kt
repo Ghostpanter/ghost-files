@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -140,18 +141,35 @@ fun PrivilegeScreen(vm: MainViewModel) {
                 }
             }
 
-            CardGroup(t("手动启动命令", "Manual starter")) {
+            CardGroup(t("用已连接的 ADB 启动（电脑 / 另一台手机）", "Start from an already-connected ADB (PC / another phone)")) {
+                val scriptPath = remember { EmbeddedPrivilege.writeStarterFile(ctx) }
                 val cmd = remember { EmbeddedPrivilege.manualStarterCommand(ctx) }
                 Text(
-                    t("在电脑或另一台已用本应用连上的手机上执行：", "Run on a PC or another phone already linked in this app:"),
+                    t("电脑 USB/无线 adb 已连上本机时，执行下面一条即可（会后台启动服务并打印日志；启动后可拔线）。每次更新应用后请重新打开本页再执行。",
+                        "If a PC (USB or wireless adb) is already connected to this device, run the line below. It starts the service detached and prints the log; you can unplug afterwards. Reopen this page after each app update."),
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                 )
+                SelectionContainer {
+                    Text(
+                        if (scriptPath != null) "adb shell sh $scriptPath" else "adb shell \"$cmd\"",
+                        fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                    )
+                }
                 Text(
-                    "adb shell \"$cmd\"",
-                    fontSize = 11.sp, fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                    t("排查用（前台运行，终端会直接显示报错；关闭终端服务即停止）。末尾数字是本应用 UID，不是端口：",
+                        "For troubleshooting (foreground: errors appear in the terminal; closing it stops the service). The last number is this app's UID, not a port:"),
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                 )
+                SelectionContainer {
+                    Text(
+                        "adb shell \"$cmd\"",
+                        fontSize = 11.sp, fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
             }
 
@@ -193,7 +211,16 @@ private fun StatusCard(kind: PrivilegeKind, alive: Boolean, state: PairState, se
             }
             Text(line, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             if (state.connectPort > 0) {
-                Text(t("端口 ", "Port ") + state.connectPort, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                Text(t("无线调试连接端口 ", "Wireless-debug connect port ") + state.connectPort, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+            }
+            if (state.phase == PairPhase.FAILED && state.log.isNotBlank() && !alive) {
+                Spacer(Modifier.height(8.dp))
+                Text(t("服务日志（/data/local/tmp/ghost-priv.log 末尾，可长按复制）：", "Service log (tail of /data/local/tmp/ghost-priv.log, long-press to copy):"),
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                SelectionContainer {
+                    Text(state.log, fontSize = 10.sp, fontFamily = FontFamily.Monospace, lineHeight = 13.sp,
+                        modifier = Modifier.padding(top = 4.dp))
+                }
             }
         }
     }

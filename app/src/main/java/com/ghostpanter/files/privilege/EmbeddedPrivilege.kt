@@ -14,6 +14,7 @@ import com.ghostpanter.files.core.ShellRunner
 import com.ghostpanter.files.core.privilege.PairEvent
 import com.ghostpanter.files.core.privilege.PairPhase
 import com.ghostpanter.files.core.privilege.PairState
+import com.ghostpanter.files.core.privilege.PrivilegeStarter
 import com.ghostpanter.files.core.privilege.reducePair
 import com.ghostpanter.files.fs.IFileService
 import com.ghostpanter.files.fs.RootRunner
@@ -86,8 +87,7 @@ object EmbeddedPrivilege {
     fun onBinderReceived(b: IBinder) {
         val svc = IPrivilegeService.Stub.asInterface(b)
         b.linkToDeath({
-            binderRef.compareAndSet(svc, null)
-            emit(PairEvent.Fail("privilege binder died"))
+            if (binderRef.compareAndSet(svc, null)) emit(PairEvent.Fail("内置提权服务已退出（无线调试关闭或进程被系统结束），请重新启动"))
         }, 0)
         binderRef.set(svc)
         emit(PairEvent.BinderReady)
@@ -161,7 +161,7 @@ object EmbeddedPrivilege {
             try {
                 stateRef.set(PairState(PairPhase.CONNECTING, "connecting"))
                 listeners.forEach { it(stateRef.get()) }
-                connectAndStartServer(ctx, savedPort().takeIf { it > 0 })
+                connectAndStartServer(ctx, savedPort().takeIf { it > 0 }, allowRediscover = true)
             } catch (t: Throwable) {
                 emit(PairEvent.Fail(t.message ?: t.javaClass.simpleName))
             }
@@ -182,18 +182,11 @@ object EmbeddedPrivilege {
         Thread({
             try {
                 if (!RootRunner.check(timeoutSec = 20)) {
-                    emit(PairEvent.Fail("root not granted")); return@Thread
+                    emit(PairEvent.Fail("未获得 Root 授权")); return@Thread
                 }
                 stateRef.set(PairState(PairPhase.STARTING_SERVER, "starting via root"))
                 listeners.forEach { it(stateRef.get()) }
-                val cmd = starterCommand(ctx)
-                val r = com.ghostpanter.files.core.Proc.collect(
-                    RootRunner.start("($cmd) >/data/local/tmp/ghost-priv.log 2>&1 &"),
-                    5_000,
-                )
-                emit(PairEvent.ServerStarted)
-                waitForBinder(15_000)
-                if (!alive()) emit(PairEvent.Fail("binder not received (root). see /data/local/tmp/ghost-priv.log"))
+                launchAndAwait(ctx, RootRunner, "Root")
             } catch (t: Throwable) {
                 emit(PairEvent.Fail(t.message ?: t.javaClass.simpleName))
             }
@@ -203,10 +196,25 @@ object EmbeddedPrivilege {
     /** Command the user runs from a PC / OTG phone on Android 9/10 (or as a manual fallback). */
     fun manualStarterCommand(ctx: Context): String = starterCommand(ctx)
 
+    /**
+     * Writes a starter script to the app's external files dir (readable by `adb shell`) and returns the
+     * device path, e.g. /storage/emulated/0/Android/data/<pkg>/files/start-priv.sh. Regenerated every time
+     * because the APK path changes on each update.
+     */
+    fun writeStarterFile(ctx: Context): String? = runCatching {
+        val dir = ctx.getExternalFilesDir(null) ?: return null
+        val f = File(dir, "start-priv.sh")
+        f.writeText(starterScript(ctx, showLog = true))
+        f.absolutePath.replace(Regex("^/storage/emulated/0/"), "/sdcard/")
+    }.getOrNull()
+
+    fun starterScript(ctx: Context, showLog: Boolean = false): String =
+        PrivilegeStarter.script(ctx.applicationInfo.sourceDir, ctx.packageName, android.os.Process.myUid(), showLog)
+
     private fun pairAndStart(ctx: Context, code: String) {
         val endpoints = AdbDiscovery.discoverPairing(ctx, 8_000)
         if (endpoints.isEmpty()) {
-            emit(PairEvent.Fail("no pairing service — open 无线调试 → 使用配对码配对设备")); return
+            emit(PairEvent.Fail("找不到配对服务：请在「无线调试 → 使用配对码配对设备」弹窗打开时输入配对码")); return
         }
         val ep = endpoints[0]
         val adb = Adb.getInstance(ctx)
@@ -216,38 +224,65 @@ object EmbeddedPrivilege {
         connectAndStartServer(ctx, null)
     }
 
-    private fun connectAndStartServer(ctx: Context, preferredPort: Int?) {
+    private fun connectAndStartServer(ctx: Context, preferredPort: Int?, allowRediscover: Boolean = false) {
         emit(PairEvent.ConnectPort(preferredPort ?: 0))
         var port = preferredPort ?: 0
         if (port <= 0) {
-            // Prefer 127.0.0.1 connect endpoint.
-            val ep = AdbDiscovery.discoverConnect(ctx, LOCAL_HOST, 10_000)
-                ?: AdbDiscovery.discoverConnect(ctx, null, 5_000)
-            if (ep == null) {
-                emit(PairEvent.Fail("no wireless-debug connect port — is 无线调试 on?")); return
+            port = discoverConnectPort(ctx) ?: run {
+                emit(PairEvent.Fail("找不到无线调试连接端口：请确认「开发者选项 → 无线调试」已打开且连着 Wi‑Fi")); return
             }
-            port = ep.port
         }
         emit(PairEvent.ConnectPort(port))
+        try {
+            Adb.getInstance(ctx).connect(LOCAL_HOST, port)
+        } catch (t: Throwable) {
+            // Wireless-debug port changes every time it is toggled; a saved port goes stale.
+            val fresh = if (allowRediscover) discoverConnectPort(ctx)?.takeIf { it != port } else null
+            if (fresh == null) {
+                emit(PairEvent.Fail("连接无线调试端口 $port 失败：${t.message ?: t.javaClass.simpleName}。未配对请点「配对并启动」"))
+                return
+            }
+            port = fresh
+            emit(PairEvent.ConnectPort(port))
+            Adb.getInstance(ctx).connect(LOCAL_HOST, port)
+        }
         setSavedPort(port)
         val serial = Devices.Device(LOCAL_HOST, port).toString()
         runCatching { Devices.upsert(ctx, Devices.Device(LOCAL_HOST, port)) }
-        Adb.getInstance(ctx).connect(LOCAL_HOST, port)
         adbSerial.set(serial)
         emit(PairEvent.Connected)
-        // Start server through the ADB shell.
-        val cmd = starterCommand(ctx)
         val runner = AdbShellRunner(transport = { AdbPool.transport(serial) }, root = false) {
             AdbPool.invalidate(serial)
         }
-        // Background the process on the device.
-        com.ghostpanter.files.core.Proc.collect(
-            runner.start("pkill -f ghost-priv 2>/dev/null; ($cmd) >/data/local/tmp/ghost-priv.log 2>&1 & echo STARTED"),
-            8_000,
-        )
+        launchAndAwait(ctx, runner, "无线调试")
+    }
+
+    private fun discoverConnectPort(ctx: Context): Int? =
+        (AdbDiscovery.discoverConnect(ctx, LOCAL_HOST, 10_000)
+            ?: AdbDiscovery.discoverConnect(ctx, null, 5_000))?.port
+
+    /**
+     * Runs the detached starter through [runner] (adb shell or su), waits for the binder and, on failure,
+     * reads ghost-priv.log back through the same runner so the UI can show what actually happened.
+     */
+    private fun launchAndAwait(ctx: Context, runner: ShellRunner, via: String) {
+        val out = runCatching {
+            com.ghostpanter.files.core.Proc.collect(runner.start(starterScript(ctx)), 10_000).stdout
+        }.getOrElse { t ->
+            emit(PairEvent.Fail("$via 执行启动脚本失败：${t.message ?: t.javaClass.simpleName}")); return
+        }
+        if (!out.contains(PrivilegeStarter.STARTED)) {
+            emit(PairEvent.Fail("$via 启动脚本未执行完：${out.trim().ifEmpty { "无输出（shell 会话被中断）" }.take(300)}"))
+            return
+        }
         emit(PairEvent.ServerStarted)
-        waitForBinder(20_000)
-        if (!alive()) emit(PairEvent.Fail("binder not received — check 无线调试 / see /data/local/tmp/ghost-priv.log"))
+        waitForBinder(25_000)
+        if (alive()) return
+        val diag = runCatching {
+            com.ghostpanter.files.core.Proc.collect(runner.start(PrivilegeStarter.diagnoseScript()), 6_000).stdout
+        }.getOrNull()
+        val d = PrivilegeStarter.diagnose(diag, via)
+        emit(PairEvent.Fail(d.message, d.logTail))
     }
 
     private fun waitForBinder(timeoutMs: Long) {
@@ -258,14 +293,9 @@ object EmbeddedPrivilege {
         }
     }
 
-    fun starterCommand(ctx: Context): String {
-        val apk = ctx.applicationInfo.sourceDir
-        val pkg = ctx.packageName
-        val uid = android.os.Process.myUid()
-        // app_process with CLASSPATH; nice-name helps pkill.
-        return "CLASSPATH=$apk app_process /system/bin --nice-name=ghost-priv " +
-            "com.ghostpanter.files.privilege.PrivilegeServer $pkg $uid"
-    }
+    /** Foreground command (shows errors directly in a PC terminal). The trailing number is this app's UID, not a port. */
+    fun starterCommand(ctx: Context): String =
+        PrivilegeStarter.foregroundCommand(ctx.applicationInfo.sourceDir, ctx.packageName, android.os.Process.myUid())
 
     /** Called from boot receiver when Wi-Fi is up and auto-start is on. */
     fun tryAutoStart(ctx: Context) {

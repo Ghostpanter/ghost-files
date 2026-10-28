@@ -21,6 +21,8 @@ data class PairState(
     val detail: String = "",
     /** Last known wireless-debug connect port (0 = unknown). */
     val connectPort: Int = 0,
+    /** Tail of /data/local/tmp/ghost-priv.log captured on failure (may be empty). */
+    val log: String = "",
 )
 
 sealed interface PairEvent {
@@ -31,7 +33,7 @@ sealed interface PairEvent {
     data object Connected : PairEvent
     data object ServerStarted : PairEvent
     data object BinderReady : PairEvent
-    data class Fail(val reason: String) : PairEvent
+    data class Fail(val reason: String, val log: String = "") : PairEvent
     data object Reset : PairEvent
     data object Stop : PairEvent
 }
@@ -60,7 +62,7 @@ fun reducePair(state: PairState, event: PairEvent): PairState = when (event) {
         if (state.phase == PairPhase.STARTING_SERVER) PairState(PairPhase.STARTING_SERVER, "awaiting binder", state.connectPort)
         else state
     PairEvent.BinderReady -> PairState(PairPhase.READY, "ready", state.connectPort)
-    is PairEvent.Fail -> PairState(PairPhase.FAILED, event.reason, state.connectPort)
+    is PairEvent.Fail -> PairState(PairPhase.FAILED, event.reason, state.connectPort, event.log)
     PairEvent.Reset, PairEvent.Stop -> PairState(PairPhase.IDLE, "", if (event == PairEvent.Stop) 0 else state.connectPort)
 }
 
