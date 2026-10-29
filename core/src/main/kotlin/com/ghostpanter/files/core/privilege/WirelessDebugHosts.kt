@@ -21,6 +21,17 @@ object WirelessDebugHosts {
         return h.startsWith("127.") && h.count { it == '.' } == 3
     }
 
+    /**
+     * Hosts to try, decided at runtime: without a VPN the normal path is unchanged ([normalHost] only —
+     * the discovered address for pairing, 127.0.0.1 for connect, as before). Only when a VPN is active
+     * is the bypass used: loopback first, then the discovered LAN host (caller binds that to Wi‑Fi).
+     */
+    fun plan(normalHost: String, discoveredHost: String?, vpnActive: Boolean): List<String> =
+        if (!vpnActive) listOf(normalHost) else candidates(discoveredHost ?: normalHost)
+
+    /** Whether sockets to [host] should be bound to the Wi‑Fi network (VPN active and not loopback). */
+    fun bindToWifi(host: String, vpnActive: Boolean): Boolean = vpnActive && !isLoopback(host)
+
     /** Ordered connect/pair host candidates: loopback first, then the discovered LAN host (if any, deduped). */
     fun candidates(discoveredHost: String?): List<String> {
         val out = mutableListOf(LOOPBACK)
@@ -45,6 +56,6 @@ object WirelessDebugHosts {
     /** Chinese-first failure text; adds VPN guidance when a VPN is up. */
     fun failure(base: String, vpnActive: Boolean): String =
         if (!vpnActive) base
-        else "$base\n检测到 VPN：已先走 127.0.0.1 本机回环、再把局域网地址绑定到 Wi‑Fi 绕过 VPN，仍失败。" +
+        else "$base\n检测到 VPN 已连接：已自动先走 127.0.0.1 本机回环、再把局域网地址绑定到 Wi‑Fi 绕过 VPN，仍失败。" +
             "可临时关闭 VPN（或在 VPN 里放行本应用 / 局域网）后重试；也可用「电脑 adb 已连接」执行启动脚本，或用 Root 启动。"
 }

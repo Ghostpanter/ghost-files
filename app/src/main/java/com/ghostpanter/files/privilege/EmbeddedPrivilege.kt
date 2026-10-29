@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Holds the [IPrivilegeService] binder and an optional local [AdbShellRunner].
  */
 object EmbeddedPrivilege {
+    private const val LOCAL_HOST = "127.0.0.1"
     private const val PREFS = "embedded_privilege"
     private const val KEY_PORT = "connect_port"
     private const val KEY_AUTO = "auto_start"
@@ -45,7 +46,7 @@ object EmbeddedPrivilege {
     fun init(ctx: Context) {
         val app = ctx.applicationContext
         ctxRef.set(app)
-        // Pooled re-connections to this phone's own Wi‑Fi address must bypass a VPN too.
+        // Pooled re-connections to this phone's own Wi‑Fi address bypass a VPN too (binderFor is null without VPN).
         AdbPool.socketBinder = { host -> if (WifiBypass.isOwnAddress(app, host)) WifiBypass.binderFor(app, host) else null }
         // Re-attach death recipient if we somehow still hold a binder (process restart clears it).
     }
@@ -131,7 +132,7 @@ object EmbeddedPrivilege {
 
     /** Wi‑Fi/Ethernet is up — also when a VPN is the default network on top of it. */
     fun wifiConnected(ctx: Context): Boolean {
-        if (WifiBypass.wifiNetwork(ctx) != null) return true
+        if (WifiBypass.vpnActive(ctx) && WifiBypass.wifiNetwork(ctx) != null) return true
         val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return false
         val n = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(n) ?: return false
@@ -220,21 +221,24 @@ object EmbeddedPrivilege {
         PrivilegeStarter.script(ctx.applicationInfo.sourceDir, ctx.packageName, android.os.Process.myUid(), showLog)
 
     private fun pairAndStart(ctx: Context, code: String) {
-        val ep = discoverOwn(ctx, AdbDiscovery.PAIRING_TYPE, 8_000) ?: run {
+        val ep = (if (WifiBypass.vpnActive(ctx)) discoverOwn(ctx, AdbDiscovery.PAIRING_TYPE, 8_000)
+            else AdbDiscovery.discoverPairing(ctx, 8_000).firstOrNull()) ?: run {
             fail(ctx, "找不到配对服务：请在「无线调试 → 使用配对码配对设备」弹窗打开时输入配对码"); return
         }
         val adb = Adb.getInstance(ctx)
-        // Same device: pair over loopback first (never tunnelled by a VPN), then the Wi‑Fi address bound to Wi‑Fi.
+        // No VPN: unchanged (pair the discovered address). VPN active: loopback first (never tunnelled),
+        // then the Wi‑Fi address with sockets bound to the Wi‑Fi network.
+        val vpn = WifiBypass.vpnActive(ctx)
         var last: Throwable? = null
         var paired = false
-        for (host in WirelessDebugHosts.candidates(ep.host)) {
+        for (host in WirelessDebugHosts.plan(ep.host, ep.host, vpn)) {
             try {
                 WifiBypass.withBinding(ctx, host) { adb.pairDevice(host, ep.port, code) }
                 paired = true; break
             } catch (t: Throwable) {
                 last = t
                 // A wrong code fails the SPAKE2 exchange on loopback too; retrying the LAN host cannot help.
-                if (WirelessDebugHosts.isLoopback(host) && !isReachError(t)) break
+                if (vpn && WirelessDebugHosts.isLoopback(host) && !isReachError(t)) break
             }
         }
         if (!paired) {
@@ -286,8 +290,14 @@ object EmbeddedPrivilege {
     /** LAN host of this phone's own wireless-debug service, from the last discovery (fallback target only). */
     @Volatile private var lastLanHost: String? = null
 
-    private fun discoverConnectPort(ctx: Context): Int? =
-        discoverOwn(ctx, AdbDiscovery.CONNECT_TYPE, 10_000)?.port
+    private fun discoverConnectPort(ctx: Context): Int? {
+        if (!WifiBypass.vpnActive(ctx)) {
+            // No VPN: original discovery path, untouched.
+            return (AdbDiscovery.discoverConnect(ctx, LOCAL_HOST, 10_000)
+                ?: AdbDiscovery.discoverConnect(ctx, null, 5_000))?.also { lastLanHost = it.host }?.port
+        }
+        return discoverOwn(ctx, AdbDiscovery.CONNECT_TYPE, 10_000)?.port
+    }
 
     /**
      * mDNS lookup of this phone's own wireless-debug service. mDNS reports the Wi‑Fi address, never
@@ -299,6 +309,7 @@ object EmbeddedPrivilege {
         val own = java.util.function.Predicate<AdbDiscovery.Endpoint> { ep ->
             local.isEmpty() || ep.host.substringBefore('%') in local || WirelessDebugHosts.isLoopback(ep.host)
         }
+        // Only called while a VPN is active.
         var found = AdbDiscovery.discover(ctx, type, null, own, timeoutMs, true)
         if (found.isEmpty()) {
             val wifi = WifiBypass.wifiNetwork(ctx)
@@ -315,10 +326,13 @@ object EmbeddedPrivilege {
         return found.firstOrNull()?.also { if (!WirelessDebugHosts.isLoopback(it.host)) lastLanHost = it.host }
     }
 
-    /** Connect to own adbd: 127.0.0.1 first (VPN-proof), then the Wi‑Fi address with sockets bound to Wi‑Fi. */
+    /**
+     * Connect to own adbd. No VPN: 127.0.0.1 only, exactly as before. VPN detected now: 127.0.0.1 first
+     * (loopback is never tunnelled), then the Wi‑Fi address with sockets bound to the Wi‑Fi network.
+     */
     private fun connectAny(ctx: Context, port: Int, lanHost: String?): String {
         var last: Throwable? = null
-        for (host in WirelessDebugHosts.candidates(lanHost)) {
+        for (host in WirelessDebugHosts.plan(LOCAL_HOST, lanHost, WifiBypass.vpnActive(ctx))) {
             try {
                 WifiBypass.withBinding(ctx, host) { Adb.getInstance(ctx).connect(host, port) }
                 return host

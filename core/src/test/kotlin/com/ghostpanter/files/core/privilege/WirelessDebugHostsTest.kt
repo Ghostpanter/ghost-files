@@ -38,4 +38,19 @@ class WirelessDebugHostsTest {
         assertTrue(m.contains("VPN")); assertTrue(m.contains("127.0.0.1")); assertTrue(m.contains("Root"))
         assertTrue(m.contains("电脑 adb"))
     }
+
+    @Test fun noVpnKeepsNormalPath() {
+        // Pairing: discovered LAN address as before; connect: 127.0.0.1 as before. No binding.
+        assertEquals(listOf("192.168.1.5"), WirelessDebugHosts.plan("192.168.1.5", "192.168.1.5", vpnActive = false))
+        assertEquals(listOf("127.0.0.1"), WirelessDebugHosts.plan("127.0.0.1", "192.168.1.5", vpnActive = false))
+        assertFalse(WirelessDebugHosts.bindToWifi("192.168.1.5", vpnActive = false))
+    }
+
+    @Test fun vpnUsesBypass() {
+        assertEquals(listOf("127.0.0.1", "192.168.1.5"), WirelessDebugHosts.plan("192.168.1.5", "192.168.1.5", vpnActive = true))
+        assertEquals(listOf("127.0.0.1", "192.168.1.5"), WirelessDebugHosts.plan("127.0.0.1", "192.168.1.5", vpnActive = true))
+        assertEquals(listOf("127.0.0.1"), WirelessDebugHosts.plan("127.0.0.1", null, vpnActive = true))
+        assertTrue(WirelessDebugHosts.bindToWifi("192.168.1.5", vpnActive = true))
+        assertFalse(WirelessDebugHosts.bindToWifi("127.0.0.1", vpnActive = true))
+    }
 }

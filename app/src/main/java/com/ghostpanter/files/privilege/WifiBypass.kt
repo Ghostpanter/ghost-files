@@ -53,14 +53,17 @@ object WifiBypass {
     fun isOwnAddress(ctx: Context, host: String): Boolean =
         !WirelessDebugHosts.isLoopback(host) && host.substringBefore('%') in localAddresses(ctx)
 
-    /** Socket configurer binding to Wi‑Fi; null for loopback hosts or when no Wi‑Fi network exists. */
+    /**
+     * Socket configurer binding to Wi‑Fi — only while a VPN is active (detected at call time), never for
+     * loopback, and null when no Wi‑Fi network exists. Without a VPN routing stays untouched.
+     */
     fun binderFor(ctx: Context, host: String): SocketHook.Configurer? {
-        if (WirelessDebugHosts.isLoopback(host)) return null
+        if (!WirelessDebugHosts.bindToWifi(host, vpnActive(ctx))) return null
         val n = wifiNetwork(ctx) ?: return null
         return SocketHook.Configurer { s -> n.bindSocket(s) }
     }
 
-    /** Runs [block] with this thread's ADB sockets bound to Wi‑Fi (for non-loopback [host]); always clears. */
+    /** Runs [block] with this thread's ADB sockets bound to Wi‑Fi when a VPN is active (non-loopback [host]); always clears. */
     fun <T> withBinding(ctx: Context, host: String, block: () -> T): T {
         val cfg = binderFor(ctx, host)
         if (cfg != null) SocketHook.set(cfg)
