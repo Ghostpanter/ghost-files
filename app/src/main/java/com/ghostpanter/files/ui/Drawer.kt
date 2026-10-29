@@ -122,6 +122,8 @@ class DrawerActions(
     val hosted: () -> Unit = {},
     val openAdb: (String) -> Unit = {},
     val adbTools: (String) -> Unit = {},
+    /** Asks to remove a saved wireless ADB device (long-press / ⋮ on its drawer row). */
+    val forgetAdb: ((String) -> Unit)? = null,
     val devices: () -> Unit = {},
     val trash: () -> Unit = {},
     val apps: () -> Unit = {},
@@ -155,7 +157,10 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
     var rootGranted by remember { mutableStateOf(RootRunner.granted()) }
     var jobs by remember { mutableIntStateOf(settings.concurrentJobs) }
     var perServer by remember { mutableIntStateOf(settings.jobsPerServer) }
-    val adb = com.ghostpanter.files.ui.adb.rememberSavedDevices()
+    val adbSaved = com.ghostpanter.files.ui.adb.rememberSavedDevices()
+    var adbGone by remember { mutableStateOf(emptySet<String>()) }
+    var adbConfirm by remember { mutableStateOf<String?>(null) }
+    val adb = adbSaved.filterNot { it in adbGone }
 
     fun go(fsId: String, path: String? = null) { vm.openFs(fsId, path); close() }
     fun askRoot(thenOpen: Boolean, forceReauth: Boolean = false) {
@@ -267,6 +272,7 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         hosted = { vm.screen = Screen.Servers; close() },
         openAdb = { go(com.ghostpanter.adb.AdbFs.idFor(it, false)) },
         adbTools = { vm.screen = Screen.AdbTools(it); close() },
+        forgetAdb = { adbConfirm = it },
         devices = { vm.screen = Screen.Devices; close() },
         trash = { vm.screen = Screen.Trash; close() },
         apps = { vm.screen = Screen.Apps; close() },
@@ -297,6 +303,27 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         },
     )
     DrawerBody(state, actions)
+    adbConfirm?.let { serial ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { adbConfirm = null },
+            title = { Text(t("移除此设备？", "Remove this device?")) },
+            text = {
+                Column {
+                    Text(com.ghostpanter.adb.AdbPool.name(serial) ?: t("未知设备", "Unknown device"), fontWeight = FontWeight.SemiBold)
+                    Text(serial, fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                    Spacer(Modifier.size(12.dp))
+                    Text(t("只删除本应用中的记录，不会取消目标设备上的配对。", "Only removes this app's record; the pairing on the target device is kept."))
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    adbConfirm = null; adbGone = adbGone + serial
+                    scope.launch(Dispatchers.IO) { com.ghostpanter.adb.AdbPool.forget(serial) }
+                }) { Text(t("移除", "Remove"), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { adbConfirm = null }) { Text(t("取消", "Cancel")) } },
+        )
+    }
 }
 
 /** Stateless drawer / side panel body (D 「HyperOS 清爽」: titled white groups on the gray canvas). */
@@ -387,7 +414,9 @@ fun DrawerBody(s: DrawerUiState, a: DrawerActions, modifier: Modifier = Modifier
 
         Group(t("ADB 设备", "ADB devices")) {
             s.adbDevices.forEach { (serial, label) ->
-                Item(if (com.ghostpanter.adb.usb.UsbAdb.isUsbSerial(serial)) Icons.Rounded.Usb else Icons.Rounded.PhoneAndroid, label, onClick = { a.openAdb(serial) },
+                val usbRow = com.ghostpanter.adb.usb.UsbAdb.isUsbSerial(serial)
+                Item(if (usbRow) Icons.Rounded.Usb else Icons.Rounded.PhoneAndroid, label, onClick = { a.openAdb(serial) },
+                    menuItems = a.forgetAdb?.takeIf { !usbRow }?.let { f -> listOf(t("移除设备", "Remove device") to { f(serial) }) } ?: emptyList(),
                     trailing = { IconButton(onClick = { a.adbTools(serial) }) { Icon(Icons.Rounded.Build, t("工具", "Tools"), Modifier.size(18.dp), tint = cs.outline) } })
                 Hair()
             }

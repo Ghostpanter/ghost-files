@@ -51,6 +51,20 @@ object AdbPool {
         owned.remove(serial)?.let { t -> Thread { runCatching { t.close() } }.start() }
     }
 
+    /**
+     * Forget a saved (wireless) device: drop it from the embedded scrcpy's saved list, close our
+     * pooled connection and clear its cached name / root flag. Only removes this app's record;
+     * the pairing on the target device is untouched. Call off the main thread.
+     */
+    fun forget(serial: String) {
+        val ctx = appCtx
+        Devices.parseAddress(serial)?.let { d -> if (ctx != null) runCatching { Devices.remove(ctx, d) } }
+        invalidate(serial)
+        devices.remove(serial)
+        names.remove(serial)
+        prefs()?.edit()?.remove("name:$serial")?.remove("root:$serial")?.apply()
+    }
+
     fun isConnected(serial: String): Boolean {
         if (UsbAdb.isUsbSerial(serial)) return UsbAdb.isLive(serial)
         if (owned[serial]?.alive == true) return true
