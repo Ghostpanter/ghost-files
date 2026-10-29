@@ -1,6 +1,12 @@
 package com.ghostpanter.files.ui.adb
 
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -87,6 +93,7 @@ suspend fun probe(serial: String): Boolean = withContext(Dispatchers.IO) {
 @Composable
 fun DevicesScreen(vm: MainViewModel) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     DevicesContent(
         rememberSavedDevices(), null,
         usb = rememberUsbTargets(),
@@ -101,6 +108,7 @@ fun DevicesScreen(vm: MainViewModel) {
                 val key = UsbAdb.keyOfSerial(serial)
                 UsbAdb.find(ctx, key)?.let { UsbAdb.requestPermission(ctx, it) }
             },
+            forget = { serial -> scope.launch(Dispatchers.IO) { AdbPool.forget(serial) } },
         ),
     )
 }
@@ -133,13 +141,23 @@ class DeviceCallbacks(
     val tools: (String) -> Unit,
     val shell: (String) -> Unit,
     val usbGrant: (String) -> Unit = {},
+    /** Removes a saved wireless device from this app (not the pairing on the target). */
+    val forget: (String) -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DevicesContent(savedAll: List<String>, preview: List<Pair<String, DevState>>?, cb: DeviceCallbacks, usb: List<UsbRow> = emptyList()) {
-    val saved = savedAll.filterNot { UsbAdb.isUsbSerial(it) }
+    // Serials removed on this page: hidden immediately (the saved list is otherwise only re-read on resume).
+    var gone by remember { mutableStateOf(emptySet<String>()) }
+    val saved = savedAll.filterNot { UsbAdb.isUsbSerial(it) || it in gone }
     var refresh by remember { mutableIntStateOf(0) }
+    // Latest probe result per serial (hoisted so "clear offline" knows which ones are offline).
+    val states = remember { mutableStateMapOf<String, DevState>() }
+    var confirmForget by remember { mutableStateOf<String?>(null) }
+    var confirmOffline by remember { mutableStateOf(false) }
+    fun forget(serial: String) { gone = gone + serial; states.remove(serial); cb.forget(serial) }
+    val offline = saved.filter { (states[it] ?: preview?.firstOrNull { p -> p.first == it }?.second) == DevState.OFFLINE }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -147,6 +165,9 @@ fun DevicesContent(savedAll: List<String>, preview: List<Pair<String, DevState>>
                 title = { Text(t("设备 / 投屏", "Devices / Mirror")) },
                 navigationIcon = { IconButton(onClick = cb.back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = {
+                    if (offline.isNotEmpty()) IconButton(onClick = { confirmOffline = true }) {
+                        Icon(Icons.Rounded.DeleteSweep, t("清除离线设备", "Remove offline devices"))
+                    }
                     IconButton(onClick = { refresh++ }) { Icon(Icons.Filled.Refresh, t("刷新", "Refresh")) }
                     TextButton(onClick = cb.pair, modifier = Modifier.padding(end = 4.dp)) {
                         Icon(Icons.Filled.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text(t("配对 / 连接", "Pair / connect"))
@@ -182,12 +203,13 @@ fun DevicesContent(savedAll: List<String>, preview: List<Pair<String, DevState>>
                 item(span = { GridItemSpan(maxLineSpan) }) { EmptyHint(cb.pair) }
             }
             items(saved, key = { it }) { serial ->
-                var state by remember(serial) { mutableStateOf(preview?.firstOrNull { it.first == serial }?.second ?: DevState.CHECKING) }
+                val state = states[serial] ?: preview?.firstOrNull { it.first == serial }?.second ?: DevState.CHECKING
                 if (preview == null) LaunchedEffect(serial, refresh) {
-                    state = DevState.CHECKING
-                    state = if (probe(serial)) DevState.ONLINE else DevState.OFFLINE
+                    states[serial] = DevState.CHECKING
+                    val ok = probe(serial)
+                    if (serial !in gone) states[serial] = if (ok) DevState.ONLINE else DevState.OFFLINE
                 }
-                DeviceCard(cb, serial, state)
+                DeviceCard(cb, serial, state, onRemove = { confirmForget = serial })
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(
@@ -197,6 +219,42 @@ fun DevicesContent(savedAll: List<String>, preview: List<Pair<String, DevState>>
                 )
             }
         }
+    }
+    confirmForget?.let { serial ->
+        AlertDialog(
+            onDismissRequest = { confirmForget = null },
+            title = { Text(t("移除此设备？", "Remove this device?")) },
+            text = {
+                Column {
+                    Text(AdbPool.name(serial) ?: t("未知设备", "Unknown device"), fontWeight = FontWeight.SemiBold)
+                    Text(serial, fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                    Spacer(Modifier.size(12.dp))
+                    Text(t("只删除本应用中的记录，不会取消目标设备上的配对。", "Only removes this app's record; the pairing on the target device is kept."))
+                }
+            },
+            confirmButton = { TextButton(onClick = { confirmForget = null; forget(serial) }) { Text(t("移除", "Remove"), color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { confirmForget = null }) { Text(t("取消", "Cancel")) } },
+        )
+    }
+    if (confirmOffline) {
+        val list = offline
+        AlertDialog(
+            onDismissRequest = { confirmOffline = false },
+            title = { Text(t("清除 ${list.size} 个离线设备？", "Remove ${list.size} offline device(s)?")) },
+            text = {
+                Column {
+                    list.take(8).forEach { s ->
+                        Text((AdbPool.name(s)?.let { "$it · " } ?: "") + s, fontSize = 13.sp, maxLines = 1)
+                    }
+                    if (list.size > 8) Text(t("…等 ${list.size} 个", "…${list.size} in total"), fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                    Spacer(Modifier.size(12.dp))
+                    Text(t("仅移除检测为离线的已保存设备；只删除本应用中的记录，不会取消目标设备上的配对。",
+                        "Only saved devices detected as offline are removed, and only from this app; pairings on the targets are kept."))
+                }
+            },
+            confirmButton = { TextButton(onClick = { confirmOffline = false; list.forEach { forget(it) } }) { Text(t("清除", "Remove"), color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { confirmOffline = false }) { Text(t("取消", "Cancel")) } },
+        )
     }
 }
 
@@ -216,10 +274,12 @@ private fun EmptyHint(onPair: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DeviceCard(cb: DeviceCallbacks, serial: String, state: DevState) {
+private fun DeviceCard(cb: DeviceCallbacks, serial: String, state: DevState, onRemove: (() -> Unit)? = null) {
     var paneMenu by remember { mutableStateOf(false) }
+    var moreMenu by remember { mutableStateOf(false) }
     val cs = MaterialTheme.colorScheme
-    Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large) {
+    val longPress = if (onRemove != null) Modifier.pointerInput(serial) { detectTapGestures(onLongPress = { onRemove() }) } else Modifier
+    Card(Modifier.fillMaxWidth().then(longPress), shape = MaterialTheme.shapes.large) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -242,6 +302,15 @@ private fun DeviceCard(cb: DeviceCallbacks, serial: String, state: DevState) {
                     color = if (online) cs.primary else cs.outline,
                     modifier = Modifier.background(if (online) cs.primaryContainer else cs.surfaceVariant, CircleShape).padding(horizontal = 10.dp, vertical = 3.dp),
                 )
+                if (onRemove != null) Box {
+                    IconButton(onClick = { moreMenu = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Rounded.MoreVert, t("更多", "More"), Modifier.size(20.dp), tint = cs.outline)
+                    }
+                    DropdownMenu(moreMenu, { moreMenu = false }) {
+                        DropdownMenuItem({ Text(t("移除设备", "Remove device")) }, { moreMenu = false; onRemove() },
+                            leadingIcon = { Icon(Icons.Rounded.Delete, null) })
+                    }
+                }
             }
             Spacer(Modifier.size(14.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
