@@ -4,6 +4,7 @@ import android.content.Context
 import com.ghostpanter.scrcpy.Adb
 import com.ghostpanter.scrcpy.Devices
 import com.ghostpanter.adb.usb.UsbAdb
+import io.github.muntashirakon.adb.SocketHook
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 
@@ -18,6 +19,11 @@ object AdbPool {
     @Volatile private var appCtx: Context? = null
     /** Test hook: replaces the real connection factory. */
     @Volatile var factory: ((serial: String) -> AdbTransport)? = null
+    /**
+     * Optional per-host socket configurer for new TCP connections (e.g. bind this device's own Wi‑Fi
+     * address to the Wi‑Fi network so a VPN cannot capture it). Null → default routing.
+     */
+    @Volatile var socketBinder: ((host: String) -> SocketHook.Configurer?)? = null
 
     fun init(ctx: Context) { appCtx = ctx.applicationContext; runCatching { UsbAdb.init(ctx) } }
 
@@ -42,7 +48,9 @@ object AdbPool {
         val adb = Adb.getInstance(ctx)
         adb.liveConnectionFor(d.host, d.port)?.let { return LibAdbTransport(it, owned = false) }
         owned[serial]?.let { if (it.alive) return it; runCatching { it.close() }; owned.remove(serial) }
-        val conn = adb.newConnection(d.host, d.port, null)
+        val cfg = runCatching { socketBinder?.invoke(d.host) }.getOrNull()
+        if (cfg != null) SocketHook.set(cfg)
+        val conn = try { adb.newConnection(d.host, d.port, null) } finally { if (cfg != null) SocketHook.clear() }
         return LibAdbTransport(conn, owned = true).also { owned[serial] = it }
     }
 

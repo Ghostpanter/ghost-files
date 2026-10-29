@@ -15,6 +15,7 @@ import com.ghostpanter.files.core.privilege.PairEvent
 import com.ghostpanter.files.core.privilege.PairPhase
 import com.ghostpanter.files.core.privilege.PairState
 import com.ghostpanter.files.core.privilege.PrivilegeStarter
+import com.ghostpanter.files.core.privilege.WirelessDebugHosts
 import com.ghostpanter.files.core.privilege.reducePair
 import com.ghostpanter.files.fs.IFileService
 import com.ghostpanter.files.fs.RootRunner
@@ -34,7 +35,6 @@ object EmbeddedPrivilege {
     private const val PREFS = "embedded_privilege"
     private const val KEY_PORT = "connect_port"
     private const val KEY_AUTO = "auto_start"
-    private const val LOCAL_HOST = "127.0.0.1"
 
     private val ctxRef = AtomicReference<Context?>(null)
     private val binderRef = AtomicReference<IPrivilegeService?>(null)
@@ -43,7 +43,10 @@ object EmbeddedPrivilege {
     private val listeners = CopyOnWriteArrayList<(PairState) -> Unit>()
 
     fun init(ctx: Context) {
-        ctxRef.set(ctx.applicationContext)
+        val app = ctx.applicationContext
+        ctxRef.set(app)
+        // Pooled re-connections to this phone's own Wi‑Fi address must bypass a VPN too.
+        AdbPool.socketBinder = { host -> if (WifiBypass.isOwnAddress(app, host)) WifiBypass.binderFor(app, host) else null }
         // Re-attach death recipient if we somehow still hold a binder (process restart clears it).
     }
 
@@ -126,13 +129,18 @@ object EmbeddedPrivilege {
         }.getOrDefault(false)
     }
 
+    /** Wi‑Fi/Ethernet is up — also when a VPN is the default network on top of it. */
     fun wifiConnected(ctx: Context): Boolean {
+        if (WifiBypass.wifiNetwork(ctx) != null) return true
         val cm = ctx.getSystemService(ConnectivityManager::class.java) ?: return false
         val n = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(n) ?: return false
         return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
             caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
     }
+
+    private fun fail(ctx: Context, base: String) =
+        emit(PairEvent.Fail(WirelessDebugHosts.failure(base, WifiBypass.vpnActive(ctx))))
 
     /**
      * Android 11+: show pairing-code notification and wait. Call [submitPairingCode] when the user replies.
@@ -212,13 +220,27 @@ object EmbeddedPrivilege {
         PrivilegeStarter.script(ctx.applicationInfo.sourceDir, ctx.packageName, android.os.Process.myUid(), showLog)
 
     private fun pairAndStart(ctx: Context, code: String) {
-        val endpoints = AdbDiscovery.discoverPairing(ctx, 8_000)
-        if (endpoints.isEmpty()) {
-            emit(PairEvent.Fail("找不到配对服务：请在「无线调试 → 使用配对码配对设备」弹窗打开时输入配对码")); return
+        val ep = discoverOwn(ctx, AdbDiscovery.PAIRING_TYPE, 8_000) ?: run {
+            fail(ctx, "找不到配对服务：请在「无线调试 → 使用配对码配对设备」弹窗打开时输入配对码"); return
         }
-        val ep = endpoints[0]
         val adb = Adb.getInstance(ctx)
-        adb.pairDevice(ep.host, ep.port, code)
+        // Same device: pair over loopback first (never tunnelled by a VPN), then the Wi‑Fi address bound to Wi‑Fi.
+        var last: Throwable? = null
+        var paired = false
+        for (host in WirelessDebugHosts.candidates(ep.host)) {
+            try {
+                WifiBypass.withBinding(ctx, host) { adb.pairDevice(host, ep.port, code) }
+                paired = true; break
+            } catch (t: Throwable) {
+                last = t
+                // A wrong code fails the SPAKE2 exchange on loopback too; retrying the LAN host cannot help.
+                if (WirelessDebugHosts.isLoopback(host) && !isReachError(t)) break
+            }
+        }
+        if (!paired) {
+            fail(ctx, "配对失败（端口 ${ep.port}）：${last?.message ?: last?.javaClass?.simpleName}。请确认配对码正确且配对弹窗仍打开")
+            return
+        }
         emit(PairEvent.PairSucceeded)
         PairingNotifier.cancel(ctx)
         connectAndStartServer(ctx, null)
@@ -233,22 +255,26 @@ object EmbeddedPrivilege {
             }
         }
         emit(PairEvent.ConnectPort(port))
+        var host: String
         try {
-            Adb.getInstance(ctx).connect(LOCAL_HOST, port)
+            host = connectAny(ctx, port, lastLanHost)
         } catch (t: Throwable) {
             // Wireless-debug port changes every time it is toggled; a saved port goes stale.
             val fresh = if (allowRediscover) discoverConnectPort(ctx)?.takeIf { it != port } else null
             if (fresh == null) {
-                emit(PairEvent.Fail("连接无线调试端口 $port 失败：${t.message ?: t.javaClass.simpleName}。未配对请点「配对并启动」"))
+                fail(ctx, "连接无线调试端口 $port 失败：${t.message ?: t.javaClass.simpleName}。未配对请点「配对并启动」")
                 return
             }
             port = fresh
             emit(PairEvent.ConnectPort(port))
-            Adb.getInstance(ctx).connect(LOCAL_HOST, port)
+            host = try { connectAny(ctx, port, lastLanHost) } catch (t2: Throwable) {
+                fail(ctx, "连接无线调试端口 $port 失败：${t2.message ?: t2.javaClass.simpleName}。未配对请点「配对并启动」")
+                return
+            }
         }
         setSavedPort(port)
-        val serial = Devices.Device(LOCAL_HOST, port).toString()
-        runCatching { Devices.upsert(ctx, Devices.Device(LOCAL_HOST, port)) }
+        val serial = Devices.Device(host, port).toString()
+        runCatching { Devices.upsert(ctx, Devices.Device(host, port)) }
         adbSerial.set(serial)
         emit(PairEvent.Connected)
         val runner = AdbShellRunner(transport = { AdbPool.transport(serial) }, root = false) {
@@ -257,9 +283,61 @@ object EmbeddedPrivilege {
         launchAndAwait(ctx, runner, "无线调试")
     }
 
+    /** LAN host of this phone's own wireless-debug service, from the last discovery (fallback target only). */
+    @Volatile private var lastLanHost: String? = null
+
     private fun discoverConnectPort(ctx: Context): Int? =
-        (AdbDiscovery.discoverConnect(ctx, LOCAL_HOST, 10_000)
-            ?: AdbDiscovery.discoverConnect(ctx, null, 5_000))?.port
+        discoverOwn(ctx, AdbDiscovery.CONNECT_TYPE, 10_000)?.port
+
+    /**
+     * mDNS lookup of this phone's own wireless-debug service. mDNS reports the Wi‑Fi address, never
+     * 127.0.0.1, so endpoints are matched against the device's interface addresses (other phones on the
+     * LAN are skipped). Default discovery first; with a VPN as default network, retry on the Wi‑Fi network.
+     */
+    private fun discoverOwn(ctx: Context, type: String, timeoutMs: Long): AdbDiscovery.Endpoint? {
+        val local = WifiBypass.localAddresses(ctx)
+        val own = java.util.function.Predicate<AdbDiscovery.Endpoint> { ep ->
+            local.isEmpty() || ep.host.substringBefore('%') in local || WirelessDebugHosts.isLoopback(ep.host)
+        }
+        var found = AdbDiscovery.discover(ctx, type, null, own, timeoutMs, true)
+        if (found.isEmpty()) {
+            val wifi = WifiBypass.wifiNetwork(ctx)
+            if (wifi != null && Build.VERSION.SDK_INT >= 33) {
+                found = AdbDiscovery.discover(ctx, type, wifi, own, timeoutMs / 2, true)
+            }
+        }
+        if (found.isEmpty()) {
+            // Interface list may miss the address on some ROMs: accept any service, but only as a last resort.
+            val any = AdbDiscovery.discover(ctx, type, null, null, 4_000, false)
+            found = WirelessDebugHosts.ownEndpoints(any.map { WirelessDebugHosts.Ep(it.host, it.port) }, local)
+                .mapNotNull { e -> any.firstOrNull { it.host == e.host && it.port == e.port } }
+        }
+        return found.firstOrNull()?.also { if (!WirelessDebugHosts.isLoopback(it.host)) lastLanHost = it.host }
+    }
+
+    /** Connect to own adbd: 127.0.0.1 first (VPN-proof), then the Wi‑Fi address with sockets bound to Wi‑Fi. */
+    private fun connectAny(ctx: Context, port: Int, lanHost: String?): String {
+        var last: Throwable? = null
+        for (host in WirelessDebugHosts.candidates(lanHost)) {
+            try {
+                WifiBypass.withBinding(ctx, host) { Adb.getInstance(ctx).connect(host, port) }
+                return host
+            } catch (t: Throwable) {
+                last = t
+            }
+        }
+        throw last ?: IOException("connect failed")
+    }
+
+    private fun isReachError(t: Throwable): Boolean {
+        var c: Throwable? = t
+        while (c != null) {
+            if (c is java.net.ConnectException || c is java.net.SocketTimeoutException ||
+                c is java.net.NoRouteToHostException || (c.message ?: "").contains("cannot reach")) return true
+            c = c.cause
+        }
+        return false
+    }
 
     /**
      * Runs the detached starter through [runner] (adb shell or su), waits for the binder and, on failure,

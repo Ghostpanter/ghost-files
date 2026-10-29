@@ -99,6 +99,32 @@ public final class AdbDiscovery {
             String preferredHost,
             long timeoutMs,
             boolean stopOnFirst) throws InterruptedException {
+        return discover(ctx, serviceType, null, null, preferredHost, timeoutMs, stopOnFirst);
+    }
+
+    /**
+     * Discovery restricted to [network] (API 33+; ignored below) and filtered by [accept]. Used by the
+     * built-in privilege so a VPN that is the default network does not hide the Wi‑Fi mDNS services,
+     * and so another phone's wireless-debugging service on the same LAN is not picked.
+     */
+    public static List<Endpoint> discover(
+            Context ctx,
+            String serviceType,
+            android.net.Network network,
+            java.util.function.Predicate<Endpoint> accept,
+            long timeoutMs,
+            boolean stopOnFirst) throws InterruptedException {
+        return discover(ctx, serviceType, network, accept, null, timeoutMs, stopOnFirst);
+    }
+
+    private static List<Endpoint> discover(
+            Context ctx,
+            String serviceType,
+            android.net.Network network,
+            java.util.function.Predicate<Endpoint> accept,
+            String preferredHost,
+            long timeoutMs,
+            boolean stopOnFirst) throws InterruptedException {
         if (timeoutMs <= 0) return Collections.emptyList();
         Context app = ctx.getApplicationContext();
         NsdManager nsd = (NsdManager) app.getSystemService(Context.NSD_SERVICE);
@@ -158,6 +184,10 @@ public final class AdbDiscovery {
                                         ep.host, hostnameOf(resolved), preferredHost);
                                 return;
                             }
+                            if (accept != null && !accept.test(ep)) {
+                                Log.i("adb discovery skip %s (filter)", ep);
+                                return;
+                            }
                             String key = ep.host + "|" + ep.port;
                             found.put(key, ep);
                             Log.i("adb discovery resolved %s", ep);
@@ -172,7 +202,12 @@ public final class AdbDiscovery {
         listenerRef.set(listener);
 
         try {
-            nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener);
+            if (network != null && Build.VERSION.SDK_INT >= 33) {
+                nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, network,
+                        Runnable::run, listener);
+            } else {
+                nsd.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener);
+            }
             done.await(timeoutMs, TimeUnit.MILLISECONDS);
         } finally {
             try {

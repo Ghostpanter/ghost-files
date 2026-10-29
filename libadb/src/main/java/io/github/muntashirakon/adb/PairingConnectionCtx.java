@@ -121,6 +121,7 @@ public final class PairingConnectionCtx implements Closeable {
     private void setupTlsConnection() throws IOException {
         Socket socket = new Socket();
         try {
+            SocketHook.apply(socket);
             socket.connect(new InetSocketAddress(mHost, mPort), CONNECT_TIMEOUT_MS);
             socket.setSoTimeout(IO_TIMEOUT_MS);
             socket.setTcpNoDelay(true);

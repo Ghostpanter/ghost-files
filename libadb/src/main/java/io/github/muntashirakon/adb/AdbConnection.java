@@ -156,6 +156,7 @@ public class AdbConnection implements Closeable, AdbStream.Transport {
             // the OS default TCP timeout - minutes on a mobile network -
             // with no way to cancel. A target that is off or on another
             // network is the common case, not an edge case, so bound it.
+            SocketHook.apply(socket);
             socket.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
         } catch (IOException e) {
             try { socket.close(); } catch (IOException ignored) {}
