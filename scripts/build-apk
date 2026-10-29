@@ -85,10 +85,19 @@ aligned_apk="$OUT_DIR/.coloros-aligned.apk"
     --ks "$KEYSTORE_PATH" --ks-key-alias "$KEY_ALIAS" \
     --ks-pass env:KEYSTORE_PASS --key-pass env:KEY_PASS \
     --v1-signing-enabled true --v2-signing-enabled true \
+    --v1-signer-name CERT \
     --v3-signing-enabled false --v4-signing-enabled false \
     --min-sdk-version 28 \
     --out "$APK" "$aligned_apk"
 rm -f "$clean_apk" "$aligned_apk" "${APK}.idsig"
+
+# Many OEM installers (ColorOS/MIUI/HarmonyOS-style parsers) only look for
+# META-INF/CERT.SF + CERT.RSA and report "安装包没有签名文件" otherwise.
+meta=$(unzip -Z1 "$APK" 'META-INF/*' 2>/dev/null || true)
+for f in META-INF/CERT.SF META-INF/CERT.RSA META-INF/MANIFEST.MF; do
+    printf '%s\n' "$meta" | grep -qx "$f" || { echo "build-apk: missing $f in signed APK" >&2; printf '%s\n' "$meta" >&2; exit 1; }
+done
+echo "build-apk: META-INF -> $(printf '%s\n' "$meta" | tr '\n' ' ')"
 
 echo "build-apk: apksigner verify --min-sdk-version 23 (require V1+V2)"
 v_out=$("$APKSIGNER" verify --verbose --min-sdk-version 23 "$APK" 2>&1) || { printf '%s\n' "$v_out" >&2; exit 1; }

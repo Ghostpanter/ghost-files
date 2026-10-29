@@ -451,8 +451,12 @@ fun ApkScreen(vm: MainViewModel, activity: MainActivity, s: Screen.Apk) {
             @Suppress("DEPRECATION")
             installed?.let { kv(t("已安装版本", "Installed"), "${it.versionName} (${if (Build.VERSION.SDK_INT >= 28) it.longVersionCode else it.versionCode.toLong()})") }
             Spacer(Modifier.height(12.dp))
-            Button(onClick = { activity.installApk(s.file) }, modifier = Modifier.fillMaxWidth()) {
-                Text(if (installed != null) t("更新安装", "Update") else t("安装", "Install"))
+            val prog = activity.apkInstallProgress
+            Button(onClick = { activity.installApk(s.file) }, enabled = prog == null, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    if (prog != null) t("正在写入安装会话 ", "Staging ") + "${(prog * 100).toInt()}%"
+                    else if (installed != null) t("更新安装", "Update") else t("安装", "Install")
+                )
             }
             val perms = info.requestedPermissions?.toList().orEmpty()
             if (perms.isNotEmpty()) {

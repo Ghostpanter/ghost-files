@@ -68,6 +68,64 @@ object BundleInstaller {
         }
     }
 
+    /** The installer returned a definite status (as opposed to the session failing to stage). */
+    class InstallerStatus(val status: Int, message: String) : IOException(message)
+
+    /**
+     * Installs one plain .apk through a PackageInstaller session: the bytes are copied (and fsync'd) into the
+     * session by us, so OEM package installers never re-read the file through a content:// URI — the path that
+     * makes some ROMs report "安装包没有签名文件" for a valid V1+V2 APK. Files that are not directly readable
+     * are first copied into cache.
+     */
+    suspend fun installApkFile(ctx: Context, file: File, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
+        if (!canRequestInstalls(ctx)) throw NeedsInstallPermission()
+        val src = withContext(Dispatchers.IO) { readableCopy(ctx, file) }
+        val pi = ctx.packageManager.packageInstaller
+        val total = src.length().coerceAtLeast(1)
+        val sessionId = withContext(Dispatchers.IO) {
+            if (src.length() <= 0) throw IOException(t("安装包为空", "APK is empty"))
+            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+            @Suppress("DEPRECATION")
+            runCatching { ctx.packageManager.getPackageArchiveInfo(src.path, 0)?.packageName }.getOrNull()?.let { params.setAppPackageName(it) }
+            params.setSize(src.length())
+            params.setInstallReason(android.content.pm.PackageManager.INSTALL_REASON_USER)
+            if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            val id = pi.createSession(params)
+            try {
+                pi.openSession(id).use { s ->
+                    var done = 0L
+                    src.inputStream().use { ins ->
+                        s.openWrite("base.apk", 0, src.length()).use { out ->
+                            copy(ins, out) { n -> done += n; onProgress(done, total); s.setStagingProgress(done.toFloat() / total) }
+                            s.fsync(out)
+                        }
+                    }
+                    if (done != src.length()) throw IOException("short copy $done / ${src.length()}")
+                }
+            } catch (t: Throwable) {
+                runCatching { pi.abandonSession(id) }
+                throw t
+            }
+            id
+        }
+        commit(ctx, pi, sessionId)
+    }
+
+    /** [file] itself when we can read it, else a copy under cache/install/. */
+    fun readableCopy(ctx: Context, file: File): File {
+        if (file.canRead() && runCatching { file.inputStream().use { it.read() } }.isSuccess) return file
+        val dir = File(ctx.cacheDir, "install").apply { mkdirs() }
+        val out = File(dir, safe(file.name).ifEmpty { "app.apk" })
+        val sh = elevated()?.second ?: throw IOException(t("无法读取 ", "Cannot read ") + file.path)
+        val q = "'" + file.path.replace("'", "'\\''") + "'"
+        val p = sh.start("cat $q")
+        runCatching { p.outputStream.close() }
+        p.inputStream.use { ins -> out.outputStream().use { o -> ins.copyTo(o, 256 * 1024) } }
+        p.waitFor(2, TimeUnit.MINUTES)
+        if (out.length() <= 0) throw IOException(t("无法读取 ", "Cannot read ") + file.path)
+        return out
+    }
+
     // ---------------------------------------------------------------- PackageInstaller session
 
     private suspend fun installWithSession(ctx: Context, bundle: ApkBundle, entries: List<ApkBundle.Split>, onProgress: (Long, Long) -> Unit) {
@@ -118,7 +176,7 @@ object BundleInstaller {
                         done(c, this)
                         val msg = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
                         val why = msg?.let { com.ghostpanter.files.core.apk.InstallSource.explain(it) }
-                        if (cont.isActive) cont.resumeWithException(IOException(statusText(status) + (msg?.let { " · $it" } ?: "") + (why?.let { "\n$it" } ?: "")))
+                        if (cont.isActive) cont.resumeWithException(InstallerStatus(status, statusText(status) + (msg?.let { " · $it" } ?: "") + (why?.let { "\n$it" } ?: "")))
                     }
                 }
             }

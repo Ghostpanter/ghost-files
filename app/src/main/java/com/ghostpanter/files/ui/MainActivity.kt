@@ -22,6 +22,9 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -201,15 +204,71 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** In-app single-APK install progress (0..1) for the APK screen; null when idle. */
+    var apkInstallProgress by mutableStateOf<Float?>(null)
+        private set
+
+    /**
+     * Installs a plain .apk. Primary path: PackageInstaller session with the bytes copied in by us (no content://
+     * re-read by the OEM installer, which on some ROMs yields "安装包没有签名文件"). Falls back to the system
+     * installer (ACTION_VIEW) only when the session cannot be created/staged or is blocked by the ROM.
+     */
     fun installApk(f: File) {
-        val i = Intent(Intent.ACTION_VIEW).setDataAndType(uriFor(f), "application/vnd.android.package-archive")
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (apkInstallProgress != null) return
         if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
-            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            runCatching { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
             Toast.makeText(this, t("请允许安装未知应用后重试", "Allow installing unknown apps, then retry"), Toast.LENGTH_LONG).show()
             return
         }
-        startActivity(i)
+        apkInstallProgress = 0f
+        lifecycleScope.launch {
+            try {
+                com.ghostpanter.files.install.BundleInstaller.installApkFile(this@MainActivity, f) { d, tot ->
+                    runOnUiThread { apkInstallProgress = if (tot > 0) d.toFloat() / tot else 0f }
+                }
+                Toast.makeText(this@MainActivity, t("安装完成", "Installed"), Toast.LENGTH_SHORT).show()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: com.ghostpanter.files.install.BundleInstaller.InstallerStatus) {
+                when (e.status) {
+                    android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> Unit
+                    android.content.pm.PackageInstaller.STATUS_FAILURE_BLOCKED -> installApkViaSystem(f)
+                    else -> Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("GhostInstall", "session install failed, falling back to ACTION_VIEW", e)
+                installApkViaSystem(f)
+            } finally {
+                apkInstallProgress = null
+            }
+        }
+    }
+
+    /** Fallback: hand the APK to the system installer through FileProvider (copied to cache if not shareable). */
+    private fun installApkViaSystem(f: File) {
+        lifecycleScope.launch {
+            val uri = runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val src = com.ghostpanter.files.install.BundleInstaller.readableCopy(this@MainActivity, f)
+                    runCatching { uriFor(src) }.getOrElse {
+                        val dir = File(cacheDir, "install").apply { mkdirs() }
+                        val out = File(dir, src.name)
+                        if (out.canonicalPath != src.canonicalPath) src.copyTo(out, overwrite = true)
+                        uriFor(out)
+                    }
+                }
+            }.getOrElse { Toast.makeText(this@MainActivity, it.message, Toast.LENGTH_LONG).show(); return@launch }
+            val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            i.clipData = android.content.ClipData.newRawUri("apk", uri)
+            @Suppress("DEPRECATION")
+            packageManager.queryIntentActivities(i, PackageManager.MATCH_DEFAULT_ONLY).forEach {
+                runCatching { grantUriPermission(it.activityInfo.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            }
+            try { startActivity(i) } catch (e: ActivityNotFoundException) {
+                Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     fun pickSafTree(androidData: Boolean) {
