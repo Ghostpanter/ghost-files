@@ -98,6 +98,26 @@ class FakeAdb : AdbTransport {
                         }
                         serverOut.write(r); serverOut.flush()
                     }
+                    "LIST" -> {
+                        val dir = File(arg)
+                        if (!dir.isDirectory) { fail("Not a directory"); continue }
+                        val children = dir.listFiles() ?: emptyArray()
+                        for (f in children) {
+                            val name = f.name.toByteArray(Charsets.UTF_8)
+                            val dent = ByteArray(20)
+                            "DENT".toByteArray().copyInto(dent)
+                            SyncWire.le32(dent, 4, if (f.isDirectory) 0x41ed else 0x81a4)
+                            SyncWire.le32(dent, 8, f.length().toInt())
+                            SyncWire.le32(dent, 12, (f.lastModified() / 1000).toInt())
+                            SyncWire.le32(dent, 16, name.size)
+                            serverOut.write(dent)
+                            serverOut.write(name)
+                        }
+                        // Empty-name DENT ends the listing (AOSP adbd convention).
+                        val end = ByteArray(20)
+                        "DENT".toByteArray().copyInto(end)
+                        serverOut.write(end); serverOut.flush()
+                    }
                     else -> return
                 }
             }

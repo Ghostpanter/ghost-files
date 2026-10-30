@@ -58,6 +58,82 @@ internal object SyncWire {
         val mode = readLe32(r, 4); val size = readLe32(r, 8).toLong() and 0xffffffffL; val mtime = readLe32(r, 12).toLong() and 0xffffffffL
         return if (mode == 0 && size == 0L && mtime == 0L) null else Triple(mode, size, mtime)
     }
+
+    /**
+     * LIST (v1): directory entries as (name, mode, size, mtimeSec). Skips "." / "..".
+     * Same adbd channel as RECV/SEND — use this for browsing when shell find+stat is empty
+     * or unreliable on OEM builds.
+     */
+    fun list(ch: AdbChannel, path: String): List<Quad> {
+        request(ch, "LIST", path)
+        // DENT is 20 bytes; FAIL/DONE are 8. Read 8 first, then the rest for DENT.
+        val head = ByteArray(8)
+        val rest = ByteArray(12)
+        val out = ArrayList<Quad>()
+        while (true) {
+            readFully(ch.input, head)
+            val tag = String(head, 0, 4, Charsets.US_ASCII)
+            when (tag) {
+                "DENT" -> {
+                    readFully(ch.input, rest)
+                    val mode = readLe32(head, 4)
+                    val size = readLe32(rest, 0).toLong() and 0xffffffffL
+                    val mtime = readLe32(rest, 4).toLong() and 0xffffffffL
+                    val namelen = readLe32(rest, 8)
+                    if (namelen == 0) return out
+                    if (namelen < 0 || namelen > 1024) throw IOException("sync DENT namelen $namelen")
+                    val nb = ByteArray(namelen)
+                    readFully(ch.input, nb)
+                    val name = String(nb, Charsets.UTF_8)
+                    if (name != "." && name != "..") out += Quad(name, mode, size, mtime)
+                }
+                "FAIL" -> fail(ch.input, readLe32(head, 4))
+                "DONE" -> return out // some older builds
+                else -> throw IOException("unexpected sync reply $tag")
+            }
+        }
+    }
+
+    /** name, mode, size, mtimeSec — local to avoid a new public type in core. */
+    data class Quad(val name: String, val mode: Int, val size: Long, val mtimeSec: Long)
+
+    // Unix mode bits as hex (Kotlin has no 0o octal literals in this toolchain).
+    const val S_IFMT = 0xF000
+    const val S_IFIFO = 0x1000
+    const val S_IFCHR = 0x2000
+    const val S_IFDIR = 0x4000
+    const val S_IFBLK = 0x6000
+    const val S_IFREG = 0x8000
+    const val S_IFLNK = 0xA000
+    const val S_IFSOCK = 0xC000
+
+    fun isDir(mode: Int) = (mode and S_IFMT) == S_IFDIR
+    fun isLink(mode: Int) = (mode and S_IFMT) == S_IFLNK
+    fun isReg(mode: Int) = (mode and S_IFMT) == S_IFREG
+
+    /** ls-style mode string from a sync/stat mode word. */
+    fun modeString(mode: Int): String {
+        val t = when {
+            isDir(mode) -> 'd'
+            isLink(mode) -> 'l'
+            isReg(mode) -> '-'
+            (mode and S_IFMT) == S_IFIFO -> 'p'
+            (mode and S_IFMT) == S_IFCHR -> 'c'
+            (mode and S_IFMT) == S_IFBLK -> 'b'
+            (mode and S_IFMT) == S_IFSOCK -> 's'
+            else -> '?'
+        }
+        val chars = CharArray(10)
+        chars[0] = t
+        val bits = intArrayOf(0x100, 0x80, 0x40, 0x20, 0x10, 0x8, 0x4, 0x2, 0x1)
+        val letters = charArrayOf('r', 'w', 'x', 'r', 'w', 'x', 'r', 'w', 'x')
+        for (i in 0 until 9) chars[i + 1] = if ((mode and bits[i]) != 0) letters[i] else '-'
+        // sticky / setuid / setgid
+        if ((mode and 0x800) != 0) chars[3] = if (chars[3] == 'x') 's' else 'S'
+        if ((mode and 0x400) != 0) chars[6] = if (chars[6] == 'x') 's' else 'S'
+        if ((mode and 0x200) != 0) chars[9] = if (chars[9] == 'x') 't' else 'T'
+        return String(chars)
+    }
 }
 
 /** RECV as an InputStream: DATA chunks are handed out as they arrive; closes the channel at the end. */

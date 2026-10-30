@@ -73,7 +73,7 @@ class SftpFs(
             c.addHostKeyVerifier(verifier)
             c.connectTimeout = timeouts.connectMs
             c.timeout = timeouts.readMs
-            c.socketFactory = LanSocketBinder.Factory(timeouts.connectMs)
+            c.socketFactory = LanSocketBinder.Factory(timeouts.connectMs, defaultHost = config.host)
             if (config.jumpHost.isNotBlank()) {
                 val jcfg = sshConfig().also { it.keepAliveProvider = KeepAliveProvider.KEEP_ALIVE }
                 val j = SSHClient(jcfg)
@@ -90,7 +90,7 @@ class SftpFs(
                 })
                 j.connectTimeout = timeouts.connectMs
                 j.timeout = timeouts.readMs
-                j.socketFactory = LanSocketBinder.Factory(timeouts.connectMs)
+                j.socketFactory = LanSocketBinder.Factory(timeouts.connectMs, defaultHost = config.jumpHost)
                 LanSocketBinder.withDestination(config.jumpHost) {
                     j.connect(config.jumpHost, if (config.jumpPort > 0) config.jumpPort else 22)
                 }

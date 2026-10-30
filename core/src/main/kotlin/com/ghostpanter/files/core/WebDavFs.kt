@@ -62,16 +62,7 @@ class WebDavFs(
         .retryOnConnectionFailure(true)
         .followRedirects(true)
         // Dedicated client: bind LAN sockets to Wi‑Fi when a VPN is up (host known from config).
-        .socketFactory(object : javax.net.SocketFactory() {
-            private val inner = LanSocketBinder.Factory(timeouts.connectMs)
-            override fun createSocket() = inner.createSocket().also { LanSocketBinder.apply(it, config.host) }
-            override fun createSocket(host: String, port: Int) = inner.createSocket(host, port)
-            override fun createSocket(host: String, port: Int, localHost: java.net.InetAddress?, localPort: Int) =
-                inner.createSocket(host, port, localHost, localPort)
-            override fun createSocket(host: java.net.InetAddress, port: Int) = inner.createSocket(host, port)
-            override fun createSocket(address: java.net.InetAddress, port: Int, localAddress: java.net.InetAddress?, localPort: Int) =
-                inner.createSocket(address, port, localAddress, localPort)
-        })
+        .socketFactory(LanSocketBinder.Factory(timeouts.connectMs, defaultHost = config.host))
         .addInterceptor { chain ->
             val req = chain.request()
             if (config.username.isNotEmpty() && !config.anonymous) {

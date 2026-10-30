@@ -6,8 +6,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
-import java.net.InetSocketAddress
-import java.net.Socket
 import com.ghostpanter.files.core.net.LanSocketBinder
 
 /**
@@ -26,14 +24,8 @@ object PortSweep {
 
     val tcp = Connector { host, port, timeoutMs ->
         try {
-            LanSocketBinder.withDestination(host) {
-                Socket().use { s ->
-                    s.tcpNoDelay = true
-                    LanSocketBinder.apply(s, host)
-                    s.connect(InetSocketAddress(host, port), timeoutMs)
-                    true
-                }
-            }
+            // Same path as SMB/FTP: Network.socketFactory + Wi‑Fi DNS + bindSocket under VPN.
+            LanSocketBinder.Factory(timeoutMs, defaultHost = host).createSocket(host, port).use { true }
         } catch (e: Exception) {
             false
         }

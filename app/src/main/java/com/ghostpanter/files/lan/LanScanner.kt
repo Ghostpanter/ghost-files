@@ -9,6 +9,7 @@ import android.net.NetworkCapabilities
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
+import android.os.Build
 import com.ghostpanter.files.core.lan.LanHost
 import com.ghostpanter.files.core.lan.LanResults
 import com.ghostpanter.files.core.lan.LanService
@@ -18,6 +19,7 @@ import com.ghostpanter.files.core.lan.NetBios
 import com.ghostpanter.files.core.lan.PortSweep
 import com.ghostpanter.files.core.lan.ServiceProbe
 import com.ghostpanter.files.core.lan.Subnet
+import com.ghostpanter.files.privilege.WifiBypass
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,6 +36,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.Inet4Address
+import java.net.NetworkInterface
 import kotlin.coroutines.resume
 
 data class ScanState(
@@ -49,6 +52,10 @@ data class ScanState(
  * Finds file servers on the current Wi-Fi/Ethernet LAN with three methods in parallel:
  * mDNS/DNS-SD (NsdManager), NetBIOS node status (UDP 137) and a bounded TCP sweep of the own /24.
  * Everything runs on IO dispatchers; the UI only observes [state]. [stop] cancels all of it.
+ *
+ * Under a full-tunnel VPN the default network is the tunnel (only VPN addresses). Discovery always
+ * prefers the underlying Wi‑Fi / Ethernet [Network] (runtime [WifiBypass.vpnActive] check) so the
+ * sweep subnet and mDNS/NetBIOS traffic stay on the real LAN.
  */
 class LanScanner(private val context: Context, private val scope: CoroutineScope) {
     private val _state = MutableStateFlow(ScanState())
@@ -131,6 +138,8 @@ class LanScanner(private val context: Context, private val scope: CoroutineScope
         val nsd = context.getSystemService(Context.NSD_SERVICE) as NsdManager
         val found = Channel<Pair<NsdServiceInfo, LanServiceKind>>(Channel.UNLIMITED)
         val listeners = ArrayList<NsdManager.DiscoveryListener>()
+        // Under VPN, scope discovery to the Wi‑Fi network (API 33+) so mDNS is not swallowed by the tunnel.
+        val wifiNet = if (WifiBypass.vpnActive(context)) WifiBypass.wifiNetwork(context) else null
         for ((type, kind) in mdnsTypes) {
             val l = object : NsdManager.DiscoveryListener {
                 override fun onServiceFound(info: NsdServiceInfo) { found.trySend(info to kind) }
@@ -140,7 +149,14 @@ class LanScanner(private val context: Context, private val scope: CoroutineScope
                 override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
                 override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
             }
-            runCatching { nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, l); listeners.add(l) }
+            runCatching {
+                if (wifiNet != null && Build.VERSION.SDK_INT >= 33) {
+                    nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, wifiNet, Runnable::run, l)
+                } else {
+                    nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, l)
+                }
+                listeners.add(l)
+            }
         }
         val resolver = launch {
             for ((info, kind) in found) {
@@ -175,26 +191,44 @@ class LanScanner(private val context: Context, private val scope: CoroutineScope
 
     // ------------------------------------------------------------------ network
 
-    /** IPv4 address and prefix of the active Wi-Fi / Ethernet network. */
+    /**
+     * IPv4 address and prefix of the underlying Wi‑Fi / Ethernet network — never the VPN tunnel.
+     * Runtime VPN detection only changes which network we pick; without a VPN the path matches the old logic.
+     */
     private fun localIpv4(): Pair<String, Int>? {
+        // 1) Explicit Wi‑Fi / Ethernet Network (excludes TRANSPORT_VPN), works under full-tunnel VPN.
+        WifiBypass.wifiIpv4(context)?.let { return it }
+
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null
         val candidates = buildList {
-            cm.activeNetwork?.let { add(it) }
+            // Prefer non-VPN LAN networks; activeNetwork under VPN is the tunnel and may also
+            // advertise WIFI as an underlying transport — skip any network that has TRANSPORT_VPN.
             @Suppress("DEPRECATION") addAll(cm.allNetworks)
+            cm.activeNetwork?.let { add(it) }
         }.distinct()
         for (n in candidates) {
             val caps = cm.getNetworkCapabilities(n) ?: continue
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue
             val lan = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
             if (!lan) continue
             val la: LinkAddress = cm.getLinkProperties(n)?.linkAddresses?.firstOrNull { it.address is Inet4Address } ?: continue
             val ip = la.address.hostAddress ?: continue
             return ip to la.prefixLength
         }
-        // Hotspot / some ROMs: fall back to any private IPv4 on an up interface.
+        // Hotspot / some ROMs: fall back to private IPv4 on a LAN-looking interface (never tun/ppp/wg).
         return runCatching {
-            java.net.NetworkInterface.getNetworkInterfaces().toList().filter { it.isUp && !it.isLoopback }
-                .flatMap { it.interfaceAddresses }.firstOrNull { it.address is Inet4Address && Subnet.isPrivate(it.address.hostAddress ?: "") }
-                ?.let { (it.address.hostAddress ?: return@let null) to it.networkPrefixLength.toInt() }
+            NetworkInterface.getNetworkInterfaces().toList()
+                .filter { it.isUp && !it.isLoopback && !isLikelyVpnOrMobile(it.name) }
+                .flatMap { ni -> ni.interfaceAddresses.map { ni to it } }
+                .firstOrNull { (_, ia) -> ia.address is Inet4Address && Subnet.isPrivate(ia.address.hostAddress ?: "") }
+                ?.let { (_, ia) -> (ia.address.hostAddress ?: return@let null) to ia.networkPrefixLength.toInt() }
         }.getOrNull()
+    }
+
+    private fun isLikelyVpnOrMobile(name: String): Boolean {
+        val n = name.lowercase()
+        return n.startsWith("tun") || n.startsWith("ppp") || n.startsWith("wg") ||
+            n.startsWith("ipsec") || n.startsWith("pptp") || n.contains("vpn") ||
+            n.startsWith("rmnet") || n.startsWith("ccmni")
     }
 }

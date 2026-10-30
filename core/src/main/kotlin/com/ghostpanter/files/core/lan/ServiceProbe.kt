@@ -1,7 +1,6 @@
 package com.ghostpanter.files.core.lan
 
 import java.io.InputStream
-import java.net.InetSocketAddress
 import java.net.Socket
 import com.ghostpanter.files.core.net.LanSocketBinder
 import java.security.cert.X509Certificate
@@ -29,21 +28,14 @@ object ServiceProbe {
 
     /** First line the server sends after connect (FTP "220 …", SSH "SSH-2.0-…"). */
     fun banner(host: String, port: Int, timeoutMs: Int): String? = runCatching {
-        LanSocketBinder.withDestination(host) {
-            Socket().use { s ->
-                LanSocketBinder.apply(s, host)
-                s.connect(InetSocketAddress(host, port), timeoutMs)
-                s.soTimeout = timeoutMs
-                readLine(s.getInputStream(), 512)
-            }
+        LanSocketBinder.Factory(timeoutMs, defaultHost = host).createSocket(host, port).use { s ->
+            s.soTimeout = timeoutMs
+            readLine(s.getInputStream(), 512)
         }
     }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
 
     fun http(host: String, port: Int, tls: Boolean, timeoutMs: Int): LanService? = runCatching {
-        LanSocketBinder.withDestination(host) {
-        val raw = Socket()
-        LanSocketBinder.apply(raw, host)
-        raw.connect(InetSocketAddress(host, port), timeoutMs)
+        val raw = LanSocketBinder.Factory(timeoutMs, defaultHost = host).createSocket(host, port)
         raw.soTimeout = timeoutMs
         val s: Socket = if (tls) {
             // Probe only (no credentials are sent), so any certificate is acceptable here; the real
@@ -56,7 +48,6 @@ object ServiceProbe {
             val req = "OPTIONS / HTTP/1.1\r\nHost: $host:$port\r\nUser-Agent: DualPane-LanScan\r\nConnection: close\r\n\r\n"
             it.getOutputStream().apply { write(req.toByteArray(Charsets.ISO_8859_1)); flush() }
             parseHttpHead(it.getInputStream(), port, tls)
-        }
         }
     }.getOrNull()
 

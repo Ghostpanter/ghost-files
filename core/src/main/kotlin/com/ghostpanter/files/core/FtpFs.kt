@@ -59,7 +59,7 @@ class FtpFs(
         c.setControlKeepAliveTimeout(Duration.ofSeconds(timeouts.keepAliveSec.toLong()))
         c.setControlKeepAliveReplyTimeout(Duration.ofSeconds(10))
         c.bufferSize = 256 * 1024
-        c.setSocketFactory(LanSocketBinder.Factory(timeouts.connectMs))
+        c.setSocketFactory(LanSocketBinder.Factory(timeouts.connectMs, defaultHost = config.host))
         try {
             return LanSocketBinder.withDestination(config.host) {
                 c.connect(config.host, config.effectivePort)

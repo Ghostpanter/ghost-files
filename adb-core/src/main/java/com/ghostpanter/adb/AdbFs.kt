@@ -1,6 +1,7 @@
 package com.ghostpanter.adb
 
 import com.ghostpanter.files.core.Capability
+import com.ghostpanter.files.core.FileEntry
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.ShellFs
 import com.ghostpanter.files.core.VPath
@@ -30,6 +31,65 @@ class AdbFs(
     override val homePath: String get() = if (root) "/" else "/sdcard"
 
     override fun has(c: Capability): Boolean = c in capabilities
+
+    /**
+     * Prefer adb sync LIST (same path as push/pull). Shell find+stat can return an empty
+     * listing on some OEM / SELinux setups while RECV/SEND still work — that showed up as
+     * "browse empty, transfer OK". Root targets still use the shell (sync is shell-uid).
+     */
+    override fun list(path: String, onChunk: ((List<FileEntry>) -> Unit)?): List<FileEntry> {
+        val dir = VPath.normalize(path)
+        if (!root) {
+            val sync = runCatching { listViaSync(dir) }.getOrNull()
+            if (sync != null) {
+                onChunk?.invoke(sync)
+                return sync
+            }
+        }
+        return shell.list(dir, onChunk)
+    }
+
+    override fun stat(path: String): FileEntry? {
+        val p = VPath.normalize(path)
+        if (!root) {
+            runCatching { device.statSync(p) }.getOrNull()?.let { (mode, size, mtime) ->
+                val name = if (p == "/" || p.isEmpty()) "/" else VPath.name(p)
+                return FileEntry(
+                    path = p,
+                    name = name,
+                    // STAT is lstat: links keep S_IFLNK. Treat links as enterable like listViaSync.
+                    isDirectory = SyncWire.isDir(mode) || SyncWire.isLink(mode),
+                    size = if (SyncWire.isDir(mode)) 0 else size,
+                    lastModified = mtime * 1000,
+                    isLink = SyncWire.isLink(mode),
+                    permissions = SyncWire.modeString(mode),
+                )
+            }
+        }
+        return shell.stat(p)
+    }
+
+    private fun listViaSync(dir: String): List<FileEntry> {
+        // Probe the directory itself so a missing/inaccessible path surfaces as an error
+        // instead of an empty pane (LIST of a missing path may just return no dents).
+        val st = device.statSync(dir) ?: throw FsException(tr("无法进入目录: $dir", "Cannot open directory: $dir"))
+        if (!SyncWire.isDir(st.first) && !SyncWire.isLink(st.first)) {
+            throw FsException(tr("不是文件夹: $dir", "Not a folder: $dir"))
+        }
+        return device.listSync(dir).map { q ->
+            val isDir = SyncWire.isDir(q.mode)
+            val isLink = SyncWire.isLink(q.mode)
+            FileEntry(
+                path = VPath.join(dir, q.name),
+                name = q.name,
+                isDirectory = isDir || isLink, // treat links as enterable; target checked on open
+                size = if (isDir) 0 else q.size,
+                lastModified = q.mtimeSec * 1000,
+                isLink = isLink,
+                permissions = SyncWire.modeString(q.mode),
+            )
+        }
+    }
 
     override fun openRead(path: String, offset: Long): InputStream {
         val p = VPath.normalize(path)

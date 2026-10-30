@@ -23,25 +23,53 @@ class AdbShellRunner(
 ) : ShellRunner {
 
     override fun start(script: String): Process {
+        // PersistentShell boots with "exec sh". Give it a raw `shell:sh` stream with no
+        // exit-code sentinel: the sentinel prefix "__GFRC_" shares "__GF" with
+        // PersistentShell's "__GF_END_" markers and can corrupt line reads when packets split,
+        // which surfaced as empty directory listings while sync push/pull still worked.
+        if (script == "exec sh" && !root) {
+            return AdbRawProcess(openRaw("shell:sh"))
+        }
         val marker = "__GFRC_" + java.lang.Long.toHexString(java.util.concurrent.ThreadLocalRandom.current().nextLong() or 1L) + ":"
         val body = if (root) "su 0 sh -c " + VPath.shellQuote(script) else script
-        val wrapped = "(\n$body\n); printf '$marker%d\\n' \$?"
-        val ch = try {
-            openChannel(wrapped)
-        } catch (e: IOException) {
-            onBroken?.invoke()
-            openChannel(wrapped) // one reconnect
-        }
-        return AdbProcess(ch, marker)
+        val multiline = '\n' in body
+        // Keep the OPEN destination single-line when possible; embed real newlines only when
+        // the script itself is multiline (those go through stdin below).
+        val wrapped = if (multiline) "(\n$body\n); printf '$marker%d\\n' \$?" else "($body); printf '$marker%d\\n' \$?"
+        return AdbProcess(openChannel(wrapped, forceStdin = multiline), marker)
     }
 
-    private fun openChannel(wrapped: String): AdbChannel {
-        val t = transport()
-        return if (wrapped.length <= INLINE_MAX) {
-            t.open("shell:$wrapped")
+    private fun openRaw(dest: String): AdbChannel = try {
+        transport().open(dest)
+    } catch (e: IOException) {
+        onBroken?.invoke()
+        transport().open(dest)
+    }
+
+    private fun openChannel(wrapped: String, forceStdin: Boolean = false): AdbChannel {
+        val t = try {
+            transport()
+        } catch (e: IOException) {
+            onBroken?.invoke()
+            transport()
+        }
+        // Prefer stdin feed when the script has newlines or is long: embedding multiline
+        // payloads in the OPEN destination is fragile on some OEM adbd builds (only the
+        // first line runs → cd succeeds, find never runs → empty list, exit 0).
+        return if (!forceStdin && wrapped.length <= INLINE_MAX) {
+            try {
+                t.open("shell:$wrapped")
+            } catch (e: IOException) {
+                onBroken?.invoke()
+                transport().open("shell:$wrapped")
+            }
         } else {
-            // Too long for one OPEN payload: feed it to a raw `sh` through stdin.
-            val ch = t.open("shell:sh")
+            val ch = try {
+                t.open("shell:sh")
+            } catch (e: IOException) {
+                onBroken?.invoke()
+                transport().open("shell:sh")
+            }
             ch.output.write("{ $wrapped\n} </dev/null\nexit\n".toByteArray(Charsets.UTF_8))
             ch.output.flush()
             ch
@@ -52,6 +80,34 @@ class AdbShellRunner(
         /** Conservative: OPEN payload max is 4 KiB on v1 adbd. */
         const val INLINE_MAX = 3800
     }
+}
+
+/**
+ * Raw ADB shell process (no exit-code sentinel). Used for [PersistentShell]'s long-lived
+ * `exec sh` session so stdout bytes are not held back / stripped by [SentinelInputStream].
+ */
+internal class AdbRawProcess(private val ch: AdbChannel) : Process() {
+    @Volatile private var alive = true
+    private val stdin = object : FilterOutputStream(ch.output) {
+        override fun write(b: ByteArray, off: Int, len: Int) { out.write(b, off, len) }
+        override fun close() { runCatching { out.flush() } }
+    }
+    override fun getOutputStream(): OutputStream = stdin
+    override fun getInputStream(): InputStream = ch.input
+    override fun getErrorStream(): InputStream = ByteArrayInputStream(ByteArray(0))
+    override fun waitFor(): Int { while (alive) Thread.sleep(50); return 0 }
+    override fun waitFor(timeout: Long, unit: TimeUnit): Boolean {
+        val deadline = System.nanoTime() + unit.toNanos(timeout)
+        while (alive && System.nanoTime() < deadline) Thread.sleep(20)
+        return !alive
+    }
+    override fun exitValue(): Int {
+        if (alive) throw IllegalThreadStateException("running")
+        return 0
+    }
+    override fun destroy() { alive = false; ch.close() }
+    override fun destroyForcibly(): Process { destroy(); return this }
+    override fun isAlive(): Boolean = alive
 }
 
 /** A [Process] over one ADB shell stream. Exit code comes from the sentinel line. */

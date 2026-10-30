@@ -93,6 +93,9 @@ class AdbDevice(val serial: String, private val transportProvider: () -> AdbTran
 
     fun statSync(remote: String): Triple<Int, Long, Long>? = open("sync:").use { SyncWire.stat(it, remote) }
 
+    /** Directory listing via sync LIST (same channel as push/pull). */
+    internal fun listSync(remote: String): List<SyncWire.Quad> = open("sync:").use { SyncWire.list(it, remote) }
+
     /** Fire-and-forget ADB service such as "reboot:recovery" or "tcpip:5555" (reads its banner). */
     fun service(dest: String, timeoutMs: Long = 8_000): String {
         val ch = open(dest)

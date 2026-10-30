@@ -3,6 +3,7 @@ package com.ghostpanter.files.core.lan
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import com.ghostpanter.files.core.net.LanSocketBinder
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -88,6 +89,8 @@ object NetBios {
      */
     suspend fun scan(hosts: List<String>, timeoutMs: Int = 2000, port: Int = PORT, onAnswer: suspend (ip: String, Status) -> Unit) = withContext(Dispatchers.IO) {
         DatagramSocket().use { sock ->
+            // Under a full-tunnel VPN, bind UDP to Wi‑Fi so NBSTAT reaches the LAN (runtime hook).
+            LanSocketBinder.applyDatagram(sock)
             sock.soTimeout = 200
             hosts.forEachIndexed { i, h ->
                 val q = query(0x4700 + (i and 0xFF))

@@ -2,6 +2,7 @@ package com.ghostpanter.files.privilege
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.LinkAddress
 import android.net.Network
 import android.net.NetworkCapabilities
 import com.ghostpanter.files.core.net.LanSocketBinder
@@ -10,7 +11,9 @@ import com.ghostpanter.files.core.privilege.WirelessDebugHosts
 import io.github.muntashirakon.adb.SocketHook
 import java.net.Inet4Address
 import java.net.Inet6Address
+import java.net.InetAddress
 import java.net.NetworkInterface
+import java.net.Socket
 
 /**
  * Wi‑Fi vs VPN helpers shared by wireless debugging and LAN clients (SMB / FTP / SFTP / WebDAV).
@@ -39,6 +42,17 @@ object WifiBypass {
     }?.first
 
     fun vpnActive(ctx: Context): Boolean = all(ctx).any { (_, c) -> c.hasTransport(NetworkCapabilities.TRANSPORT_VPN) }
+
+    /** IPv4 + prefix of the underlying Wi‑Fi / Ethernet link (never the VPN tunnel address). */
+    fun wifiIpv4(ctx: Context): Pair<String, Int>? {
+        val cm = cm(ctx) ?: return null
+        val n = wifiNetwork(ctx) ?: return null
+        val la: LinkAddress = cm.getLinkProperties(n)?.linkAddresses
+            ?.firstOrNull { it.address is Inet4Address && !it.address.isLoopbackAddress }
+            ?: return null
+        val ip = la.address.hostAddress ?: return null
+        return ip to la.prefixLength
+    }
 
     /** All addresses of this device (Wi‑Fi link addresses + every interface), without zone ids. */
     fun localAddresses(ctx: Context): Set<String> {
@@ -71,12 +85,46 @@ object WifiBypass {
 
     /**
      * LAN-client binder (SMB etc.): VPN active + [LanVpnPolicy.shouldBindToWifi] for [host], else null.
-     * Uses the same Wi‑Fi [Network.bindSocket] as wireless-debug.
+     * Tries [Network.bindSocket], then binding to the Wi‑Fi local IPv4 (forces the LAN interface).
      */
     fun lanBinderFor(ctx: Context, host: String?): LanSocketBinder.Configurer? {
         if (!LanVpnPolicy.shouldBindToWifi(host, vpnActive(ctx))) return null
         val n = wifiNetwork(ctx) ?: return null
-        return LanSocketBinder.Configurer { s -> n.bindSocket(s) }
+        val local = runCatching {
+            cm(ctx)?.getLinkProperties(n)?.linkAddresses
+                ?.firstOrNull { it.address is Inet4Address && !it.address.isLoopbackAddress }
+                ?.address
+        }.getOrNull()
+        return LanSocketBinder.Configurer { s -> bindLanSocket(n, s, local) }
+    }
+
+    private fun bindLanSocket(n: Network, s: Socket, local: InetAddress?) {
+        var bound = false
+        try {
+            n.bindSocket(s)
+            bound = true
+        } catch (_: Throwable) {
+            // Fall through to local-IP bind.
+        }
+        if (!bound && local != null && !s.isBound) {
+            s.bind(java.net.InetSocketAddress(local, 0))
+        } else if (!bound) {
+            // Last resort: rethrow so callers see a clear failure instead of a black-holed VPN connect.
+            n.bindSocket(s)
+        }
+    }
+
+    fun lanSocketFactoryFor(ctx: Context, host: String?): javax.net.SocketFactory? {
+        if (!LanVpnPolicy.shouldBindToWifi(host, vpnActive(ctx))) return null
+        val n = wifiNetwork(ctx) ?: return null
+        return n.socketFactory
+    }
+
+    fun resolveOnWifi(ctx: Context, host: String): InetAddress? {
+        if (!vpnActive(ctx)) return null
+        if (!LanVpnPolicy.shouldBindToWifi(host, true)) return null
+        val n = wifiNetwork(ctx) ?: return null
+        return runCatching { n.getByName(host) }.getOrNull()
     }
 
     /** Installs [LanSocketBinder] / [LanVpnPolicy] hooks so core LAN clients can bypass a VPN. Call once from [com.ghostpanter.files.GhostApp]. */
@@ -84,6 +132,13 @@ object WifiBypass {
         val app = ctx.applicationContext
         LanVpnPolicy.vpnActive = { vpnActive(app) }
         LanSocketBinder.resolver = { host -> lanBinderFor(app, host) }
+        LanSocketBinder.socketFactoryFor = { host -> lanSocketFactoryFor(app, host) }
+        LanSocketBinder.resolveOnNetwork = { host -> resolveOnWifi(app, host) }
+        LanSocketBinder.datagramBinder = { ds ->
+            if (vpnActive(app)) {
+                wifiNetwork(app)?.let { n -> runCatching { n.bindSocket(ds) } }
+            }
+        }
     }
 
     /** Runs [block] with this thread's ADB sockets bound to Wi‑Fi when a VPN is active (non-loopback [host]); always clears. */
