@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core
 
+import com.ghostpanter.files.core.net.LanSocketBinder
+import com.ghostpanter.files.core.net.LanVpnPolicy
 import com.hierynomus.mssmb2.SMB2Dialect
 import com.hierynomus.mssmb2.SMBApiException
 import com.hierynomus.smbj.SMBClient
@@ -18,6 +20,9 @@ enum class SmbLogin { GUEST, ANONYMOUS, USER }
  * Without credentials: Guest first, then Anonymous. smbj cannot derive SMB 3.x signing keys for a
  * null (anonymous) session — it fails with an NPE in SMBSessionBuilder.deriveKey — so the anonymous
  * attempt uses a client limited to SMB 2.0.2/2.1, where no key derivation is needed.
+ *
+ * Sockets go through [KeepAliveSocketFactory] / [LanSocketBinder]: when a VPN is detected at connect
+ * time, LAN destinations are bound to the Wi‑Fi network so full-tunnel VPNs cannot black-hole them.
  */
 class SmbConnector(timeouts: NetTimeouts = NetTimeouts()) : Closeable {
     private fun builder(t: NetTimeouts) = SmbConfig.builder()
@@ -44,7 +49,14 @@ class SmbConnector(timeouts: NetTimeouts = NetTimeouts()) : Closeable {
     var lastLogin: SmbLogin? = null
         private set
 
-    fun open(host: String, port: Int, username: String, password: String, domain: String): Session {
+    fun open(host: String, port: Int, username: String, password: String, domain: String): Session =
+        // Thread-local destination so every socket smbj opens on this thread (login + later
+        // reconnects that also go through open) can bind to Wi‑Fi while a VPN is up.
+        LanSocketBinder.withDestination(host) {
+            openInner(host, port, username, password, domain)
+        }
+
+    private fun openInner(host: String, port: Int, username: String, password: String, domain: String): Session {
         if (username.isNotEmpty()) {
             val ctx = { AuthenticationContext(username, password.toCharArray(), domain.ifEmpty { null }) }
             val s = try {
@@ -97,20 +109,8 @@ class SmbConnector(timeouts: NetTimeouts = NetTimeouts()) : Closeable {
 class SmbNoGuestException(val causes: List<Throwable>) :
     FsException(tr("服务器不允许匿名/来宾访问，请输入用户名和密码", "Server does not allow anonymous/guest access; enter username and password"), causes.lastOrNull())
 
-/** Plain TCP sockets with keepalive, no Nagle and a bounded connect timeout. */
-class KeepAliveSocketFactory(private val connectMs: Int) : javax.net.SocketFactory() {
-    private fun prep(s: java.net.Socket) = s.apply {
-        keepAlive = true
-        tcpNoDelay = true
-        runCatching { receiveBufferSize = 1 shl 20 }
-    }
-    override fun createSocket(): java.net.Socket = prep(java.net.Socket())
-    override fun createSocket(host: String, port: Int): java.net.Socket =
-        prep(java.net.Socket()).also { it.connect(java.net.InetSocketAddress(host, port), connectMs) }
-    override fun createSocket(host: String, port: Int, localHost: java.net.InetAddress?, localPort: Int): java.net.Socket =
-        prep(java.net.Socket()).also { it.bind(java.net.InetSocketAddress(localHost, localPort)); it.connect(java.net.InetSocketAddress(host, port), connectMs) }
-    override fun createSocket(host: java.net.InetAddress, port: Int): java.net.Socket =
-        prep(java.net.Socket()).also { it.connect(java.net.InetSocketAddress(host, port), connectMs) }
-    override fun createSocket(address: java.net.InetAddress, port: Int, localAddress: java.net.InetAddress?, localPort: Int): java.net.Socket =
-        prep(java.net.Socket()).also { it.bind(java.net.InetSocketAddress(localAddress, localPort)); it.connect(java.net.InetSocketAddress(address, port), connectMs) }
-}
+/**
+ * Plain TCP sockets with keepalive, no Nagle, bounded connect timeout, and optional Wi‑Fi bind via
+ * [LanSocketBinder] when a VPN is active (see [LanVpnPolicy]).
+ */
+typealias KeepAliveSocketFactory = LanSocketBinder.Factory

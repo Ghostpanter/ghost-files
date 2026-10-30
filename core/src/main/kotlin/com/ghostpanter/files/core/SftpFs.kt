@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core
 
+import com.ghostpanter.files.core.net.LanSocketBinder
+import com.ghostpanter.files.core.net.LanVpnPolicy
 import net.schmizz.keepalive.KeepAliveProvider
 import net.schmizz.sshj.Config
 import net.schmizz.sshj.SSHClient
@@ -71,6 +73,7 @@ class SftpFs(
             c.addHostKeyVerifier(verifier)
             c.connectTimeout = timeouts.connectMs
             c.timeout = timeouts.readMs
+            c.socketFactory = LanSocketBinder.Factory(timeouts.connectMs)
             if (config.jumpHost.isNotBlank()) {
                 val jcfg = sshConfig().also { it.keepAliveProvider = KeepAliveProvider.KEEP_ALIVE }
                 val j = SSHClient(jcfg)
@@ -87,11 +90,16 @@ class SftpFs(
                 })
                 j.connectTimeout = timeouts.connectMs
                 j.timeout = timeouts.readMs
-                j.connect(config.jumpHost, if (config.jumpPort > 0) config.jumpPort else 22)
+                j.socketFactory = LanSocketBinder.Factory(timeouts.connectMs)
+                LanSocketBinder.withDestination(config.jumpHost) {
+                    j.connect(config.jumpHost, if (config.jumpPort > 0) config.jumpPort else 22)
+                }
                 authSsh(j, config.jumpUser.ifBlank { config.username }, config.jumpPassword, config.jumpPrivateKey)
                 c.connectVia(j.newDirectConnection(config.host, config.effectivePort))
             } else {
-                c.connect(config.host, config.effectivePort)
+                LanSocketBinder.withDestination(config.host) {
+                    c.connect(config.host, config.effectivePort)
+                }
             }
             c.connection.keepAlive.keepAliveInterval = timeouts.keepAliveSec
             authSsh(c, config.username, config.password, config.privateKey)
@@ -107,7 +115,7 @@ class SftpFs(
             if (msg.contains("host key", true) || msg.contains("HOST_KEY", true)) {
                 throw FsException(tr("主机密钥与上次记录不一致，已拒绝连接（可能被中间人攻击）。如服务器重装过，请在服务器设置中重置指纹。", "Host key changed since last connection; refused (possible MITM). If the server was reinstalled, reset the fingerprint in server settings."), e)
             }
-            throw FsException(tr("连接 SFTP 失败: $msg", "SFTP connection failed: $msg"), e)
+            throw FsException(tr("连接 SFTP 失败: $msg", "SFTP connection failed: $msg") + LanVpnPolicy.connectHint(), e)
         }
     }
 

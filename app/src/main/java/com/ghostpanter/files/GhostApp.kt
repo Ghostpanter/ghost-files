@@ -28,6 +28,7 @@ class GhostApp : Application() {
         }
         installSecurityProviders()
         graph = AppGraph(this)
+        com.ghostpanter.files.privilege.WifiBypass.installLanHooks(this)
         com.ghostpanter.files.privilege.ElevatedAccess.init(this)
         com.ghostpanter.files.privilege.EmbeddedPrivilege.init(this)
         installScrcpy()

@@ -5,6 +5,7 @@ import com.ghostpanter.files.core.tr
 import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.NetTimeouts
 import com.ghostpanter.files.core.SmbConnector
+import com.ghostpanter.files.core.net.LanVpnPolicy
 import com.ghostpanter.files.core.SmbLogin
 import com.ghostpanter.files.core.SmbNoGuestException
 import com.hierynomus.mssmb2.SMBApiException
@@ -63,7 +64,7 @@ object SmbShares {
                 if (isAuthFailure(e)) throw SmbAuthRequiredException(tr("用户名或密码错误", "Wrong username or password"))
                 throw FsException(tr("登录失败：${e.status.name}", "Login failed: ${e.status.name}"), e)
             } catch (e: java.io.IOException) {
-                throw FsException(tr("无法连接 $host:$port（${e.message}）", "Cannot connect to $host:$port (${e.message})"), e)
+                throw FsException(tr("无法连接 $host:$port（${e.message}）", "Cannot connect to $host:$port (${e.message})") + LanVpnPolicy.connectHint(), e)
             }
             try {
                 return ShareListing(enumerate(session), c.lastLogin ?: SmbLogin.USER)

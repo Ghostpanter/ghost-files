@@ -8,6 +8,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import java.net.InetSocketAddress
 import java.net.Socket
+import com.ghostpanter.files.core.net.LanSocketBinder
 
 /**
  * Bounded, cancellable TCP connect sweep. At most [concurrency] connects are in flight; each one is
@@ -25,10 +26,13 @@ object PortSweep {
 
     val tcp = Connector { host, port, timeoutMs ->
         try {
-            Socket().use { s ->
-                s.tcpNoDelay = true
-                s.connect(InetSocketAddress(host, port), timeoutMs)
-                true
+            LanSocketBinder.withDestination(host) {
+                Socket().use { s ->
+                    s.tcpNoDelay = true
+                    LanSocketBinder.apply(s, host)
+                    s.connect(InetSocketAddress(host, port), timeoutMs)
+                    true
+                }
             }
         } catch (e: Exception) {
             false

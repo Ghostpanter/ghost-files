@@ -9,6 +9,7 @@ import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.concurrent.TimeoutException
+import com.ghostpanter.files.core.net.LanVpnPolicy
 
 /** Turns wrapped library exceptions (smbj wraps 3–4 levels deep) into a readable reason. */
 object ErrorText {
@@ -39,7 +40,13 @@ object ErrorText {
             else -> null
         }
         val rootText = r.javaClass.simpleName + (r.message?.takeIf { it.isNotBlank() && it.length < 200 }?.let { ": $it" } ?: "")
-        return listOfNotNull(reason, rootText).joinToString("：")
+        val base = listOfNotNull(reason, rootText).joinToString("：")
+        // Only decorate reachability failures — not SMB status / credit errors mid-transfer.
+        val reach = reason != null && (
+            all.any { it is SocketTimeoutException || it is TimeoutException || it is ConnectException ||
+                it is NoRouteToHostException || it is UnknownHostException || it is SocketException }
+        )
+        return if (reach) base + LanVpnPolicy.connectHint() else base
     }
 
     /** Full stack trace incl. causes, for "复制错误" and the log file. */

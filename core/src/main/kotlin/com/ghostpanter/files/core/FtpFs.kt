@@ -1,5 +1,7 @@
 package com.ghostpanter.files.core
 
+import com.ghostpanter.files.core.net.LanSocketBinder
+import com.ghostpanter.files.core.net.LanVpnPolicy
 import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
 import org.apache.commons.net.ftp.FTPFile
@@ -57,26 +59,29 @@ class FtpFs(
         c.setControlKeepAliveTimeout(Duration.ofSeconds(timeouts.keepAliveSec.toLong()))
         c.setControlKeepAliveReplyTimeout(Duration.ofSeconds(10))
         c.bufferSize = 256 * 1024
+        c.setSocketFactory(LanSocketBinder.Factory(timeouts.connectMs))
         try {
-            c.connect(config.host, config.effectivePort)
-            c.soTimeout = timeouts.readMs
-            if (!FTPReply.isPositiveCompletion(c.replyCode)) throw FsException(tr("服务器拒绝连接: ${c.replyString.trim()}", "Server refused connection: ${c.replyString.trim()}"))
-            if (c is FTPSClient) {
-                c.execPBSZ(0)
-                c.execPROT("P")
+            return LanSocketBinder.withDestination(config.host) {
+                c.connect(config.host, config.effectivePort)
+                c.soTimeout = timeouts.readMs
+                if (!FTPReply.isPositiveCompletion(c.replyCode)) throw FsException(tr("服务器拒绝连接: ${c.replyString.trim()}", "Server refused connection: ${c.replyString.trim()}"))
+                if (c is FTPSClient) {
+                    c.execPBSZ(0)
+                    c.execPROT("P")
+                }
+                val user = if (config.anonymous || config.username.isEmpty()) "anonymous" else config.username
+                val pass = if (config.anonymous || config.username.isEmpty()) "ghost@files" else config.password
+                if (!c.login(user, pass)) throw FsException(tr("登录失败: ${c.replyString.trim()}", "Login failed: ${c.replyString.trim()}"))
+                runCatching { c.sendCommand("OPTS UTF8 ON") }
+                c.setFileType(FTP.BINARY_FILE_TYPE)
+                if (config.passiveMode) c.enterLocalPassiveMode() else c.enterLocalActiveMode()
+                if (mlsd == null) mlsd = runCatching { c.hasFeature("MLSD") }.getOrDefault(false)
+                c
             }
-            val user = if (config.anonymous || config.username.isEmpty()) "anonymous" else config.username
-            val pass = if (config.anonymous || config.username.isEmpty()) "ghost@files" else config.password
-            if (!c.login(user, pass)) throw FsException(tr("登录失败: ${c.replyString.trim()}", "Login failed: ${c.replyString.trim()}"))
-            runCatching { c.sendCommand("OPTS UTF8 ON") }
-            c.setFileType(FTP.BINARY_FILE_TYPE)
-            if (config.passiveMode) c.enterLocalPassiveMode() else c.enterLocalActiveMode()
-            if (mlsd == null) mlsd = runCatching { c.hasFeature("MLSD") }.getOrDefault(false)
-            return c
         } catch (e: Exception) {
             runCatching { c.disconnect() }
             if (e is FsException) throw e
-            throw FsException(tr("连接 FTP 失败: ${e.message}", "FTP connection failed: ${e.message}"), e)
+            throw FsException(tr("连接 FTP 失败: ${e.message}", "FTP connection failed: ${e.message}") + LanVpnPolicy.connectHint(), e)
         }
     }
 

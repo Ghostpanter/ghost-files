@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import com.ghostpanter.files.core.net.LanSocketBinder
+import com.ghostpanter.files.core.net.LanVpnPolicy
 import com.ghostpanter.files.core.privilege.WirelessDebugHosts
 import io.github.muntashirakon.adb.SocketHook
 import java.net.Inet4Address
@@ -11,9 +13,13 @@ import java.net.Inet6Address
 import java.net.NetworkInterface
 
 /**
- * Wi‑Fi vs VPN helpers for same-device wireless debugging. A full-tunnel VPN becomes the default network
- * and captures traffic to the phone's own 192.168.x.x; loopback is never tunnelled, and a socket bound to
- * the Wi‑Fi [Network] bypasses the VPN for the LAN fallback.
+ * Wi‑Fi vs VPN helpers shared by wireless debugging and LAN clients (SMB / FTP / SFTP / WebDAV).
+ *
+ * A full-tunnel VPN becomes the default network and captures traffic to LAN addresses (NAS
+ * 192.168.x.x, the phone's own Wi‑Fi IP). Loopback is never tunnelled; a socket bound to the
+ * underlying Wi‑Fi [Network] bypasses the VPN for that connection only.
+ *
+ * Detection is always at call time ([vpnActive]) — never hardcoded “always bypass”.
  */
 object WifiBypass {
     private fun cm(ctx: Context) = ctx.getSystemService(ConnectivityManager::class.java)
@@ -61,6 +67,23 @@ object WifiBypass {
         if (!WirelessDebugHosts.bindToWifi(host, vpnActive(ctx))) return null
         val n = wifiNetwork(ctx) ?: return null
         return SocketHook.Configurer { s -> n.bindSocket(s) }
+    }
+
+    /**
+     * LAN-client binder (SMB etc.): VPN active + [LanVpnPolicy.shouldBindToWifi] for [host], else null.
+     * Uses the same Wi‑Fi [Network.bindSocket] as wireless-debug.
+     */
+    fun lanBinderFor(ctx: Context, host: String?): LanSocketBinder.Configurer? {
+        if (!LanVpnPolicy.shouldBindToWifi(host, vpnActive(ctx))) return null
+        val n = wifiNetwork(ctx) ?: return null
+        return LanSocketBinder.Configurer { s -> n.bindSocket(s) }
+    }
+
+    /** Installs [LanSocketBinder] / [LanVpnPolicy] hooks so core LAN clients can bypass a VPN. Call once from [com.ghostpanter.files.GhostApp]. */
+    fun installLanHooks(ctx: Context) {
+        val app = ctx.applicationContext
+        LanVpnPolicy.vpnActive = { vpnActive(app) }
+        LanSocketBinder.resolver = { host -> lanBinderFor(app, host) }
     }
 
     /** Runs [block] with this thread's ADB sockets bound to Wi‑Fi when a VPN is active (non-loopback [host]); always clears. */
