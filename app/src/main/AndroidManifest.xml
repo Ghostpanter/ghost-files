@@ -31,7 +31,9 @@
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- 备份与恢复: requested at runtime only for the items the user picks. -->
+    <!-- 个人数据备份: declared for backup/restore features; runtime grants only when the user
+         starts that item (联系人/短信/通话/日历). SMS role RECEIVE_* are required by Android to
+         write messages during restore; role components stay disabled until then. -->
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_MMS" />
@@ -179,6 +181,7 @@
         <!-- Default-SMS-app components: only so a restore can write messages (the role is handed back afterwards). -->
         <receiver
             android:name=".backup.SmsDeliverReceiver"
+            android:enabled="false"
             android:exported="true"
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter>
@@ -187,6 +190,7 @@
         </receiver>
         <receiver
             android:name=".backup.MmsDeliverReceiver"
+            android:enabled="false"
             android:exported="true"
             android:permission="android.permission.BROADCAST_WAP_PUSH">
             <intent-filter>
@@ -196,6 +200,7 @@
         </receiver>
         <service
             android:name=".backup.RespondViaMessageService"
+            android:enabled="false"
             android:exported="true"
             android:permission="android.permission.SEND_RESPOND_VIA_MESSAGE">
             <intent-filter>
@@ -209,6 +214,7 @@
         </service>
         <activity
             android:name=".backup.SmsComposeActivity"
+            android:enabled="false"
             android:exported="true"
             android:excludeFromRecents="true"
             android:noHistory="true"

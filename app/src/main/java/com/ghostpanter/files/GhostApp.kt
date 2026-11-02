@@ -31,6 +31,8 @@ class GhostApp : Application() {
         com.ghostpanter.files.privilege.WifiBypass.installLanHooks(this)
         com.ghostpanter.files.privilege.ElevatedAccess.init(this)
         com.ghostpanter.files.privilege.EmbeddedPrivilege.init(this)
+        // Keep default-SMS role components off unless we currently hold the role (restore in progress).
+        com.ghostpanter.files.backup.SmsRoleComponents.syncToRole(this)
         installScrcpy()
         com.ghostpanter.files.core.Lang.apply(graph.settings.language)
         com.ghostpanter.files.data.Settings.applyNightMode(this, graph.settings.themeMode)

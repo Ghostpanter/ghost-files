@@ -35,6 +35,7 @@ import com.ghostpanter.files.backup.BackupProgress
 import com.ghostpanter.files.backup.BackupProviders
 import com.ghostpanter.files.backup.RestoreInventory
 import com.ghostpanter.files.backup.RestoreSource
+import com.ghostpanter.files.backup.SmsRoleComponents
 import com.ghostpanter.files.backup.SmsRoleMemory
 import com.ghostpanter.files.core.LocalFs
 import com.ghostpanter.files.core.VPath
@@ -289,6 +290,8 @@ private fun SideColumn(ui: BackupUi, cb: BackupCallbacks, status: Boolean = true
     }
     Spacer(Modifier.height(10.dp))
     if (ui.tab == BackupTab.BACKUP) {
+        Tip(Icons.Rounded.Security, cs.primary, t("联系人、短信、通话记录、日历权限不会在安装或首次打开时申请；只有你勾选对应项并点「授权」或「开始备份」时才会请求。", "Contacts, SMS, call log, and calendar are not requested at install or first launch — only when you select that item and tap Grant or Back up."))
+        Spacer(Modifier.height(8.dp))
         Tip(Icons.Rounded.Info, cs.primary, t("ColorOS / HyperOS 开启「验证码短信保护」（或类似的隐私保护）时，验证码短信可能读不到，备份条数会比实际少。需要完整备份的话，先在 短信设置 → 隐私保护 里关闭再备份。", "With ColorOS / HyperOS \"verification code protection\" on, OTP messages may be hidden and the count will be lower. Turn it off in Messages settings for a complete backup."))
         Spacer(Modifier.height(8.dp))
         Tip(Icons.Rounded.SwapHoriz, cs.primary, t("短信和通话记录保存为 sms-*.xml / calls-*.xml，和 SMS Backup & Restore 互相通用。", "Messages and calls are saved as sms-*.xml / calls-*.xml, interchangeable with SMS Backup & Restore."))
@@ -417,7 +420,7 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
     val kinds = remember { BackupKind.entries.toList() }
     var tab by remember(s) { mutableStateOf(if (s.restorePath != null) BackupTab.RESTORE else BackupTab.BACKUP) }
     val counts = remember { mutableStateMapOf<BackupKind, Int?>() }
-    var checked by remember { mutableStateOf(setOf(BackupKind.SMS, BackupKind.CALLS, BackupKind.CONTACTS, BackupKind.CALENDAR)) }
+    var checked by remember { mutableStateOf(emptySet<BackupKind>()) }
     var zip by remember { mutableStateOf(false) }
     var destFs by remember { mutableStateOf(LocalFs.ID) }
     var destDir by remember { mutableStateOf(BackupJobs.defaultDir(vm.fsm)) }
@@ -446,6 +449,7 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
         }
     }
     LaunchedEffect(Unit) {
+        SmsRoleComponents.syncToRole(ctx)
         reloadCounts()
         val r = withContext(Dispatchers.IO) { BackupJobs.recent(vm.fsm) }
         recent = r
@@ -466,6 +470,7 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
     }
     val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         holdsSms = BackupJobs.isDefaultSms(ctx)
+        SmsRoleComponents.syncToRole(ctx)
         if (pendingRestore) {
             pendingRestore = false
             if (!holdsSms) { vm.toast(t("未设为默认短信应用，短信不会恢复", "Not the default SMS app: messages will be skipped")); restoreChecked = restoreChecked - BackupKind.SMS }
@@ -476,10 +481,16 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
         if (!request(restoreChecked, true)) return
         if (BackupKind.SMS in restoreChecked && !BackupJobs.isDefaultSms(ctx)) {
             SmsRoleMemory.remember(ctx)
+            // ROLE_SMS requires the deliver/compose components to be enabled at request time.
+            SmsRoleComponents.setEnabled(ctx, true)
             pendingRestore = true
             val intent = if (Build.VERSION.SDK_INT >= 29) ctx.getSystemService(android.app.role.RoleManager::class.java).createRequestRoleIntent(android.app.role.RoleManager.ROLE_SMS)
                 else Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, ctx.packageName)
-            runCatching { roleLauncher.launch(intent) }.onFailure { pendingRestore = false; vm.toast(t("无法申请默认短信应用", "Cannot request the SMS role")) }
+            runCatching { roleLauncher.launch(intent) }.onFailure {
+                pendingRestore = false
+                SmsRoleComponents.syncToRole(ctx)
+                vm.toast(t("无法申请默认短信应用", "Cannot request the SMS role"))
+            }
             return
         }
         runRestore()
@@ -495,7 +506,7 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
     LaunchedEffect(outcome) { holdsSms = BackupJobs.isDefaultSms(ctx); if (outcome != null) reloadCounts() }
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(owner) {
-        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { holdsSms = BackupJobs.isDefaultSms(ctx); reloadCounts() } }
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { holdsSms = BackupJobs.isDefaultSms(ctx); SmsRoleComponents.syncToRole(ctx); reloadCounts() } }
         owner.lifecycle.addObserver(obs); onDispose { owner.lifecycle.removeObserver(obs) }
     }
 
@@ -503,7 +514,7 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
         val c = counts[k]
         BackupItemUi(k, c, k in checked && c != null,
             missing = when {
-                c == null && prov.permissions(k, false).any { !prov.has(it) } -> t("需要授权才能读取，点按授权", "Permission needed — tap to grant")
+                c == null && prov.permissions(k, false).any { !prov.has(it) } -> t("备份此项时需要授权，点按授权", "Needed for this backup — tap to grant")
                 else -> null
             })
     }
@@ -521,8 +532,8 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
     val cb = BackupCallbacks(
         back = { vm.screen = Screen.Main },
         tab = { tab = it },
-        toggle = { k -> checked = if (k in checked) checked - k else { request(listOf(k), false); checked + k } },
-        grant = { k -> request(listOf(k), false) },
+        toggle = { k -> checked = if (k in checked) checked - k else checked + k },
+        grant = { k -> checked = checked + k; request(listOf(k), false) },
         zip = { zip = it },
         dest = { destPicker = true },
         start = {

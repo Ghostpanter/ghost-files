@@ -232,7 +232,17 @@ class MainActivity : ComponentActivity() {
             } catch (e: com.ghostpanter.files.install.BundleInstaller.InstallerStatus) {
                 when (e.status) {
                     android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> Unit
-                    android.content.pm.PackageInstaller.STATUS_FAILURE_BLOCKED -> installApkViaSystem(f)
+                    android.content.pm.PackageInstaller.STATUS_FAILURE_BLOCKED -> {
+                        Toast.makeText(
+                            this@MainActivity,
+                            t(
+                                "安装被拦截（多为 Play 保护机制）。可临时关闭 Play 保护机制的应用扫描后再装，或按系统提示继续",
+                                "Install blocked (often Play Protect). Briefly disable Play Protect app scanning, or continue if the system installer offers a prompt",
+                            ),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                        installApkViaSystem(f)
+                    }
                     else -> Toast.makeText(this@MainActivity, e.message, Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {

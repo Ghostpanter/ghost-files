@@ -197,7 +197,10 @@ object BundleInstaller {
 
     fun statusText(status: Int): String = when (status) {
         PackageInstaller.STATUS_FAILURE_ABORTED -> t("已取消", "Cancelled")
-        PackageInstaller.STATUS_FAILURE_BLOCKED -> t("被系统或策略阻止", "Blocked by the system or policy")
+        PackageInstaller.STATUS_FAILURE_BLOCKED -> t(
+            "被系统或 Play 保护机制拦截。可打开 Play 商店 → 头像 → Play 保护机制 → 设置，临时关闭「扫描应用」，装完后再打开",
+            "Blocked by the system or Play Protect. In Play Store → profile → Play Protect → Settings, briefly turn off Scan apps with Play Protect, install, then turn it back on",
+        )
         PackageInstaller.STATUS_FAILURE_CONFLICT -> t("与已安装的应用冲突（签名不一致或降级）", "Conflicts with the installed app (signature or downgrade)")
         PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> t("与本机不兼容（架构或系统版本）", "Incompatible with this device (ABI or SDK)")
         PackageInstaller.STATUS_FAILURE_INVALID -> t("安装包无效或分包不完整", "Invalid package or incomplete split set")

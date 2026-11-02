@@ -41,7 +41,8 @@ class BackupProviders(private val ctx: Context) {
 
     /** Runtime permissions needed to back up / restore [k] (SMS writes need the default SMS role instead). */
     fun permissions(k: BackupKind, restore: Boolean): List<String> = when (k) {
-        BackupKind.SMS -> listOf(Manifest.permission.READ_SMS) + (if (!restore) listOf(Manifest.permission.READ_CONTACTS) else emptyList())
+        // READ_CONTACTS is optional (contact names in XML); only request it for Contacts backup/restore.
+        BackupKind.SMS -> listOf(Manifest.permission.READ_SMS)
         BackupKind.CALLS -> listOf(Manifest.permission.READ_CALL_LOG) + if (restore) listOf(Manifest.permission.WRITE_CALL_LOG) else emptyList()
         BackupKind.CONTACTS -> listOf(Manifest.permission.READ_CONTACTS) + if (restore) listOf(Manifest.permission.WRITE_CONTACTS) else emptyList()
         BackupKind.CALENDAR -> listOf(Manifest.permission.READ_CALENDAR) + if (restore) listOf(Manifest.permission.WRITE_CALENDAR) else emptyList()
