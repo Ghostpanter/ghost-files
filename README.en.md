@@ -98,7 +98,7 @@ In the English UI the app is called **TwinPane File Manager**. The screenshots b
 - Bundles install through the system installer or silently via Root / Shizuku, and OBB data is copied automatically.
 - **Install source** (v0.7.3): silent installs can record Play / this app / leave as-is; the app details screen can show or change the source.
 - APK details: icon, version, SDK levels, permissions, installed version
-- App manager: export APKs in bulk. With root, you can also back up app data in bulk.
+- App manager: export APKs in bulk. With root, you can also back up app data in bulk and convert a user app to a system app (/system/app or priv-app) or revert it. With Magisk / KernelSU / APatch this writes a systemless module at `/data/adb/modules/ghostfiles_sysapp_<pkg>`; otherwise it remounts and writes /system directly. Works locally and on remote devices with ADB root (testing).
 - **Personal data backup & restore** (v0.7.3): contacts, SMS / MMS, call log and calendar
 
 ### Storage analyzer

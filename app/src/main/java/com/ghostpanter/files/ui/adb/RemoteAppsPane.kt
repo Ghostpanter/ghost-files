@@ -274,6 +274,10 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
         }
     }
 
+    val sysFlow = com.ghostpanter.files.ui.rememberSysAppFlow({
+        io { if (dev.hasRoot()) com.ghostpanter.files.core.apk.SystemApp.Exec { sc, ms -> dev.sh(sc, root = true, timeoutMs = ms) } else null }.getOrNull()
+    }) { reload++ }
+
     fun batch(title: String, targets: List<RemoteApp>, cmd: (RemoteApp) -> String) {
         scope.launch {
             var ok = 0; var fail = 0
@@ -444,6 +448,14 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
                             GhostChip({ detail = null; confirm = t("清除 $label 的全部数据？", "Clear all data of $label?") to { batch(t("清除数据", "Clear data"), listOf(a)) { RemoteApps.clear(it.pkg) } } }, { Text(t("清除数据", "Clear data")) })
                             GhostChip({ detail = null; confirm = (if (a.system) t("对用户 0 卸载系统应用 $label？（可恢复）", "Uninstall system app $label for user 0? (restorable)") else t("卸载 $label？", "Uninstall $label?")) to { batch(t("卸载", "Uninstall"), listOf(a)) { RemoteApps.uninstall(it) } } }, { Text(t("卸载", "Uninstall")) })
                             GhostChip({ detail = null; export(listOf(a)) }, { Text(t("导出 APK", "Export APK")) })
+                            val sysSt by produceState<com.ghostpanter.files.core.apk.SystemApp.Status?>(null, a.pkg) {
+                                if (preview == null && AdbPool.rootEnabled(serial)) value = io {
+                                    com.ghostpanter.files.core.apk.SystemApp.status({ sc, ms -> dev.sh(sc, root = true, timeoutMs = ms) }, a.pkg)
+                                }.getOrNull()
+                            }
+                            val st = sysSt
+                            if (st != null && !st.removing) GhostChip({ detail = null; sysFlow.askRevert(a.pkg, label) }, { Text(t("还原为用户应用", "Revert to user app")) })
+                            else if (!a.system) GhostChip({ detail = null; sysFlow.askConvert(a.pkg, label) }, { Text(t("转为系统应用", "Make system app")) })
                         }
                     }
                 }
@@ -451,6 +463,7 @@ fun RemoteAppsPane(toast: (String) -> Unit, serial: String, preview: List<Remote
             confirmButton = { TextButton({ detail = null }) { Text(t("关闭", "Close")) } },
         )
     }
+    com.ghostpanter.files.ui.SysAppDialogs(sysFlow)
     confirm?.let { (msg, go) ->
         AlertDialog(onDismissRequest = { confirm = null }, text = { Text(msg) },
             confirmButton = { TextButton({ confirm = null; go() }) { Text(t("确定", "OK")) } },

@@ -413,6 +413,7 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
     var restoreConfirm by remember { mutableStateOf<Pair<List<AppRow>, Part>?>(null) }
     var result by remember { mutableStateOf<Pair<String, String>?>(null) }
     val rootOk = RootRunner.granted()
+    val sysFlow = rememberSysAppFlow({ localRootExec() })
 
     LaunchedEffect(Unit) {
         apps = withContext(Dispatchers.IO) {
@@ -641,6 +642,10 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
                     TextButton(onClick = { dismiss(); runCatching { ctx.packageManager.getLaunchIntentForPackage(a.pkg)?.let(ctx::startActivity) } }) { Text(t("启动", "Launch")) }
                     TextButton(onClick = { dismiss(); runCatching { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + a.pkg))) } }) { Text(t("应用信息", "App info")) }
                     if (!a.system) TextButton(onClick = { dismiss(); runCatching { ctx.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:" + a.pkg))) } }) { Text(t("卸载", "Uninstall")) }
+                    val sysSt by androidx.compose.runtime.produceState<com.ghostpanter.files.core.apk.SystemApp.Status?>(null, a.pkg) { value = localSysAppStatus(a.pkg) }
+                    val st = sysSt
+                    if (st != null && !st.removing) TextButton(onClick = { dismiss(); sysFlow.askRevert(a.pkg, a.label) }) { Text(t("还原为用户应用", "Revert to user app")) }
+                    else if (!a.system) TextButton(onClick = { dismiss(); sysFlow.askConvert(a.pkg, a.label) }) { Text(t("转为系统应用", "Make system app")) }
                     TextButton(onClick = {
                         dismiss()
                         vm.openFs(com.ghostpanter.files.core.LocalFs.ID, AppBackupOps.dir().path)
@@ -650,6 +655,8 @@ fun LocalAppsScreen(vm: MainViewModel, header: @Composable () -> Unit = {}) {
             },
         )
     }
+
+    SysAppDialogs(sysFlow)
 
     backupPick?.let { targets ->
         AppPartDialog(

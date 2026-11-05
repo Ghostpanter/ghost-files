@@ -75,7 +75,7 @@
 - 安装 `.apk`，以及 `.apks` / `.xapk` / `.apkm` 和拆分 APK 文件夹：按本机自动选择合适的拆分包，可用系统安装器，也可用 Root / Shizuku 静默安装，自动复制 OBB
 - **安装来源**（v0.7.1）：静默安装可选 Play / 本应用 / 保留原状；应用详情可查看或改写来源
 - APK 信息（图标、版本、SDK、权限、已装版本）
-- 应用管理：批量导出 APK；有 Root 时可批量备份应用数据
+- 应用管理：批量导出 APK；有 Root 时可批量备份应用数据，并可把用户应用转为系统应用（/system/app 或 priv-app）或还原。有 Magisk / KernelSU / APatch 时生成无系统模块 `/data/adb/modules/ghostfiles_sysapp_<包名>`，否则直接 remount 写 /system。本机与远程（ADB Root）都支持，测试中
 - **个人数据备份与恢复**（v0.7.1）：联系人、短信 / 彩信、通话记录、日历
 
 ### 空间分析
