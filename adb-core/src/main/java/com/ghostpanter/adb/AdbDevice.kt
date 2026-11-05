@@ -24,7 +24,9 @@ class AdbDevice(val serial: String, private val transportProvider: () -> AdbTran
         block(transport())
     }
 
-    fun open(destination: String): AdbChannel = withRetry { it.open(destination) }
+    fun open(destination: String): AdbChannel = open(destination, LibAdbTransport.OPEN_TIMEOUT_MS)
+
+    fun open(destination: String, timeoutMs: Long): AdbChannel = withRetry { it.open(destination, timeoutMs) }
 
     fun runner(root: Boolean = false) = AdbShellRunner({ transport() }, root) { AdbPool.invalidate(serial) }
 

@@ -184,7 +184,7 @@ fun DevicesContent(savedAll: List<String>, preview: List<Pair<String, DevState>>
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (usb.isNotEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel(t("USB 连接", "USB")) }
+                item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel(t("有线互联（USB / OTG）", "Wired (USB / OTG)")) }
                 items(usb, key = { "usb:" + it.serial }) { u ->
                     if (!u.granted) UsbGrantCard(u, cb)
                     else {
@@ -213,8 +213,8 @@ fun DevicesContent(savedAll: List<String>, preview: List<Pair<String, DevState>>
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(
-                    t("提示：本应用与独立版 scrcpy-android 的 ADB 密钥不同，首次使用需在目标设备的「无线调试」中重新配对。也可用 USB / OTG 线直连：目标开启「USB 调试」后插上即可，首次需在目标上点「允许 USB 调试」。",
-                        "Note: this app has its own ADB key (different from the standalone scrcpy-android), so pair the target again under Wireless debugging. Or connect with a USB / OTG cable: enable USB debugging on the target, plug it in and tap “Allow USB debugging” there the first time."),
+                    t("提示：本应用 ADB 密钥与独立版 scrcpy-android 不同，无线需重新配对。两机有线：主机 OTG + 对方开 USB 调试；部分 ROM / 线材无法作主机。Sideload：对方进 Recovery → Apply update from ADB 后，在「工具」选 zip 刷入（非 fastboot）。",
+                        "Note: this app’s ADB key differs from standalone scrcpy-android — re-pair for wireless. Wired: host OTG + guest USB debugging; some ROMs / cables cannot host. Sideload: guest Recovery → Apply update from ADB, then pick a zip in Tools (not fastboot)."),
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(4.dp),
                 )
             }
@@ -260,12 +260,30 @@ fun DevicesContent(savedAll: List<String>, preview: List<Pair<String, DevState>>
 
 @Composable
 private fun EmptyHint(onPair: () -> Unit) {
+    val ctx = LocalContext.current
+    val host = remember { UsbAdb.supportsHost(ctx) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp)) {
             Text(t("还没有目标设备", "No target device yet"), fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(Modifier.size(8.dp))
-            Text(t("1. 在目标设备打开「开发者选项 → 无线调试」\n2. 点「使用配对码配对设备」，或扫码配对\n3. 回到这里点「配对 / 连接」完成配对\n\n配对后即可投屏控制、在双栏中浏览目标设备文件、管理应用 / 进程、看日志、开终端。",
-                "1. On the target: Developer options → Wireless debugging\n2. Pair with a pairing code (or QR)\n3. Tap “Pair / connect” here\n\nThen mirror and control it, browse its files in either pane, manage apps / processes, read logcat and open a shell."))
+            Text(t("无线：目标打开「开发者选项 → 无线调试」→ 配对码 / 扫码 → 这里点「配对 / 连接」。",
+                "Wireless: on the target open Developer options → Wireless debugging → pair code / QR → tap “Pair / connect” here."),
+                fontSize = 14.sp)
+            Spacer(Modifier.size(10.dp))
+            Text(t("有线两机互联", "Wired phone-to-phone"), fontWeight = FontWeight.SemiBold)
+            Text(
+                t(
+                    "1. 本机（主机）用 OTG 转接线 / 双头线连接另一台手机\n2. 对方打开「开发者选项 → USB 调试」（部分 ROM 还需「USB 调试（安全设置）」）\n3. 插上后本页会出现「有线互联」卡片；首次在对方点「允许 USB 调试」\n4. 即可投屏、浏览文件、传文件、开工具 / 终端（与无线相同）\n\n说明：主机需支持 USB Host；部分机型 / 线材无法当主机，或只能充电。对方若进了 Recovery 的 ADB Sideload，系统探测可能显示离线，但仍可在「工具」里 Sideload 刷 zip。",
+                    "1. Use an OTG adapter / dual-USB cable from this phone (host) to the other\n2. On the guest enable Developer options → USB debugging (some ROMs also need “USB debugging (Security settings)”)\n3. A Wired card appears here; tap Allow USB debugging on the guest the first time\n4. Mirror, browse, transfer, tools / shell work the same as wireless\n\nNote: the host needs USB Host. Some phones / cables cannot host, or only charge. If the guest is in Recovery ADB Sideload, probe may show offline — Sideload a zip from Tools still works.",
+                ),
+                fontSize = 13.sp,
+            )
+            if (!host) {
+                Spacer(Modifier.size(8.dp))
+                Text(t("当前设备未声明 USB Host，有线主机模式可能不可用，请改用无线调试。",
+                    "This device does not declare USB Host; wired host mode may be unavailable — use wireless debugging."),
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+            }
             Spacer(Modifier.size(12.dp))
             Button(onClick = onPair) { Text(t("配对 / 连接", "Pair / connect")) }
         }
@@ -292,15 +310,17 @@ private fun DeviceCard(cb: DeviceCallbacks, serial: String, state: DevState, onR
                     Text(if (UsbAdb.isUsbSerial(serial)) "USB · " + UsbAdb.keyOfSerial(serial) else serial, fontSize = 12.sp, color = cs.outline, maxLines = 1)
                 }
                 val online = state == DevState.ONLINE
+                val usb = UsbAdb.isUsbSerial(serial)
                 val l = when (state) {
                     DevState.ONLINE -> t("在线", "Online")
-                    DevState.OFFLINE -> t("离线", "Offline")
+                    DevState.OFFLINE -> if (usb) t("已插入 · 可 Sideload", "Attached · sideload OK") else t("离线", "Offline")
                     DevState.CHECKING -> t("检测中", "Checking")
                 }
+                val badgeOn = online || (usb && state == DevState.OFFLINE)
                 Text(
                     l, fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                    color = if (online) cs.primary else cs.outline,
-                    modifier = Modifier.background(if (online) cs.primaryContainer else cs.surfaceVariant, CircleShape).padding(horizontal = 10.dp, vertical = 3.dp),
+                    color = if (badgeOn) cs.primary else cs.outline,
+                    modifier = Modifier.background(if (badgeOn) cs.primaryContainer else cs.surfaceVariant, CircleShape).padding(horizontal = 10.dp, vertical = 3.dp),
                 )
                 if (onRemove != null) Box {
                     IconButton(onClick = { moreMenu = true }, modifier = Modifier.size(36.dp)) {

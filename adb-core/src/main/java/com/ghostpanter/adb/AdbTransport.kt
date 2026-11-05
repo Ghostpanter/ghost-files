@@ -18,6 +18,8 @@ interface AdbChannel : Closeable {
 interface AdbTransport : Closeable {
     val alive: Boolean
     fun open(destination: String): AdbChannel
+    /** Same as [open] with an explicit open timeout (sideload / slow recovery). */
+    fun open(destination: String, timeoutMs: Long): AdbChannel = open(destination)
 }
 
 internal class LibAdbChannel(private val stream: AdbStream) : AdbChannel {
@@ -32,9 +34,10 @@ internal class LibAdbChannel(private val stream: AdbStream) : AdbChannel {
  */
 class LibAdbTransport(private val conn: AdbConnection, private val owned: Boolean) : AdbTransport {
     override val alive: Boolean get() = conn.isConnectionEstablished
-    override fun open(destination: String): AdbChannel {
+    override fun open(destination: String): AdbChannel = open(destination, OPEN_TIMEOUT_MS)
+    override fun open(destination: String, timeoutMs: Long): AdbChannel {
         if (!alive) throw IOException("ADB connection closed")
-        return LibAdbChannel(conn.open(destination, OPEN_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+        return LibAdbChannel(conn.open(destination, timeoutMs, TimeUnit.MILLISECONDS))
     }
     override fun close() { if (owned) runCatching { conn.close() } }
 

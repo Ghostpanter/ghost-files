@@ -47,6 +47,10 @@ object UsbAdb {
 
     @JvmStatic fun isUsbHost(host: String?): Boolean = host != null && host.startsWith(HOST_PREFIX)
     @JvmStatic fun isUsbSerial(serial: String?): Boolean = serial != null && serial.startsWith(HOST_PREFIX)
+    /** True when this phone can act as USB host (OTG). Many phones report the feature but still fail with some cables / ROMs. */
+    @JvmStatic fun supportsHost(ctx: Context): Boolean =
+        ctx.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_USB_HOST)
+
     fun keyOfSerial(serial: String): String = serial.removePrefix(HOST_PREFIX).substringBeforeLast(':')
     fun serialOfKey(key: String) = "$HOST_PREFIX$key:$PORT"
 

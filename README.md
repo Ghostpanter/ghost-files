@@ -9,7 +9,7 @@
 
 参照 **MT 管理器** 和 **MiXplorer** 做的安卓双栏文件管理器：MT 式左右双栏，Root / Shizuku 提权访问 `Android/data` 和系统目录，连接 **SMB / FTP / FTPS / SFTP / WebDAV**，本机也能当服务器。还内置了投屏（scrcpy）、ADB 工具、终端、空间分析和 VLC 播放器。传输队列针对局域网复制容易卡死的问题专门做过设计。
 
-**下载：[最新正式版 APK](https://github.com/Ghostpanter/ghost-files/releases/latest)**（当前为 v0.7.1）
+**下载：[最新正式版 APK](https://github.com/Ghostpanter/ghost-files/releases/latest)**（当前为 v0.7.3）
 
 <p>
   <img src="docs/images/browse.png" width="200" alt="双栏浏览">
@@ -31,7 +31,7 @@
 - 界面语言：默认中文；设置 → 语言 可选「跟随系统 / 简体中文 / English」
 - Kotlin + Jetpack Compose（Material 3）
 
-## 功能（v0.7.1）
+## 功能（v0.7.3）
 
 ### 双栏浏览
 - MT 式双栏：手机竖屏也始终左右并排，中间分隔条可拖动（双击恢复一半）；当前栏有蓝色描边，复制 / 移动默认目标是另一栏
@@ -65,6 +65,8 @@
 - **设备工具**：设备信息、截图、录屏、开启 tcpip 5555、高级重启、保持唤醒、关闭屏幕；远程应用管理（安装 APK / APKS / XAPK、把本机应用装过去、导出安装包）；进程列表、一键激活、logcat
 - **ADB 文件访问**：把对方设备当成一个存储位置，在双栏里浏览、复制、移动；支持普通 ADB 和 ADB Root
 - **USB / OTG 直连 ADB**：用数据线连接，对方打开「USB 调试」即可，不需要无线调试
+- **两机有线互联**：本机作 USB Host（OTG）连另一台手机；设备页「有线互联」卡片可授权、投屏、浏览/传文件、开工具。部分 ROM / 线材无法作主机
+- **Sideload 刷机**：对方进 Recovery →「Apply update from ADB」后，在设备工具概览选 zip 推送（sideload_host / 旧版 sideload；非 fastboot）
 - **终端**：macOS 终端风格，可在「本机」和「目标设备」之间切换；多标签、历史记录、Tab 补全、Ctrl-C/D/L、Ctrl/Alt 粘滞键、双指缩放字体、常用命令收藏（可导入导出 JSON）
 
 > ADB 首次使用需要在目标设备「开发者选项 → 无线调试」里配对；用 USB 连接时，首次需要在目标设备上点「允许 USB 调试」。

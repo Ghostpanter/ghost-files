@@ -9,7 +9,7 @@
 
 A dual-pane file manager for Android in the spirit of **MT Manager** and **MiXplorer**. It has MT-style side-by-side panes and uses Root or Shizuku to reach `Android/data` and system folders. It connects to **SMB / FTP / FTPS / SFTP / WebDAV**, and it can also turn your phone into a file server. Screen mirroring (scrcpy), ADB tools, a terminal, a storage analyzer and a VLC player are built in. The transfer queue is built specifically so that copying over the LAN does not stall.
 
-**Download: [latest stable APK](https://github.com/Ghostpanter/ghost-files/releases/latest)** (currently v0.7.1)
+**Download: [latest stable APK](https://github.com/Ghostpanter/ghost-files/releases/latest)** (currently v0.7.3)
 
 In the English UI the app is called **TwinPane File Manager**. The screenshots below show the Chinese UI.
 
@@ -33,7 +33,7 @@ In the English UI the app is called **TwinPane File Manager**. The screenshots b
 - UI language: Chinese by default. Settings → Language offers "Follow system / 简体中文 / English".
 - Kotlin + Jetpack Compose (Material 3)
 
-## Features (v0.7.1)
+## Features (v0.7.3)
 
 ### Dual-pane browsing
 - MT-style dual pane: the two panes stay side by side even on a phone in portrait. You can drag the divider, and a double-tap resets it to half. The active pane has a blue outline, and copy / move go to the other pane by default.
@@ -58,7 +58,7 @@ In the English UI the app is called **TwinPane File Manager**. The screenshots b
   - symlinks;
   - remount read-write.
 - **Shizuku** (no root, adb shell privileges): access `Android/data` and `Android/obb` (one combined drawer entry)
-- **Built-in privilege** (v0.7.1, no separate Shizuku app): on Android 11+ pair via a notification code and self-connect to wireless debugging; on 9/10 use a PC or OTG ADB starter command; with root it can start directly. External Shizuku is preferred when it is installed and granted.
+- **Built-in privilege** (v0.7.3, no separate Shizuku app): on Android 11+ pair via a notification code and self-connect to wireless debugging; on 9/10 use a PC or OTG ADB starter command; with root it can start directly. External Shizuku is preferred when it is installed and granted.
 - **SAF**: grant access to `Android/data` on Android 11–12; USB drives and SD cards
 - **App icons on package-name folders**: folders named after a package show that app's icon and name. This works under `Android/data`, `obb`, `media`, `/data/data`, `/data/user` and `/data/app`.
 
@@ -80,6 +80,8 @@ In the English UI the app is called **TwinPane File Manager**. The screenshots b
   - process list, one-tap activation, logcat.
 - **ADB file access**: browse, copy and move files on the other device in either pane, like any other storage location. Both plain ADB and ADB root work.
 - **USB / OTG ADB**: connect with a cable and enable "USB debugging" on the other device. Wireless debugging is not needed.
+- **Wired phone-to-phone**: this phone as USB Host (OTG) to another; Devices → Wired card for permission, mirror, browse/transfer, tools. Some ROMs / cables cannot host.
+- **Sideload**: guest Recovery → Apply update from ADB, then pick a zip in Tools overview (sideload_host / legacy sideload; not fastboot).
 - **Terminal** (macOS Terminal look):
   - switch between "This device" and "Target device";
   - tabs, history and Tab completion;
@@ -94,10 +96,10 @@ In the English UI the app is called **TwinPane File Manager**. The screenshots b
   - plain `.apk` files;
   - `.apks` / `.xapk` / `.apkm` bundles and folders of split APKs. The right splits for this device are picked automatically.
 - Bundles install through the system installer or silently via Root / Shizuku, and OBB data is copied automatically.
-- **Install source** (v0.7.1): silent installs can record Play / this app / leave as-is; the app details screen can show or change the source.
+- **Install source** (v0.7.3): silent installs can record Play / this app / leave as-is; the app details screen can show or change the source.
 - APK details: icon, version, SDK levels, permissions, installed version
 - App manager: export APKs in bulk. With root, you can also back up app data in bulk.
-- **Personal data backup & restore** (v0.7.1): contacts, SMS / MMS, call log and calendar
+- **Personal data backup & restore** (v0.7.3): contacts, SMS / MMS, call log and calendar
 
 ### Storage analyzer
 - A treemap shows which folders take the most space. You can filter by type, size or modification time. There are also "Large files", "Duplicates" and "Empty folders" lists.

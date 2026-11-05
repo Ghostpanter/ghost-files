@@ -90,6 +90,12 @@ import com.ghostpanter.adb.InfoGroup
 import com.ghostpanter.adb.ProcInfo
 import com.ghostpanter.adb.Processes
 import com.ghostpanter.adb.Reboot
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.LinearProgressIndicator
+import com.ghostpanter.adb.Sideload
+import android.net.Uri
 import com.ghostpanter.files.ui.MainViewModel
 import com.ghostpanter.files.ui.Screen
 import com.ghostpanter.files.t
@@ -229,6 +235,38 @@ fun OverviewPane(toast: (String) -> Unit, serial: String, previewInfo: List<Info
     }
     var confirm by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     var rebootMenu by remember { mutableStateOf(false) }
+    var sideloadProg by remember { mutableStateOf<Pair<Long, Long>?>(null) }
+    var sideloadName by remember { mutableStateOf<String?>(null) }
+    val sideloadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            busy = t("准备 Sideload…", "Preparing sideload…")
+            sideloadProg = 0L to 1L
+            io {
+                val name = runCatching {
+                    ctx.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) c.getString(0) else null
+                    }
+                }.getOrNull() ?: "update.zip"
+                kotlinx.coroutines.runBlocking(Dispatchers.Main.immediate) { sideloadName = name }
+                val tmp = File(ctx.cacheDir, "sideload-${stamp()}-${safeName(name)}").also { it.parentFile?.mkdirs() }
+                try {
+                    ctx.contentResolver.openInputStream(uri)?.use { inp -> tmp.outputStream().use { inp.copyTo(it) } }
+                        ?: throw java.io.IOException(t("无法读取所选文件", "Cannot read the selected file"))
+                    Sideload.push(dev, tmp) { done, total ->
+                        kotlinx.coroutines.runBlocking(Dispatchers.Main.immediate) {
+                            sideloadProg = done to total
+                        }
+                    }
+                } finally {
+                    tmp.delete()
+                }
+            }.onSuccess { r ->
+                toast(t("Sideload 完成（", "Sideload done (") + r.mode + t("），对方 Recovery 将继续安装。", "); recovery will continue installing."))
+            }.onFailure { toast(t("Sideload 失败：", "Sideload failed: ") + (it.message ?: it.toString())) }
+            busy = null; sideloadProg = null; sideloadName = null
+        }
+    }
     var stayAwake by remember { mutableStateOf(Settings.stayAwake(ctx)) }
     var screenOff by remember { mutableStateOf(Settings.screenOff(ctx)) }
     var rootOn by remember { mutableStateOf(AdbPool.rootEnabled(serial)) }
@@ -353,9 +391,30 @@ fun OverviewPane(toast: (String) -> Unit, serial: String, previewInfo: List<Info
                                 }
                             }
                         }
+                        GhostChip({
+                            confirm = t(
+                                "Sideload 刷机：请先让对方进入 Recovery，并选择「Apply update from ADB / 从 ADB 应用更新」后等待；再选本地 zip（OTA / 第三方 Recovery 包）。这不是 fastboot。刷机有风险，请自行确认包与机型匹配。",
+                                "Sideload: put the peer in Recovery → Apply update from ADB and wait, then pick a local zip (OTA / custom recovery). This is not fastboot. Flashing is risky — confirm the package matches the device.",
+                            ) to { sideloadPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
+                        }, { Text(t("Sideload 刷机", "Sideload")) }, leadingIcon = { Icon(Icons.Filled.SystemUpdate, null) })
                         GhostChip({ reload++ }, { Text(t("刷新信息", "Refresh")) }, leadingIcon = { Icon(Icons.Filled.Refresh, null) })
                     }
                     busy?.let { Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text(it, fontSize = 13.sp) } }
+                    sideloadProg?.let { (done, total) ->
+                        val pct = if (total > 0) ((done.coerceAtMost(total * 3) * 100) / (total * 2)).coerceIn(0, 99) else 0
+                        // Host protocol re-reads ≈2×; show a soft percent capped under 100 until DONEDONE.
+                        Column(Modifier.padding(top = 8.dp).fillMaxWidth()) {
+                            Text(
+                                t("Sideload ", "Sideload ") + (sideloadName ?: "zip") + " · ~$pct% · " + DeviceInfo.human(done) + " / " + DeviceInfo.human(total),
+                                fontSize = 12.sp, color = MaterialTheme.colorScheme.outline,
+                            )
+                            Spacer(Modifier.size(4.dp))
+                            LinearProgressIndicator(
+                                progress = { (done.toFloat() / (total * 2f).coerceAtLeast(1f)).coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     ToggleRow(t("控制时保持目标常亮", "Keep target awake while controlling"), stayAwake) { stayAwake = it; Settings.setStayAwake(ctx, it) }
                     ToggleRow(t("投屏时关闭目标屏幕", "Turn target screen off while mirroring"), screenOff) { screenOff = it; Settings.setScreenOff(ctx, it) }
