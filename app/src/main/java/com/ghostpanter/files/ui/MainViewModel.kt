@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.ghostpanter.files.cache.AppCache
 import com.ghostpanter.files.GhostApp
 import com.ghostpanter.files.core.Capability
 import com.ghostpanter.files.core.FileEntry
@@ -832,6 +833,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
                     }
                 }
             }
+            AppCache.trim(getApplication())
         }
         return out
     }

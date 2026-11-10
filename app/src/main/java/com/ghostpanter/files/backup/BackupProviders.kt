@@ -2,12 +2,14 @@ package com.ghostpanter.files.backup
 
 import android.Manifest
 import android.content.ContentProviderOperation
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.CalendarContract
 import android.provider.CallLog
 import android.provider.ContactsContract
@@ -21,6 +23,7 @@ import com.ghostpanter.files.core.backup.MmsRec
 import com.ghostpanter.files.core.backup.SmsRec
 import com.ghostpanter.files.core.backup.SmsSchema
 import com.ghostpanter.files.core.backup.SmsXml
+import com.ghostpanter.files.core.backup.TelephonyPager
 import com.ghostpanter.files.core.backup.VCard
 import com.ghostpanter.files.core.backup.VContact
 import com.ghostpanter.files.core.backup.VEvent
@@ -52,11 +55,152 @@ class BackupProviders(private val ctx: Context) {
 
     /** Items on the device (null = no permission / unreadable). */
     fun count(k: BackupKind): Int? = when (k) {
-        BackupKind.SMS -> if (!has(Manifest.permission.READ_SMS)) null else (count(Telephony.Sms.CONTENT_URI) ?: 0) + (count(Telephony.Mms.CONTENT_URI) ?: 0)
+        BackupKind.SMS -> if (!has(Manifest.permission.READ_SMS)) null else countSms() + countMms()
         BackupKind.CALLS -> if (!has(Manifest.permission.READ_CALL_LOG)) null else count(CallLog.Calls.CONTENT_URI)
         BackupKind.CONTACTS -> if (!has(Manifest.permission.READ_CONTACTS)) null else count(ContactsContract.Contacts.CONTENT_URI)
         BackupKind.CALENDAR -> if (!has(Manifest.permission.READ_CALENDAR)) null else count(CalendarContract.Events.CONTENT_URI, "${CalendarContract.Events.DELETED}=0")
     }
+
+    // SMS/MMS providers (especially Google Messages / OEM forks) often cap a single
+    // query at ~20, 500 or 1000 rows, or only return one box from content://sms.
+    // Walk every box, page by _id / OFFSET, then fill gaps per thread.
+    private val SMS_BOXES: List<Uri> = listOf(
+        Telephony.Sms.Inbox.CONTENT_URI,
+        Telephony.Sms.Sent.CONTENT_URI,
+        Telephony.Sms.Draft.CONTENT_URI,
+        Telephony.Sms.Outbox.CONTENT_URI,
+        Uri.parse("content://sms/failed"),
+        Uri.parse("content://sms/queued"),
+        Telephony.Sms.CONTENT_URI,
+    )
+    private val MMS_BOXES: List<Uri> = listOf(
+        Telephony.Mms.Inbox.CONTENT_URI,
+        Telephony.Mms.Sent.CONTENT_URI,
+        Telephony.Mms.Draft.CONTENT_URI,
+        Telephony.Mms.Outbox.CONTENT_URI,
+        Telephony.Mms.CONTENT_URI,
+    )
+    private val SMS_PROJ: Array<String> = (listOf("_id") + SmsSchema.SMS_COLUMNS + SmsSchema.SMS_ATTRS).distinct().toTypedArray()
+    private val MMS_PROJ: Array<String> = (listOf("_id") + SmsSchema.MMS_COLUMNS).distinct().toTypedArray()
+
+    private fun queryPage(uri: Uri, projection: Array<String>?, req: TelephonyPager.PageRequest, extraSel: String? = null, extraArgs: Array<String>? = null): Cursor? {
+        val idSel = if (req.useOffset) null else "_id > ?"
+        val idArgs = if (req.useOffset) null else arrayOf(req.afterId.toString())
+        val sel = listOfNotNull(extraSel, idSel).joinToString(" AND ").ifEmpty { null }
+        val args = ((extraArgs?.toList() ?: emptyList()) + (idArgs?.toList() ?: emptyList())).toTypedArray().ifEmpty { null }
+        val orderLimit = if (req.useOffset) "_id ASC LIMIT ${req.limit} OFFSET ${req.offset}" else "_id ASC LIMIT ${req.limit}"
+        val viaBundle = runCatching {
+            val b = Bundle().apply {
+                putInt(ContentResolver.QUERY_ARG_LIMIT, req.limit)
+                if (req.useOffset) putInt(ContentResolver.QUERY_ARG_OFFSET, req.offset)
+                if (sel != null) {
+                    putString(ContentResolver.QUERY_ARG_SQL_SELECTION, sel)
+                    if (args != null) putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
+                }
+                putStringArray(ContentResolver.QUERY_ARG_SORT_COLUMNS, arrayOf("_id"))
+                putInt(ContentResolver.QUERY_ARG_SORT_DIRECTION, ContentResolver.QUERY_SORT_DIRECTION_ASCENDING)
+            }
+            cr.query(uri, projection, b, null)
+        }.getOrNull()
+        if (viaBundle != null) return viaBundle
+        return runCatching { cr.query(uri, projection, sel, args, orderLimit) }.getOrNull()
+            ?: runCatching { cr.query(uri, projection, sel, args, "_id ASC") }.getOrNull()
+            ?: runCatching { cr.query(uri, projection, extraSel, extraArgs, orderLimit) }.getOrNull()
+    }
+
+    private fun fetchIds(uri: Uri, req: TelephonyPager.PageRequest, extraSel: String? = null, extraArgs: Array<String>? = null): List<Pair<Long, Long>> {
+        val c = queryPage(uri, arrayOf("_id"), req, extraSel, extraArgs) ?: return emptyList()
+        val out = ArrayList<Pair<Long, Long>>()
+        c.use {
+            val i = it.getColumnIndex("_id")
+            while (it.moveToNext()) {
+                val id = if (i >= 0 && !it.isNull(i)) it.getLong(i) else -1L
+                out.add(id to id)
+            }
+        }
+        return out
+    }
+
+    private fun fetchRows(uri: Uri, projection: Array<String>, req: TelephonyPager.PageRequest, extraSel: String? = null, extraArgs: Array<String>? = null): List<Pair<Long, Map<String, String?>>> {
+        val c = queryPage(uri, projection, req, extraSel, extraArgs)
+            ?: queryPage(uri, null, req, extraSel, extraArgs)
+            ?: return emptyList()
+        val out = ArrayList<Pair<Long, Map<String, String?>>>()
+        c.use {
+            val i = it.getColumnIndex("_id")
+            while (it.moveToNext()) {
+                val id = if (i >= 0 && !it.isNull(i)) it.getLong(i) else -1L
+                out.add(id to row(it))
+            }
+        }
+        return out
+    }
+
+    private var threadIdCache: List<Long>? = null
+
+    private fun threadIds(): List<Long> {
+        threadIdCache?.let { return it }
+        val ids = LinkedHashSet<Long>()
+        val uris = listOf(
+            Telephony.Threads.CONTENT_URI,
+            Uri.parse("content://mms-sms/conversations"),
+            Uri.parse("content://sms/conversations"),
+        )
+        for (uri in uris) {
+            val pages = TelephonyPager.walk { req ->
+                val c = queryPage(uri, arrayOf("_id", "thread_id"), req) ?: return@walk emptyList()
+                val out = ArrayList<Pair<Long, Long>>()
+                c.use {
+                    val iId = it.getColumnIndex("_id")
+                    val iTid = it.getColumnIndex("thread_id")
+                    var n = 0L
+                    while (it.moveToNext()) {
+                        val tid = when {
+                            iTid >= 0 && !it.isNull(iTid) -> it.getLong(iTid)
+                            iId >= 0 && !it.isNull(iId) -> it.getLong(iId)
+                            else -> -1L
+                        }
+                        if (tid >= 0) ids.add(tid)
+                        val pageId = if (iId >= 0 && !it.isNull(iId)) it.getLong(iId) else ++n
+                        out.add(pageId to tid)
+                    }
+                }
+                out
+            }
+            pages.count() // exhaust
+        }
+        return ids.toList().also { threadIdCache = it }
+    }
+
+    private fun smsFetches(projection: Array<String>?): List<(TelephonyPager.PageRequest) -> List<Pair<Long, Map<String, String?>>>> {
+        val idOnly = projection != null && projection.size == 1 && projection[0] == "_id"
+        fun asRows(uri: Uri, sel: String? = null, args: Array<String>? = null): (TelephonyPager.PageRequest) -> List<Pair<Long, Map<String, String?>>> = { req ->
+            if (idOnly) fetchIds(uri, req, sel, args).map { (id, _) -> id to mapOf("_id" to id.toString()) }
+            else fetchRows(uri, projection ?: SMS_PROJ, req, sel, args)
+        }
+        val list = ArrayList<(TelephonyPager.PageRequest) -> List<Pair<Long, Map<String, String?>>>>()
+        for (u in SMS_BOXES) list += asRows(u)
+        // Per-thread queries defeat a global cap of ~20 on content://sms.
+        for (tid in threadIds()) list += asRows(Telephony.Sms.CONTENT_URI, "thread_id=?", arrayOf(tid.toString()))
+        return list
+    }
+
+    private fun mmsFetches(projection: Array<String>?): List<(TelephonyPager.PageRequest) -> List<Pair<Long, Map<String, String?>>>> {
+        val idOnly = projection != null && projection.size == 1 && projection[0] == "_id"
+        fun asRows(uri: Uri, sel: String? = null, args: Array<String>? = null): (TelephonyPager.PageRequest) -> List<Pair<Long, Map<String, String?>>> = { req ->
+            if (idOnly) fetchIds(uri, req, sel, args).map { (id, _) -> id to mapOf("_id" to id.toString()) }
+            else fetchRows(uri, projection ?: MMS_PROJ, req, sel, args)
+        }
+        val list = ArrayList<(TelephonyPager.PageRequest) -> List<Pair<Long, Map<String, String?>>>>()
+        for (u in MMS_BOXES) list += asRows(u)
+        for (tid in threadIds()) list += asRows(Telephony.Mms.CONTENT_URI, "thread_id=?", arrayOf(tid.toString()))
+        return list
+    }
+
+    private fun countSms(): Int = TelephonyPager.count(smsFetches(arrayOf("_id")))
+    private fun countMms(): Int = TelephonyPager.count(mmsFetches(arrayOf("_id")))
+    private fun allSms(): Sequence<Map<String, String?>> = TelephonyPager.walkMany(smsFetches(SMS_PROJ))
+    private fun allMms(): Sequence<Map<String, String?>> = TelephonyPager.walkMany(mmsFetches(MMS_PROJ))
 
     private fun row(c: Cursor): Map<String, String?> {
         val m = HashMap<String, String?>(c.columnCount * 2)
@@ -80,26 +224,19 @@ class BackupProviders(private val ctx: Context) {
     }
 
     fun exportSms(w: Writer, t: Tick): Int {
-        val smsTotal = count(Telephony.Sms.CONTENT_URI) ?: 0
-        val mmsTotal = count(Telephony.Mms.CONTENT_URI) ?: 0
-        val total = smsTotal + mmsTotal
+        val total = countSms() + countMms()
         var done = 0
         val x = SmsXml.smsWriter(w)
         x.header(total, System.currentTimeMillis(), java.util.UUID.randomUUID().toString())
-        cr.query(Telephony.Sms.CONTENT_URI, null, null, null, "date ASC")?.use { c ->
-            while (c.moveToNext()) {
-                t.check()
-                val r = row(c)
-                x.sms(SmsSchema.smsFromRow(r, contactName(r["address"])))
-                if (++done % 50 == 0) t.progress(done, total)
-            }
+        for (r in allSms()) {
+            t.check()
+            x.sms(SmsSchema.smsFromRow(r, contactName(r["address"])))
+            if (++done % 50 == 0) t.progress(done, total)
         }
-        cr.query(Telephony.Mms.CONTENT_URI, null, null, null, "date ASC")?.use { c ->
-            while (c.moveToNext()) {
-                t.check()
-                val r = row(c)
-                val id = r["_id"] ?: continue
-                runCatching { x.mms(mms(id, r)) }
+        for (r in allMms()) {
+            t.check()
+            val id = r["_id"] ?: continue
+            if (runCatching { x.mms(mms(id, r)) }.isSuccess) {
                 if (++done % 10 == 0) t.progress(done, total)
             }
         }
@@ -137,12 +274,8 @@ class BackupProviders(private val ctx: Context) {
     fun restoreSms(r: Reader, t: Tick): RestoreCount {
         val res = RestoreCount()
         val have = HashSet<String>()
-        cr.query(Telephony.Sms.CONTENT_URI, arrayOf("address", "date", "type", "body"), null, null, null)?.use { c ->
-            while (c.moveToNext()) have.add(BackupDedupe.sms(c.getString(0), c.getLong(1), c.getString(2), c.getString(3)))
-        }
-        cr.query(Telephony.Mms.CONTENT_URI, arrayOf("m_id", "date", "msg_box", "sub"), null, null, null)?.use { c ->
-            while (c.moveToNext()) have.add(BackupDedupe.mms(c.getString(0), c.getLong(1), c.getString(2), c.getString(3)))
-        }
+        for (r in allSms()) have.add(BackupDedupe.sms(r["address"], r["date"]?.toLongOrNull() ?: 0, r["type"], r["body"]))
+        for (r in allMms()) have.add(BackupDedupe.mms(r["m_id"], r["date"]?.toLongOrNull() ?: 0, r["msg_box"], r["sub"]))
         var total = -1; var done = 0
         val batch = ArrayList<ContentValues>()
         fun flush() {

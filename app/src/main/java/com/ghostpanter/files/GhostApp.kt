@@ -36,7 +36,19 @@ class GhostApp : Application() {
         installScrcpy()
         com.ghostpanter.files.core.Lang.apply(graph.settings.language)
         com.ghostpanter.files.data.Settings.applyNightMode(this, graph.settings.themeMode)
-        Thread { com.ghostpanter.files.ui.Thumbnails.trimDisk() }.start()
+        Thread {
+            com.ghostpanter.files.cache.AppCache.trim(this)
+            com.ghostpanter.files.ui.Thumbnails.trimDisk()
+        }.start()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
+            Thread { com.ghostpanter.files.cache.AppCache.trim(this, aggressive = true) }.start()
+        } else if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            Thread { com.ghostpanter.files.cache.AppCache.trim(this) }.start()
+        }
     }
 
     /** Embedded scrcpy-android: crash log + Shizuku listener, and in-app language for its View activities. */

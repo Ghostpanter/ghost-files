@@ -97,6 +97,7 @@ data class DrawerUiState(
     val recycleBin: Boolean,
     val jobs: Int,
     val jobsPerServer: Int,
+    val cacheBytes: Long = 0,
 )
 
 /** Drawer callbacks. Defaults are no-ops so previews / snapshots only pass what they need. */
@@ -145,6 +146,7 @@ class DrawerActions(
     val setJobsPerServer: (Int) -> Unit = {},
     val exportBackup: () -> Unit = {},
     val importBackup: () -> Unit = {},
+    val clearCache: () -> Unit = {},
 )
 
 @Composable
@@ -157,6 +159,9 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
     var rootGranted by remember { mutableStateOf(RootRunner.granted()) }
     var jobs by remember { mutableIntStateOf(settings.concurrentJobs) }
     var perServer by remember { mutableIntStateOf(settings.jobsPerServer) }
+    var cacheBytes by remember { mutableLongStateOf(0L) }
+    fun refreshCache() { scope.launch(Dispatchers.IO) { val n = com.ghostpanter.files.cache.AppCache.bytes(ctx); withContext(Dispatchers.Main) { cacheBytes = n } } }
+    LaunchedEffect(Unit) { refreshCache() }
     val adbSaved = com.ghostpanter.files.ui.adb.rememberSavedDevices()
     var adbGone by remember { mutableStateOf(emptySet<String>()) }
     var adbConfirm by remember { mutableStateOf<String?>(null) }
@@ -248,6 +253,7 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
         recycleBin = settings.recycleBin,
         jobs = jobs,
         jobsPerServer = perServer,
+        cacheBytes = cacheBytes,
     )
     val actions = DrawerActions(
         openVolume = { go(LocalFs.ID, it.path) },
@@ -300,6 +306,16 @@ fun DrawerContent(vm: MainViewModel, activity: MainActivity, close: () -> Unit, 
             val f = com.ghostpanter.files.BrandPaths.findConfigBackup(downloads())
             if (f != null) { vm.importBackup(f.absolutePath); close() }
             else vm.toast(t("请将备份放到 Download/dualpane-backup.gfbackup", "Place backup at Download/dualpane-backup.gfbackup"))
+        },
+        clearCache = {
+            scope.launch(Dispatchers.IO) {
+                val freed = com.ghostpanter.files.cache.AppCache.clear(ctx)
+                val left = com.ghostpanter.files.cache.AppCache.bytes(ctx)
+                withContext(Dispatchers.Main) {
+                    cacheBytes = left
+                    vm.toast(t("已清理缓存 " + formatSize(freed), "Cleared " + formatSize(freed)))
+                }
+            }
         },
     )
     DrawerBody(state, actions)
@@ -471,6 +487,11 @@ fun DrawerBody(s: DrawerUiState, a: DrawerActions, modifier: Modifier = Modifier
             Stepper(t("同时传输任务数", "Parallel jobs"), t("重启生效", "After restart"), s.jobs, 1..4, a.setJobs)
             Hair(14.dp)
             Stepper(t("同一服务器任务数", "Jobs per server"), t("重启生效", "After restart"), s.jobsPerServer, 1..4, a.setJobsPerServer)
+            Hair(14.dp)
+            Item(Icons.Rounded.DeleteSweep, t("清除缓存", "Clear cache"),
+                t("当前 %s · 含预览/播放临时文件，清理后可再生成".format(formatSize(s.cacheBytes)),
+                  "Now %s · preview/playback temps, rebuilt as needed".format(formatSize(s.cacheBytes))),
+                onClick = a.clearCache)
         }
 
         Group(t("备份", "Backup")) {

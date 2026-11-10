@@ -24,6 +24,7 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
+import com.ghostpanter.files.cache.AppCache
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.t
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +57,7 @@ fun PlayerScreen(vm: MainViewModel, s: Screen.Player) {
                             vm.fsm.get(s.fsId).openRead(path).use { input ->
                                 out.outputStream().use { input.copyTo(it) }
                             }
+                            AppCache.trim(ctx)
                         }
                         out
                     }
@@ -70,7 +72,7 @@ fun PlayerScreen(vm: MainViewModel, s: Screen.Player) {
             .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(ctx)))
             .build()
     }
-    DisposableEffect(Unit) { onDispose { player.release() } }
+    DisposableEffect(Unit) { onDispose { player.release(); Thread { AppCache.trim(ctx) }.start() } }
 
     LaunchedEffect(local) {
         val f = local ?: return@LaunchedEffect

@@ -286,6 +286,15 @@ class MainActivity : ComponentActivity() {
         safPicker.launch(initial)
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
+            Thread { com.ghostpanter.files.cache.AppCache.trim(this, aggressive = true) }.start()
+        } else if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            Thread { com.ghostpanter.files.cache.AppCache.trim(this) }.start()
+        }
+    }
+
     companion object {
         const val EXTRA_SHOW_SERVERS = "show_servers"
         const val EXTRA_ADB_TOOLS = "adb_tools"
