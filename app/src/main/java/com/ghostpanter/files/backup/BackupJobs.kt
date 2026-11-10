@@ -114,6 +114,11 @@ object BackupJobs {
                 }
             } catch (e: CancellationException) { cancelled = true } catch (e: Throwable) { error = e.message ?: e.toString() }
             for ((k, n) in counts) lines.add(BackupLine(k, unit(k, n)))
+            if (BackupKind.SMS in counts) runCatching {
+                val d = p.smsDiagnostics()
+                lines.add(BackupLine(BackupKind.SMS, t("来源：", "Sources: ") + d.summary()))
+                com.ghostpanter.files.core.backup.SmsGap.advice(d)?.let { lines.add(BackupLine(BackupKind.SMS, it, false)) }
+            }
             lines.sortBy { it.kind.ordinal }
             if (cancelled || error != null) runCatching { if (zip) fs.delete(target, false) else fs.delete(target, true) }
             withContext(Dispatchers.Main) {

@@ -14,6 +14,7 @@ import android.provider.CalendarContract
 import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Telephony
+import android.telephony.SubscriptionManager
 import com.ghostpanter.files.core.backup.BackupDedupe
 import com.ghostpanter.files.core.backup.BackupKind
 import com.ghostpanter.files.core.backup.CallRec
@@ -172,6 +173,17 @@ class BackupProviders(private val ctx: Context) {
         return ids.toList().also { threadIdCache = it }
     }
 
+    /** Active SIM subscription ids plus -1 (restored / unspecialised messages). */
+    private fun subIds(): List<Int> {
+        val ids = LinkedHashSet<Int>()
+        runCatching {
+            val sm = ctx.getSystemService(SubscriptionManager::class.java)
+            sm?.activeSubscriptionInfoList?.forEach { ids.add(it.subscriptionId) }
+        }
+        ids.add(SubscriptionManager.INVALID_SUBSCRIPTION_ID) // -1, typical of migrated / restored rows
+        return ids.toList()
+    }
+
     private fun smsFetches(projection: Array<String>?): List<(TelephonyPager.PageRequest) -> List<Pair<Long, Map<String, String?>>>> {
         val idOnly = projection != null && projection.size == 1 && projection[0] == "_id"
         fun asRows(uri: Uri, sel: String? = null, args: Array<String>? = null): (TelephonyPager.PageRequest) -> List<Pair<Long, Map<String, String?>>> = { req ->
@@ -182,6 +194,7 @@ class BackupProviders(private val ctx: Context) {
         for (u in SMS_BOXES) list += asRows(u)
         // Per-thread queries defeat a global cap of ~20 on content://sms.
         for (tid in threadIds()) list += asRows(Telephony.Sms.CONTENT_URI, "thread_id=?", arrayOf(tid.toString()))
+        for (sid in subIds()) list += asRows(Telephony.Sms.CONTENT_URI, "sub_id=?", arrayOf(sid.toString()))
         return list
     }
 
@@ -194,7 +207,62 @@ class BackupProviders(private val ctx: Context) {
         val list = ArrayList<(TelephonyPager.PageRequest) -> List<Pair<Long, Map<String, String?>>>>()
         for (u in MMS_BOXES) list += asRows(u)
         for (tid in threadIds()) list += asRows(Telephony.Mms.CONTENT_URI, "thread_id=?", arrayOf(tid.toString()))
+        for (sid in subIds()) list += asRows(Telephony.Mms.CONTENT_URI, "sub_id=?", arrayOf(sid.toString()))
         return list
+    }
+
+    /** Per-source SMS/MMS counts so a short backup can be explained (and logged). */
+    fun smsDiagnostics(): com.ghostpanter.files.core.backup.SmsDiag {
+        val boxes = linkedMapOf(
+            "inbox" to Telephony.Sms.Inbox.CONTENT_URI, "sent" to Telephony.Sms.Sent.CONTENT_URI,
+            "draft" to Telephony.Sms.Draft.CONTENT_URI, "outbox" to Telephony.Sms.Outbox.CONTENT_URI,
+            "failed" to Uri.parse("content://sms/failed"), "queued" to Uri.parse("content://sms/queued"),
+            "all" to Telephony.Sms.CONTENT_URI,
+        )
+        val byBox = boxes.mapValues { (_, u) -> runCatching { TelephonyPager.count(listOf { req: TelephonyPager.PageRequest -> fetchIds(u, req) }) }.getOrDefault(0) }
+        val tids = runCatching { threadIds() }.getOrDefault(emptyList())
+        var sum = -1
+        runCatching {
+            var total = 0
+            var hasCol = false
+            val conv = Uri.parse("content://mms-sms/conversations?simple=true")
+            TelephonyPager.walk { req ->
+                val c = queryPage(conv, arrayOf("_id", "message_count"), req) ?: return@walk emptyList()
+                val out = ArrayList<Pair<Long, Long>>()
+                c.use {
+                    val iId = it.getColumnIndex("_id")
+                    val iCnt = it.getColumnIndex("message_count")
+                    if (iCnt >= 0) hasCol = true
+                    while (it.moveToNext()) {
+                        if (iCnt >= 0 && !it.isNull(iCnt)) total += it.getInt(iCnt)
+                        val id = if (iId >= 0 && !it.isNull(iId)) it.getLong(iId) else -1L
+                        out.add(id to id)
+                    }
+                }
+                out
+            }.count()
+            sum = if (hasCol) total else -1
+        }
+        val perThread = runCatching {
+            TelephonyPager.count(tids.map { tid -> { req: TelephonyPager.PageRequest -> fetchIds(Telephony.Sms.CONTENT_URI, req, "thread_id=?", arrayOf(tid.toString())) } })
+        }.getOrDefault(0)
+        val bySub = LinkedHashMap<Int, Int>()
+        for (sid in subIds()) {
+            val n = runCatching { TelephonyPager.count(listOf { req: TelephonyPager.PageRequest -> fetchIds(Telephony.Sms.CONTENT_URI, req, "sub_id=?", arrayOf(sid.toString())) }) }.getOrDefault(0)
+            if (n > 0 || sid >= 0) bySub[sid] = n
+        }
+        val rom = SmsAccess.rom()
+        val d = com.ghostpanter.files.core.backup.SmsDiag(
+            rom = rom, romLabel = SmsAccess.romLabel(rom),
+            smsTotal = runCatching { countSms() }.getOrDefault(0), byBox = byBox,
+            mmsTotal = runCatching { countMms() }.getOrDefault(0),
+            threads = tids.size, threadMessageSum = sum, perThreadSms = perThread,
+            notificationSmsAllowed = SmsAccess.miuiNotificationSmsAllowed(ctx),
+            defaultSmsApp = SmsAccess.defaultSmsApp(ctx),
+            bySubId = bySub,
+        )
+        android.util.Log.i("GFSmsDiag", d.summary())
+        return d
     }
 
     private fun countSms(): Int = TelephonyPager.count(smsFetches(arrayOf("_id")))

@@ -72,6 +72,11 @@ class BackupUi(
     val outcome: BackupOutcome? = null,
     /** This app currently holds the SMS role (show 「切回默认短信应用」). */
     val holdsSms: Boolean = false,
+    /** ROM hides some SMS (MIUI 通知类短信 / 验证码保护): guidance + button label. */
+    val smsWarning: String? = null,
+    val smsFixLabel: String? = null,
+    /** Per-source counts (收件箱 / 已发送 / 会话…), shown under the warning. */
+    val smsDiag: String? = null,
 )
 
 class BackupCallbacks(
@@ -89,6 +94,7 @@ class BackupCallbacks(
     val dismiss: () -> Unit = {},
     val openResult: () -> Unit = {},
     val giveBackSms: () -> Unit = {},
+    val fixSms: () -> Unit = {},
 )
 
 fun kindLabel(k: BackupKind) = when (k) {
@@ -264,6 +270,11 @@ private fun StatusCards(ui: BackupUi, cb: BackupCallbacks) {
     val cs = MaterialTheme.colorScheme
     ui.progress?.let { ProgressCard(it, cb); Spacer(Modifier.height(10.dp)) }
     ui.outcome?.let { OutcomeCard(it, cb); Spacer(Modifier.height(10.dp)) }
+    if (ui.tab == BackupTab.BACKUP && ui.smsWarning != null) {
+        Tip(Icons.Rounded.ErrorOutline, cs.error, ui.smsWarning + (ui.smsDiag?.let { "\n\n" + t("诊断：", "Diagnostics: ") + it } ?: ""),
+            ui.smsFixLabel, cb.fixSms)
+        Spacer(Modifier.height(10.dp))
+    }
     if (ui.holdsSms) {
         Tip(Icons.Rounded.SwapHoriz, cs.error, t("双栏文件管理器现在是默认短信应用。恢复已完成，请切回系统「信息」，以免漏收彩信。", "This app is the default SMS app now. Switch back to your messaging app so MMS keep arriving."),
             t("切回默认短信应用", "Switch back"), cb.giveBackSms)
@@ -292,7 +303,7 @@ private fun SideColumn(ui: BackupUi, cb: BackupCallbacks, status: Boolean = true
     if (ui.tab == BackupTab.BACKUP) {
         Tip(Icons.Rounded.Security, cs.primary, t("联系人、短信、通话记录、日历权限不会在安装或首次打开时申请；只有你勾选对应项并点「授权」或「开始备份」时才会请求。", "Contacts, SMS, call log, and calendar are not requested at install or first launch — only when you select that item and tap Grant or Back up."))
         Spacer(Modifier.height(8.dp))
-        Tip(Icons.Rounded.Info, cs.primary, t("ColorOS / HyperOS 开启「验证码短信保护」（或类似的隐私保护）时，验证码短信可能读不到，备份条数会比实际少。需要完整备份的话，先在 短信设置 → 隐私保护 里关闭再备份。", "With ColorOS / HyperOS \"verification code protection\" on, OTP messages may be hidden and the count will be lower. Turn it off in Messages settings for a complete backup."))
+        Tip(Icons.Rounded.Info, cs.primary, t("系统只能备份已写入系统短信库的短信和彩信。若对话是从旧手机用 Google「信息」恢复或迁移过来的，或标着 RCS /「聊天功能」，它们往往只在「信息」自己的库里，本应用读不到。小米还需打开「读取通知类短信」；ColorOS / 华为 / vivo 需关闭「验证码安全保护」。", "With ColorOS / HyperOS \"verification code protection\" on, OTP messages may be hidden and the count will be lower. Turn it off in Messages settings for a complete backup."))
         Spacer(Modifier.height(8.dp))
         Tip(Icons.Rounded.SwapHoriz, cs.primary, t("短信和通话记录保存为 sms-*.xml / calls-*.xml，和 SMS Backup & Restore 互相通用。", "Messages and calls are saved as sms-*.xml / calls-*.xml, interchangeable with SMS Backup & Restore."))
     } else {
@@ -434,10 +445,12 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
     var holdsSms by remember { mutableStateOf(BackupJobs.isDefaultSms(ctx)) }
     var pendingRestore by remember { mutableStateOf(false) }
 
+    var smsDiag by remember { mutableStateOf<com.ghostpanter.files.core.backup.SmsDiag?>(null) }
     fun reloadCounts() = scope.launch {
         for (k in kinds) {
             counts[k] = withContext(Dispatchers.IO) { runCatching { prov.count(k) }.getOrNull() }
         }
+        smsDiag = if (counts[BackupKind.SMS] == null) null else withContext(Dispatchers.IO) { runCatching { prov.smsDiagnostics() }.getOrNull() }
     }
     fun load(src: RestoreSource) {
         invLoading = true; invError = null; inv = null
@@ -528,6 +541,13 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
         restoreItems = i?.entries?.map { e -> BackupItemUi(e.kind, e.count, e.kind in restoreChecked) } ?: emptyList(),
         restoreLoading = invLoading, restoreError = invError,
         recent = recentInfo, progress = BackupJobs.progress, outcome = outcome, holdsSms = holdsSms && BackupJobs.progress == null,
+        smsWarning = smsDiag?.let { com.ghostpanter.files.core.backup.SmsGap.advice(it) },
+        smsFixLabel = smsDiag?.let { d ->
+            val v = com.ghostpanter.files.core.backup.SmsGap.assess(d)
+            if (v == com.ghostpanter.files.core.backup.SmsGap.Verdict.NOT_IN_PROVIDER || v == com.ghostpanter.files.core.backup.SmsGap.Verdict.OK) null
+            else com.ghostpanter.files.backup.SmsAccess.fixLabel(d.rom)
+        },
+        smsDiag = smsDiag?.summary(),
     )
     val cb = BackupCallbacks(
         back = { vm.screen = Screen.Main },
@@ -547,6 +567,7 @@ fun BackupScreen(vm: MainViewModel, s: Screen.Backup) {
         dismiss = { BackupJobs.outcome = null },
         openResult = { outcome?.let { o -> if (o.fsId != null && o.path != null) { vm.screen = Screen.Main; vm.openFs(o.fsId, if (zip) VPath.parent(o.path) else o.path) } } },
         giveBackSms = { giveBack() },
+        fixSms = { if (!com.ghostpanter.files.backup.SmsAccess.openFix(ctx)) vm.toast(t("无法打开权限页面，请手动到系统设置里操作", "Cannot open the settings page")) },
     )
     BackupContent(ui, cb)
 
