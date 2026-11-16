@@ -120,6 +120,7 @@ object AppCache {
                     n.startsWith("enc") && n.endsWith(".zip") ||
                     n.startsWith("bundle-") ||
                     n.startsWith("sideload-") ||
+                    n.startsWith("fastboot-") ||
                     n == "hex-save.bin"
                 ) -> true
                 else -> false

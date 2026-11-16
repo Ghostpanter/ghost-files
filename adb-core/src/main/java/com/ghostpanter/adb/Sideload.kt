@@ -12,7 +12,7 @@ import java.io.RandomAccessFile
  * 8-digit decimal block numbers (or `DONEDONE`); we reply with raw block bytes (last block
  * unpadded). Fall back to streaming the whole file over `sideload:` for older recoveries.
  *
- * This is ADB-in-recovery, not fastboot. USB filter stays on the ADB interface only.
+ * This is ADB-in-recovery, not fastboot (wired fastboot is UsbFastboot + FastbootClient).
  */
 object Sideload {
     /** AOSP default chunk (SIDELOAD_HOST_BLOCK_SIZE). */

@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.sp
 import com.ghostpanter.adb.AdbFs
 import com.ghostpanter.adb.AdbPool
 import com.ghostpanter.adb.usb.UsbAdb
+import com.ghostpanter.adb.usb.UsbFastboot
 import com.ghostpanter.files.ui.MainViewModel
 import com.ghostpanter.files.ui.Screen
 import com.ghostpanter.files.t
@@ -97,6 +98,7 @@ fun DevicesScreen(vm: MainViewModel) {
     DevicesContent(
         rememberSavedDevices(), null,
         usb = rememberUsbTargets(),
+        fastboot = rememberFastbootTargets(),
         cb = DeviceCallbacks(
             back = { vm.screen = Screen.Main },
             pair = { AdbNav.pairPanel(ctx) },
@@ -109,12 +111,20 @@ fun DevicesScreen(vm: MainViewModel) {
                 UsbAdb.find(ctx, key)?.let { UsbAdb.requestPermission(ctx, it) }
             },
             forget = { serial -> scope.launch(Dispatchers.IO) { AdbPool.forget(serial) } },
+            fastbootGrant = { serial ->
+                val key = UsbFastboot.keyOfSerial(serial)
+                UsbFastboot.find(ctx, key)?.let { UsbFastboot.requestPermission(ctx, it) }
+            },
+            fastboot = { vm.screen = Screen.Fastboot(it) },
         ),
     )
 }
 
 /** One attached USB device with an ADB interface. */
 data class UsbRow(val serial: String, val label: String, val granted: Boolean)
+
+/** One attached USB device in fastboot / fastbootd / bootloader. */
+data class FastbootRow(val serial: String, val label: String, val granted: Boolean)
 
 /** Attached USB ADB devices; refreshed on attach / detach / permission answers and on resume. */
 @Composable
@@ -133,6 +143,23 @@ fun rememberUsbTargets(): List<UsbRow> {
     return remember(rev) { runCatching { UsbAdb.targets(ctx).map { UsbRow(it.serial, it.label, it.hasPermission) } }.getOrDefault(emptyList()) }
 }
 
+/** Attached USB Fastboot / bootloader devices. */
+@Composable
+fun rememberFastbootTargets(): List<FastbootRow> {
+    val ctx = LocalContext.current
+    var rev by remember { mutableIntStateOf(0) }
+    val owner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        UsbFastboot.init(ctx)
+        val l: () -> Unit = { android.os.Handler(android.os.Looper.getMainLooper()).post { rev++ } }
+        UsbFastboot.addListener(l)
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) rev++ }
+        owner.lifecycle.addObserver(obs)
+        onDispose { UsbFastboot.removeListener(l); owner.lifecycle.removeObserver(obs) }
+    }
+    return remember(rev) { runCatching { UsbFastboot.targets(ctx).map { FastbootRow(it.serial, it.label, it.hasPermission) } }.getOrDefault(emptyList()) }
+}
+
 class DeviceCallbacks(
     val back: () -> Unit,
     val pair: () -> Unit,
@@ -143,11 +170,13 @@ class DeviceCallbacks(
     val usbGrant: (String) -> Unit = {},
     /** Removes a saved wireless device from this app (not the pairing on the target). */
     val forget: (String) -> Unit = {},
+    val fastbootGrant: (String) -> Unit = {},
+    val fastboot: (String) -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DevicesContent(savedAll: List<String>, preview: List<Pair<String, DevState>>?, cb: DeviceCallbacks, usb: List<UsbRow> = emptyList()) {
+fun DevicesContent(savedAll: List<String>, preview: List<Pair<String, DevState>>?, cb: DeviceCallbacks, usb: List<UsbRow> = emptyList(), fastboot: List<FastbootRow> = emptyList()) {
     // Serials removed on this page: hidden immediately (the saved list is otherwise only re-read on resume).
     var gone by remember { mutableStateOf(emptySet<String>()) }
     val saved = savedAll.filterNot { UsbAdb.isUsbSerial(it) || it in gone }
@@ -197,9 +226,17 @@ fun DevicesContent(savedAll: List<String>, preview: List<Pair<String, DevState>>
                         DeviceCard(cb, u.serial, state)
                     }
                 }
-                if (saved.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel(t("无线连接", "Wireless")) }
             }
-            if (saved.isEmpty() && usb.isEmpty()) {
+            if (fastboot.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel(t("有线 Fastboot", "Wired Fastboot")) }
+                items(fastboot, key = { "fb:" + it.serial }) { u ->
+                    FastbootCard(u, cb)
+                }
+            }
+            if ((usb.isNotEmpty() || fastboot.isNotEmpty()) && saved.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) { SectionLabel(t("无线连接", "Wireless")) }
+            }
+            if (saved.isEmpty() && usb.isEmpty() && fastboot.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { EmptyHint(cb.pair) }
             }
             items(saved, key = { it }) { serial ->
@@ -213,8 +250,8 @@ fun DevicesContent(savedAll: List<String>, preview: List<Pair<String, DevState>>
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(
-                    t("提示：本应用 ADB 密钥与独立版 scrcpy-android 不同，无线需重新配对。两机有线：主机 OTG + 对方开 USB 调试；部分 ROM / 线材无法作主机。Sideload：对方进 Recovery → Apply update from ADB 后，在「工具」选 zip 刷入（非 fastboot）。",
-                        "Note: this app’s ADB key differs from standalone scrcpy-android — re-pair for wireless. Wired: host OTG + guest USB debugging; some ROMs / cables cannot host. Sideload: guest Recovery → Apply update from ADB, then pick a zip in Tools (not fastboot)."),
+                    t("提示：本应用 ADB 密钥与独立版 scrcpy-android 不同，无线需重新配对。两机有线：主机 OTG + 对方开 USB 调试；部分 ROM / 线材无法作主机。Sideload：对方 Recovery → Apply update from ADB 后，在「工具」选 zip。有线 Fastboot：对方进 Bootloader / fastbootd 后本页会出现对应卡片（不是 Recovery Sideload）。",
+                        "Note: this app’s ADB key differs from standalone scrcpy-android — re-pair for wireless. Wired: host OTG + guest USB debugging; some ROMs / cables cannot host. Sideload: guest Recovery → Apply update from ADB, then pick a zip in Tools. Wired Fastboot: a card appears here when the guest is in bootloader / fastbootd (not Recovery sideload)."),
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(4.dp),
                 )
             }
@@ -273,8 +310,8 @@ private fun EmptyHint(onPair: () -> Unit) {
             Text(t("有线两机互联", "Wired phone-to-phone"), fontWeight = FontWeight.SemiBold)
             Text(
                 t(
-                    "1. 本机（主机）用 OTG 转接线 / 双头线连接另一台手机\n2. 对方打开「开发者选项 → USB 调试」（部分 ROM 还需「USB 调试（安全设置）」）\n3. 插上后本页会出现「有线互联」卡片；首次在对方点「允许 USB 调试」\n4. 即可投屏、浏览文件、传文件、开工具 / 终端（与无线相同）\n\n说明：主机需支持 USB Host；部分机型 / 线材无法当主机，或只能充电。对方若进了 Recovery 的 ADB Sideload，系统探测可能显示离线，但仍可在「工具」里 Sideload 刷 zip。",
-                    "1. Use an OTG adapter / dual-USB cable from this phone (host) to the other\n2. On the guest enable Developer options → USB debugging (some ROMs also need “USB debugging (Security settings)”)\n3. A Wired card appears here; tap Allow USB debugging on the guest the first time\n4. Mirror, browse, transfer, tools / shell work the same as wireless\n\nNote: the host needs USB Host. Some phones / cables cannot host, or only charge. If the guest is in Recovery ADB Sideload, probe may show offline — Sideload a zip from Tools still works.",
+                    "1. 本机（主机）用 OTG 转接线 / 双头线连接另一台手机\n2. 对方打开「开发者选项 → USB 调试」（部分 ROM 还需「USB 调试（安全设置）」）\n3. 插上后本页会出现「有线互联」卡片；首次在对方点「允许 USB 调试」\n4. 即可投屏、浏览文件、传文件、开工具 / 终端（与无线相同）\n\n有线 Fastboot：对方进入 Bootloader / fastbootd（组合键或 adb reboot bootloader）后，本页会出现「有线 Fastboot」卡片，可查看变量、重启、刷写或擦除分区。刷写有风险，请确认镜像与机型匹配。\n\n说明：主机需支持 USB Host；部分机型 / 线材无法当主机，或只能充电。对方若进了 Recovery 的 ADB Sideload，系统探测可能显示离线，但仍可在「工具」里 Sideload 刷 zip。",
+                    "1. Use an OTG adapter / dual-USB cable from this phone (host) to the other\n2. On the guest enable Developer options → USB debugging (some ROMs also need “USB debugging (Security settings)”)\n3. A Wired card appears here; tap Allow USB debugging on the guest the first time\n4. Mirror, browse, transfer, tools / shell work the same as wireless\n\nWired Fastboot: when the guest is in bootloader / fastbootd (key combo or adb reboot bootloader), a Wired Fastboot card appears for getvar, reboot, flash or erase. Flashing is risky — confirm the image matches the device.\n\nNote: the host needs USB Host. Some phones / cables cannot host, or only charge. If the guest is in Recovery ADB Sideload, probe may show offline — Sideload a zip from Tools still works.",
                 ),
                 fontSize = 13.sp,
             )
@@ -346,6 +383,32 @@ private fun DeviceCard(cb: DeviceCallbacks, serial: String, state: DevState, onR
                 SoftChip(t("工具", "Tools"), Icons.Rounded.Build) { cb.tools(serial) }
                 SoftChip(t("终端", "Shell"), Icons.Rounded.Terminal) { cb.shell(serial) }
             }
+        }
+    }
+}
+
+@Composable
+private fun FastbootCard(u: FastbootRow, cb: DeviceCallbacks) {
+    val cs = MaterialTheme.colorScheme
+    Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(44.dp).background(cs.surfaceVariant, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Usb, null, Modifier.size(24.dp), tint = cs.primary)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(u.label, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
+                    Text(
+                        if (u.granted) t("已插入 · Fastboot / Bootloader", "Attached · Fastboot / Bootloader")
+                        else t("已插入 · 需要 USB 访问授权", "Attached · USB access needed"),
+                        fontSize = 12.sp, color = cs.outline, maxLines = 1,
+                    )
+                }
+            }
+            Spacer(Modifier.size(14.dp))
+            if (!u.granted) SoftChip(t("授权 USB 访问", "Allow USB access"), Icons.Rounded.Usb, accent = true) { cb.fastbootGrant(u.serial) }
+            else SoftChip(t("打开 Fastboot", "Open Fastboot"), Icons.Filled.Build, accent = true) { cb.fastboot(u.serial) }
         }
     }
 }

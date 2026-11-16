@@ -192,6 +192,7 @@ private fun ScreenHost(vm: MainViewModel, activity: MainActivity, tablet: Window
         is Screen.MusicTag -> MusicTagScreen(vm, s)
         Screen.Devices -> com.ghostpanter.files.ui.adb.DevicesScreen(vm)
         is Screen.AdbTools -> com.ghostpanter.files.ui.adb.AdbToolsScreen(vm, s)
+        is Screen.Fastboot -> com.ghostpanter.files.ui.adb.FastbootScreen(vm, s)
         is Screen.Space -> SpaceScreen(vm, s)
         is Screen.Backup -> BackupScreen(vm, s)
         is Screen.EmbeddedPrivilege -> PrivilegeScreen(vm)

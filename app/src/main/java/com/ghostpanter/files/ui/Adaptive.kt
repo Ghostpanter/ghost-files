@@ -115,7 +115,7 @@ data class RailDest(val label: String, val icon: ImageVector, val screen: Screen
 fun railDestinations(): List<RailDest> = listOf(
     RailDest(t("文件", "Files"), Icons.Rounded.Folder, Screen.Main) {
         it !is Screen.Transfers && it !is Screen.Servers && it !is Screen.LanScan && it !is Screen.Apps && it !is Screen.Trash && it !is Screen.Terminal &&
-            it !is Screen.Devices && it !is Screen.AdbTools && it !is Screen.EmbeddedPrivilege
+            it !is Screen.Devices && it !is Screen.AdbTools && it !is Screen.Fastboot && it !is Screen.EmbeddedPrivilege
     },
     RailDest(t("传输", "Transfers"), Icons.Rounded.SwapVert, Screen.Transfers) { it == Screen.Transfers },
     RailDest(t("本机服务", "Hosting"), Icons.Rounded.CloudUpload, Screen.Servers) { it == Screen.Servers },
@@ -123,7 +123,7 @@ fun railDestinations(): List<RailDest> = listOf(
     RailDest(t("应用", "Apps"), Icons.Rounded.Apps, Screen.Apps) { it == Screen.Apps },
     RailDest(t("回收站", "Trash"), Icons.Rounded.DeleteSweep, Screen.Trash) { it == Screen.Trash },
     RailDest(t("终端", "Terminal"), Icons.Rounded.Terminal, Screen.Terminal) { it == Screen.Terminal },
-    RailDest(t("设备/投屏", "Devices"), Icons.Rounded.Cast, Screen.Devices) { it == Screen.Devices || it is Screen.AdbTools },
+    RailDest(t("设备/投屏", "Devices"), Icons.Rounded.Cast, Screen.Devices) { it == Screen.Devices || it is Screen.AdbTools || it is Screen.Fastboot },
 )
 
 /**

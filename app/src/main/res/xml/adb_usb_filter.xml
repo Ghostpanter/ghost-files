@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android devices with USB debugging on: the ADB interface (class 0xFF, subclass 0x42, protocol 0x01).
-     Fastboot (0x42/0x03) is deliberately not matched. -->
+<!-- Android USB gadgets: ADB (class 0xFF, subclass 0x42, protocol 0x01) and
+     Fastboot / fastbootd / bootloader (protocol 0x03). The classic Google
+     fastboot PID is included for bootloaders with incomplete descriptors. -->
 <resources>
     <usb-device class="255" subclass="66" protocol="1" />
+    <usb-device class="255" subclass="66" protocol="3" />
+    <usb-device vendor-id="6353" product-id="53261" />
 </resources>

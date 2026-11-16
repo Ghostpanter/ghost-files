@@ -76,6 +76,8 @@ sealed interface Screen {
     /** Paired ADB targets: mirror, browse, tools. */
     data object Devices : Screen
     data class AdbTools(val serial: String, val tab: Int = 0) : Screen
+    /** Wired USB fastboot / fastbootd / bootloader tools. */
+    data class Fastboot(val serial: String) : Screen
     /** SpaceSniffer-style analysis of a folder (null = backend home / internal storage), or the whole device. */
     data class Space(val fsId: String = com.ghostpanter.files.core.LocalFs.ID, val path: String? = null, val whole: Boolean = false) : Screen
     /** 备份与恢复; [restorePath] opens the restore tab on that backup (folder, zip, sms-*.xml, .vcf …). */

@@ -224,7 +224,11 @@ class UsbTransportTest {
 
     @Test fun adbInterfaceTriple() {
         assertTrue(UsbAdb.isAdbInterface(0xFF, 0x42, 0x01))
-        assertTrue(!UsbAdb.isAdbInterface(0xFF, 0x42, 0x03)) // fastboot is 0x42/0x03: never touched
+        assertTrue(!UsbAdb.isAdbInterface(0xFF, 0x42, 0x03)) // fastboot is 0x42/0x03: UsbFastboot, not UsbAdb
+        assertTrue(UsbFastboot.isFastbootInterface(0xFF, 0x42, 0x03))
+        assertTrue(!UsbFastboot.isFastbootInterface(0xFF, 0x42, 0x01))
+        assertTrue(UsbFastboot.isKnownFastbootPid(0x18d1, 0xd00d))
+        assertTrue(!UsbFastboot.isKnownFastbootPid(0x05c6, 0x9008)) // Qualcomm EDL is not fastboot
         assertEquals("usb-ABC123:1", UsbAdb.serialOfKey("ABC123"))
         assertEquals("ABC123", UsbAdb.keyOfSerial("usb-ABC123:1"))
         assertEquals("a_b", UsbAdb.sanitize("a b"))
