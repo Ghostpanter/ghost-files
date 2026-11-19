@@ -1,6 +1,14 @@
 package com.ghostpanter.files.core
 
+import com.ghostpanter.files.core.net.BodyNotReplayableException
 import com.ghostpanter.files.core.net.LanSocketBinder
+import com.ghostpanter.files.core.net.NetLog
+import com.ghostpanter.files.core.net.OneShotBody
+import com.ghostpanter.files.core.net.RedirectRouteCache
+import com.ghostpanter.files.core.net.SharedRedirectRoutes
+import com.ghostpanter.files.core.net.TooManyRedirectsException
+import com.ghostpanter.files.core.net.WebDavRedirectInterceptor
+import com.ghostpanter.files.core.net.retarget
 import okhttp3.ConnectionPool
 import okhttp3.Credentials
 import okhttp3.HttpUrl
@@ -26,6 +34,7 @@ import java.util.TimeZone
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLPeerUnverifiedException
 import javax.xml.parsers.SAXParserFactory
 
 /**
@@ -38,6 +47,12 @@ class WebDavFs(
     private val config: ServerConfig,
     private val timeouts: NetTimeouts = NetTimeouts(),
     baseUrlOverride: String? = null,
+    /**
+     * Hops learned from the gateway. Shared process-wide by default: browsing reuses one client, but
+     * every transfer job opens a dedicated connection, and a cold cache there would make each
+     * transfer re-learn the hop with an extra round trip.
+     */
+    private val redirects: RedirectRouteCache = SharedRedirectRoutes.cache,
 ) : VirtualFs {
 
     override val id = config.fsId
@@ -54,21 +69,32 @@ class WebDavFs(
 
     private val basePath: String = base.encodedPath.let { decode(it) }.trimEnd('/')
 
+    private val redirectsInterceptor = WebDavRedirectInterceptor(
+        routeCache = redirects,
+        username = config.username,
+        password = config.password,
+    )
+
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(timeouts.connectMs.toLong(), TimeUnit.MILLISECONDS)
         .readTimeout(timeouts.readMs.toLong(), TimeUnit.MILLISECONDS)
         .writeTimeout(timeouts.readMs.toLong(), TimeUnit.MILLISECONDS)
         .connectionPool(ConnectionPool(5, 2, TimeUnit.MINUTES))
         .retryOnConnectionFailure(true)
-        .followRedirects(true)
+        // Redirects are handled by redirectsInterceptor: OkHttp's own follow-up drops
+        // Authorization on a cross-origin hop and would 401 every redirected PUT.
+        .followRedirects(false)
+        .followSslRedirects(false)
         // Dedicated client: bind LAN sockets to Wi‑Fi when a VPN is up (host known from config).
         .socketFactory(LanSocketBinder.Factory(timeouts.connectMs, defaultHost = config.host))
+        // Order matters: auth runs first so the redirect interceptor sees (and copies) the header.
         .addInterceptor { chain ->
             val req = chain.request()
             if (config.username.isNotEmpty() && !config.anonymous) {
                 chain.proceed(req.newBuilder().header("Authorization", Credentials.basic(config.username, config.password, Charsets.UTF_8)).build())
             } else chain.proceed(req)
         }
+        .addInterceptor(redirectsInterceptor)
         .build()
 
     private fun url(path: String, dir: Boolean = false): HttpUrl {
@@ -81,10 +107,87 @@ class WebDavFs(
         return b.build()
     }
 
-    private fun call(req: Request): Response = try {
+    /**
+     * Sends [req], preferring a backend origin learned from an earlier 30x hop.
+     *
+     * Every request used to pay a full gateway round trip before the hop could be followed; once the
+     * hop is known the request goes straight to the backend. If that direct attempt fails at the
+     * connection level the hop may be stale (backend moved), so it is forgotten and the gateway gets
+     * one retry — the shortcut must never turn a moved backend into a hard failure.
+     */
+    private fun call(req: Request): Response {
+        val target = redirects.resolve(req.url)
+        if (target == null) return attempt(req)
+
+        val direct = retarget(req, target)
+        NetLog.d { "direct ${req.method} ${req.url.host} -> ${target.host} (cached hop)" }
+        return try {
+            http.newCall(direct).execute()
+        } catch (e: IOException) {
+            // A one-shot body has already been drained, so re-sending it would block forever on an
+            // empty queue: fail here and let the caller retry with a fresh body instead.
+            val replayable = req.body == null || req.body !is OneShotBody
+            if (!replayable || !isHopFailure(e)) {
+                // Forget the hop anyway, so a retry with a fresh body consults the gateway again.
+                redirects.invalidate(req.url)
+                throw wrap(direct, e)
+            }
+            NetLog.w { "!! 直连 ${direct.url.host} 失败（${e.javaClass.simpleName}），丢弃该跳转并用网关重试" }
+            redirects.invalidate(req.url)
+            attempt(req)
+        }
+    }
+
+    /** One attempt from the configured gateway URL. */
+    private fun attempt(req: Request): Response = try {
         http.newCall(req).execute()
     } catch (e: IOException) {
-        throw FsException("${req.method} ${VPath.normalize(decode(req.url.encodedPath))} " + tr("失败", "failed") + ": ${e.message}", e)
+        throw wrap(req, e)
+    }
+
+    /** Maps raw I/O failures onto a message that names the method and path. */
+    private fun wrap(req: Request, e: IOException): FsException = when (e) {
+        is SSLPeerUnverifiedException -> FsException(
+            tr(
+                "${req.method} ${req.url.host} TLS 证书与域名不匹配（跳转目标很可能用的是网关证书）: ${e.message}",
+                "${req.method} ${req.url.host} TLS certificate does not match host (redirect target likely holds the gateway cert): ${e.message}",
+            ),
+            e,
+        )
+        else -> FsException(
+            "${req.method} ${VPath.normalize(decode(req.url.encodedPath))} " + tr("失败", "failed") + ": ${e.message}",
+            e,
+        )
+    }
+
+    /**
+     * Whether the failure on a direct attempt is worth one retry through the gateway.
+     *
+     * Anything connection-level qualifies, including the `unexpected end of stream` a stale
+     * keep-alive connection produces. The two redirect-chain errors do not: one already exhausted
+     * `maxHops` and the other needs a fresh body from the caller.
+     */
+    private fun isHopFailure(e: IOException): Boolean =
+        e !is TooManyRedirectsException && e !is BodyNotReplayableException
+
+    /**
+     * Resolves the gateway hop for a streaming upload before the body is created.
+     *
+     * A one-shot body cannot be re-sent, so a 307 in the middle of a PUT would either hang on the
+     * drained queue or force a full retry. One cheap OPTIONS is enough: the redirect interceptor
+     * follows it and records the mapping, then the PUT goes straight to the backend.
+     */
+    private fun resolveUploadUrl(u: HttpUrl): HttpUrl {
+        redirects.resolve(u)?.let {
+            NetLog.d { "upload route (cached): ${u.host} -> ${it.host}" }
+            return it
+        }
+        runCatching {
+            http.newCall(Request.Builder().url(u).method("OPTIONS", null).build()).execute().use { }
+        }
+        val resolved = redirects.resolve(u)
+        NetLog.d { "upload route: ${u.host} -> ${resolved?.host ?: "(direct)"}" }
+        return resolved ?: u
     }
 
     private fun fail(r: Response, what: String): Nothing {
@@ -204,7 +307,7 @@ class WebDavFs(
         val finished = CountDownLatch(1)
         // Remaining bytes after [offset]. sizeHint is total final size when known.
         val remainingHint = if (sizeHint >= 0 && offset > 0) (sizeHint - offset).coerceAtLeast(0) else if (offset == 0L) sizeHint else -1L
-        val body = object : RequestBody() {
+        val body = object : RequestBody(), OneShotBody {
             override fun contentType() = OCTET
             override fun contentLength() = remainingHint
             override fun writeTo(sink: BufferedSink) {
@@ -217,14 +320,17 @@ class WebDavFs(
             }
         }
         // offset==0: normal PUT. offset>0: SabreDAV/Nextcloud PATCH with X-Update-Range.
+        // A streaming body can never be replayed, so the gateway hop is resolved up front and the
+        // upload is aimed at the backend directly (see resolveUploadUrl).
+        val target = resolveUploadUrl(url(path))
         val req = if (offset > 0) {
-            Request.Builder().url(url(path))
+            Request.Builder().url(target)
                 .patch(body)
                 .header("X-Update-Range", "bytes=$offset-")
                 .header("Content-Range", "bytes $offset-/*")
                 .build()
         } else {
-            Request.Builder().url(url(path)).put(body).build()
+            Request.Builder().url(target).put(body).build()
         }
         val worker = Thread({
             try {
@@ -308,7 +414,11 @@ class WebDavFs(
         moveOrCopy("COPY", from, to, true).use { it.isSuccessful }
     } catch (e: IOException) { false }
 
-    override fun reset() { http.connectionPool.evictAll() }
+    override fun reset() {
+        // Drop learned gateway hops too: they may point at a backend that moved.
+        redirects.clear()
+        http.connectionPool.evictAll()
+    }
 
     override fun close() {
         http.connectionPool.evictAll()
