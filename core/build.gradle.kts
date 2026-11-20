@@ -33,7 +33,9 @@ dependencies {
     // Archives
     api("org.apache.commons:commons-compress:1.27.1")
     api("org.tukaani:xz:1.10")
-    api("com.github.junrar:junrar:7.5.5")
+    // 8.x adds real RAR5 support (rar5 package: Rar5FileHeaderReader, Rar5Crypt); 7.5.5 threw
+    // UnsupportedRarV5Exception on every RAR5 archive.
+    api("com.github.junrar:junrar:8.1.2")
     // Encrypted ZIP + in-archive edit
     api("net.lingala.zip4j:zip4j:2.11.5")
     // Zstd / LZ4

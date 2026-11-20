@@ -7,6 +7,8 @@ import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.VirtualFs
 import com.github.junrar.Archive
+import com.github.junrar.exception.UnsupportedRarEncryptedException
+import com.github.junrar.exception.UnsupportedRarMethodException
 import org.apache.commons.compress.archivers.ArchiveInputStream
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
@@ -18,6 +20,7 @@ import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import java.io.BufferedInputStream
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
@@ -311,23 +314,37 @@ object Archives {
             Kind.RAR -> {
                 val (file, temp) = spool(srcFs, archivePath, localFile, tmpDir)
                 try {
-                    // junrar: RAR 1.5–4.x. RAR5 signature starts with Rar!\x1a\x07\x01
-                    val sig = ByteArray(8)
-                    file.inputStream().use { it.read(sig) }
-                    val isRar5 = sig.size >= 8 && sig[0] == 'R'.code.toByte() && sig[6] == 1.toByte()
-                    if (isRar5) {
-                        throw FsException(
-                            tr("检测到 RAR5。当前内置 junrar 仅稳定支持 RAR4；请用电脑 7-Zip 转成 zip/7z，或等后续版本内置 RAR5 引擎", "RAR5 detected. The built-in junrar only supports RAR4; convert to zip/7z with 7-Zip on a PC"),
-                        )
-                    }
-                    val arc = try { Archive(file, password) } catch (e: Exception) {
+                    // junrar 8.x handles RAR 1.5–4.x and RAR5 (5.x/7.x, i.e. everything WinRAR 7
+                    // writes) in the same code path, solid archives and split volumes included.
+                    val arc = try {
+                        Archive(file, password)
+                    } catch (e: UnsupportedRarEncryptedException) {
+                        throw FsException(tr("该 RAR 的头部已加密，需要密码才能列出内容", "RAR headers are encrypted; a password is required to list the contents"), e)
+                    } catch (e: Exception) {
                         throw FsException(tr("无法打开 RAR: ${e.message}", "Cannot open RAR: ${e.message}"), e)
                     }
                     arc.use {
+                        // Encrypted headers still parse, so ask for the password up front instead of
+                        // failing on the first entry with an opaque IOException.
+                        val locked = runCatching { arc.isPasswordProtected() }.getOrDefault(false)
+                        if (locked && password.isNullOrEmpty()) {
+                            throw FsException(tr("该 RAR 已加密，请输入密码后重试", "This RAR is encrypted; enter a password and retry"))
+                        }
                         for (h in arc.fileHeaders) {
+                            if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                             val name = h.fileName.replace('\\', '/')
                             if (h.isDirectory) { write(name, EMPTY, true, 0); continue }
-                            arc.getInputStream(h).use { ins -> write(name, ins, false, h.mTime?.time ?: 0) }
+                            try {
+                                arc.getInputStream(h).use { ins -> write(name, ins, false, h.mTime?.time ?: 0) }
+                            } catch (e: UnsupportedRarMethodException) {
+                                throw FsException(tr("RAR 使用了不支持的压缩算法: $name", "Unsupported RAR compression method: $name"), e)
+                            } catch (e: IOException) {
+                                // junrar surfaces a wrong password or a CRC mismatch as a bare IOException.
+                                throw FsException(
+                                    tr("解压 RAR 失败（密码错误或文件已损坏）: $name", "RAR extraction failed (wrong password or damaged archive): $name"),
+                                    e,
+                                )
+                            }
                         }
                     }
                 } finally { if (temp) file.delete() }

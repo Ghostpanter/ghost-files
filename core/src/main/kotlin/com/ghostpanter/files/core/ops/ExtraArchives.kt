@@ -19,7 +19,7 @@ import java.util.zip.CRC32
 
 /**
  * Extra archive formats: Zstd, LZ4, ISO9660, CAB (MSCF), and basic DMG (UDIF/ISO-inside).
- * RAR5 is attempted via junrar when possible; otherwise a clear error is thrown.
+ * RAR (RAR4 and RAR5) lives in [Archives] on top of junrar 8.x.
  */
 object ExtraArchives {
     fun isZst(name: String) = name.lowercase().let { it.endsWith(".zst") || it.endsWith(".zstd") || it.endsWith(".tar.zst") || it.endsWith(".tzst") }
