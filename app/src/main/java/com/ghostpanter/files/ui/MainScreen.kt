@@ -84,8 +84,9 @@ fun MainScreen(vm: MainViewModel, activity: MainActivity) {
         }
     }
     vm.pendingTransfer?.let { TransferConfirmDialog(it) { policy -> vm.confirmTransfer(policy) } }
-    vm.pendingExtract?.let { (tab, e) -> ExtractDialog(e, onDismiss = { vm.pendingExtract = null }) { sub, pw ->
-        vm.pendingExtract = null; vm.extract(tab, e, sub, pw)
+    vm.pendingExtract?.let { (tab, e) -> ExtractDialog(e, vm.extractIssue, onDismiss = { vm.pendingExtract = null; vm.extractIssue = null }) { sub, pw ->
+        vm.pendingExtract = null
+        vm.extract(tab, e, sub, pw)
     } }
     vm.bundleInstall?.let { r -> InstallSheet(r, vm) { vm.bundleInstall = null } }
     vm.dataTarRestore?.let { r -> DataTarRestoreDialog(vm, r) { vm.dataTarRestore = null } }

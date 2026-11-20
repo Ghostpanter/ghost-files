@@ -7,8 +7,12 @@ import com.ghostpanter.files.core.FsException
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.VirtualFs
 import com.github.junrar.Archive
+import com.github.junrar.exception.UnsupportedRarEncryptedException
+import com.github.junrar.exception.UnsupportedRarMethodException
+import org.apache.commons.compress.PasswordRequiredException
 import org.apache.commons.compress.archivers.ArchiveInputStream
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream
@@ -18,12 +22,19 @@ import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import java.io.BufferedInputStream
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 import java.util.Date
+
+/**
+ * The archive is encrypted and the password is missing or wrong. Kept as its own type so the UI can
+ * reopen the extract dialog instead of showing a dead-end toast.
+ */
+class ArchivePasswordException(message: String, cause: Throwable? = null) : FsException(message, cause)
 
 /** Archive create/extract working on any [VirtualFs] (local, root, LAN). */
 object Archives {
@@ -58,6 +69,13 @@ object Archives {
     }
 
     fun isArchive(name: String) = kindOf(name) != null
+
+    /**
+     * A compressor that wraps exactly one file (`.gz`, `.xz`, `.bz2`, `.zst`, `.lz4`).
+     * `tar.*` is a real container and stays multi-entry; these do not, so extracting them into a
+     * folder named after themselves only produces `single.txt/single.txt`.
+     */
+    fun isSingleFile(name: String) = kindOf(name) in setOf(Kind.GZ, Kind.XZ, Kind.BZ2, Kind.ZST, Kind.LZ4)
 
     private val GBK: Charset = runCatching { Charset.forName("GBK") }.getOrDefault(Charsets.ISO_8859_1)
 
@@ -108,7 +126,7 @@ object Archives {
         return count
     }
 
-    val creatable = listOf(Kind.ZIP, Kind.SEVEN_Z, Kind.TAR_GZ, Kind.TAR_XZ, Kind.TAR)
+    val creatable = listOf(Kind.ZIP, Kind.SEVEN_Z, Kind.TAR_GZ, Kind.TAR_XZ, Kind.TAR_BZ2, Kind.TAR)
 
     fun extensionOf(kind: Kind) = when (kind) {
         Kind.ZIP -> ".zip"; Kind.SEVEN_Z -> ".7z"; Kind.TAR -> ".tar"; Kind.TAR_GZ -> ".tar.gz"
@@ -247,23 +265,49 @@ object Archives {
         dstFs.mkdirs(destDir)
         var count = 0
         val buf = ByteArray(128 * 1024)
-        fun write(name: String, input: InputStream, isDir: Boolean, mtime: Long) {
+        fun write(name: String, input: InputStream, isDir: Boolean, mtime: Long, mode: Int = 0) {
             if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
             val target = safeChild(destDir, name)
-            if (isDir) { dstFs.mkdirs(target); return }
+            if (isDir) {
+                dstFs.mkdirs(target)
+                if (mode != 0) runCatching { dstFs.chmod(target, (mode and 511).toString(8), false) }
+                return
+            }
             dstFs.mkdirs(VPath.parent(target))
             dstFs.openWrite(target).use { out ->
                 while (true) { val n = input.read(buf); if (n < 0) break; out.write(buf, 0, n) }
             }
             if (mtime > 0) runCatching { dstFs.setLastModified(target, mtime) }
+            // Keep the executable bit of tarballs (shell scripts, binaries); backends without chmod
+            // simply ignore the call.
+            if (mode != 0) runCatching { dstFs.chmod(target, (mode and 511).toString(8), false) }
             count++; onProgress(Progress(name, count))
         }
         fun drain(ais: ArchiveInputStream<*>) {
             while (true) {
                 val e = ais.nextEntry ?: break
-                if (!ais.canReadEntryData(e)) throw FsException(tr("不支持的条目（可能已加密）: ${e.name}", "Unsupported entry (maybe encrypted): ${e.name}"))
+                // VirtualFs has no symlink primitive, so recreating a link would leave a 0-byte file
+                // that looks like data loss. Report it and move on.
+                if (e is TarArchiveEntry && (e.isSymbolicLink || e.isLink)) {
+                    onProgress(Progress(tr("${e.name}（链接已跳过）", "${e.name} (link skipped)"), count))
+                    continue
+                }
+                if (!ais.canReadEntryData(e)) {
+                    // A streaming ZipArchiveInputStream never decrypts, so an encrypted entry is the
+                    // normal cause. Say so instead of "unsupported", so the user knows to retype a
+                    // password (the retry re-enters through zip4j).
+                    if (e is ZipArchiveEntry && e.generalPurposeBit.usesEncryption()) {
+                        throw ArchivePasswordException(tr("该 ZIP 已加密，请输入密码后重试", "This ZIP is encrypted; enter a password and retry"))
+                    }
+                    throw FsException(tr("不支持的条目: ${e.name}", "Unsupported entry: ${e.name}"))
+                }
                 val name = if (e is ZipArchiveEntry && !e.generalPurposeBit.usesUTF8ForNames()) decodeName(e.rawName) else e.name
-                write(name, ais, e.isDirectory, e.lastModifiedDate?.time ?: 0)
+                val mode = when (e) {
+                    is TarArchiveEntry -> e.mode
+                    is ZipArchiveEntry -> e.unixMode and 0xFFF
+                    else -> 0
+                }
+                write(name, ais, e.isDirectory, e.lastModifiedDate?.time ?: 0, mode)
             }
         }
         val baseName = VPath.name(archivePath)
@@ -273,21 +317,25 @@ object Archives {
                     val (file, temp) = spool(srcFs, archivePath, localFile, tmpDir)
                     try {
                         val z = net.lingala.zip4j.ZipFile(file, password.toCharArray())
-                        for (h in z.fileHeaders) {
-                            if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
-                            val name = h.fileName.replace('\\', '/')
-                            if (h.isDirectory) { write(name, EMPTY, true, 0); continue }
-                            z.getInputStream(h).use { ins -> write(name, ins, false, h.lastModifiedTime) }
+                        try {
+                            for (h in z.fileHeaders) {
+                                if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
+                                val name = h.fileName.replace('\\', '/')
+                                if (h.isDirectory) { write(name, EMPTY, true, 0); continue }
+                                z.getInputStream(h).use { ins -> write(name, ins, false, h.lastModifiedTime) }
+                            }
+                        } catch (e: net.lingala.zip4j.exception.ZipException) {
+                            throw FsException(tr("解压 ZIP 失败（密码错误或文件已损坏）: ${e.message}", "ZIP extraction failed (wrong password or damaged archive): ${e.message}"), e)
                         }
                     } finally { if (temp) file.delete() }
                 } else srcFs.openRead(archivePath).use { raw ->
                     drain(ZipArchiveInputStream(BufferedInputStream(raw, 64 * 1024), "UTF-8", true, true))
                 }
             }
-            Kind.TAR -> srcFs.openRead(archivePath).use { drain(TarArchiveInputStream(BufferedInputStream(it))) }
-            Kind.TAR_GZ -> srcFs.openRead(archivePath).use { drain(TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(it)))) }
-            Kind.TAR_XZ -> srcFs.openRead(archivePath).use { drain(TarArchiveInputStream(XZCompressorInputStream(BufferedInputStream(it)))) }
-            Kind.TAR_BZ2 -> srcFs.openRead(archivePath).use { drain(TarArchiveInputStream(BZip2CompressorInputStream(BufferedInputStream(it)))) }
+            Kind.TAR -> srcFs.openRead(archivePath).use { drain(TarArchiveInputStream(BufferedInputStream(it), "UTF-8")) }
+            Kind.TAR_GZ -> srcFs.openRead(archivePath).use { drain(TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(it)), "UTF-8")) }
+            Kind.TAR_XZ -> srcFs.openRead(archivePath).use { drain(TarArchiveInputStream(XZCompressorInputStream(BufferedInputStream(it)), "UTF-8")) }
+            Kind.TAR_BZ2 -> srcFs.openRead(archivePath).use { drain(TarArchiveInputStream(BZip2CompressorInputStream(BufferedInputStream(it)), "UTF-8")) }
             Kind.GZ -> srcFs.openRead(archivePath).use { write(baseName.substringBeforeLast('.'), GzipCompressorInputStream(BufferedInputStream(it)), false, 0) }
             Kind.XZ -> srcFs.openRead(archivePath).use { write(baseName.substringBeforeLast('.'), XZCompressorInputStream(BufferedInputStream(it)), false, 0) }
             Kind.BZ2 -> srcFs.openRead(archivePath).use { write(baseName.substringBeforeLast('.'), BZip2CompressorInputStream(BufferedInputStream(it)), false, 0) }
@@ -296,38 +344,73 @@ object Archives {
                 try {
                     val b = SevenZFile.builder().setFile(file)
                     if (!password.isNullOrEmpty()) b.setPassword(password.toCharArray())
-                    b.get().use { z ->
-                        while (true) {
-                            val e = z.nextEntry ?: break
-                            val input = object : InputStream() {
-                                override fun read(): Int = z.read()
-                                override fun read(b: ByteArray, off: Int, len: Int) = z.read(b, off, len)
+                    try {
+                        b.get().use { z ->
+                            while (true) {
+                                val e = z.nextEntry ?: break
+                                val input = object : InputStream() {
+                                    override fun read(): Int = z.read()
+                                    override fun read(b: ByteArray, off: Int, len: Int) = z.read(b, off, len)
+                                }
+                                write(e.name, input, e.isDirectory, if (e.hasLastModifiedDate) e.lastModifiedDate.time else 0)
                             }
-                            write(e.name, input, e.isDirectory, if (e.hasLastModifiedDate) e.lastModifiedDate.time else 0)
                         }
+                    } catch (e: FsException) {
+                        throw e
+                    } catch (e: PasswordRequiredException) {
+                        // AES-256 headers: the password is checked lazily on the first read, so this
+                        // surfaces mid-entry rather than when the archive is opened.
+                        throw ArchivePasswordException(tr("该 7z 已加密，请输入密码后重试", "This 7z is encrypted; enter a password and retry"), e)
+                    } catch (e: IOException) {
+                        // commons-compress has no PPMd (COMPRESS-288) and no BCJ2 decoder, so archives
+                        // produced with those methods fail here. Say which part is missing instead of
+                        // blaming the password; 7-Zip can rewrite them as LZMA2.
+                        val msg = e.message.orEmpty()
+                        if (msg.startsWith("Unsupported compression method")) {
+                            throw FsException(
+                                tr("该 7z 使用了暂不支持的压缩算法（如 PPMd、BCJ2），请用 7-Zip 以 LZMA2 重新压缩后重试",
+                                   "This 7z uses an unsupported codec (PPMd or BCJ2); recompress it as LZMA2 with 7-Zip"),
+                                e,
+                            )
+                        }
+                        throw FsException(tr("解压 7z 失败（密码错误或文件已损坏）: $msg", "7z extraction failed (wrong password or damaged archive): $msg"), e)
                     }
                 } finally { if (temp) file.delete() }
             }
             Kind.RAR -> {
                 val (file, temp) = spool(srcFs, archivePath, localFile, tmpDir)
                 try {
-                    // junrar: RAR 1.5–4.x. RAR5 signature starts with Rar!\x1a\x07\x01
-                    val sig = ByteArray(8)
-                    file.inputStream().use { it.read(sig) }
-                    val isRar5 = sig.size >= 8 && sig[0] == 'R'.code.toByte() && sig[6] == 1.toByte()
-                    if (isRar5) {
-                        throw FsException(
-                            tr("检测到 RAR5。当前内置 junrar 仅稳定支持 RAR4；请用电脑 7-Zip 转成 zip/7z，或等后续版本内置 RAR5 引擎", "RAR5 detected. The built-in junrar only supports RAR4; convert to zip/7z with 7-Zip on a PC"),
-                        )
-                    }
-                    val arc = try { Archive(file, password) } catch (e: Exception) {
+                    // junrar 8.x handles RAR 1.5–4.x and RAR5 (5.x/7.x, i.e. everything WinRAR 7
+                    // writes) in the same code path, solid archives and split volumes included.
+                    val arc = try {
+                        Archive(file, password)
+                    } catch (e: UnsupportedRarEncryptedException) {
+                        throw FsException(tr("该 RAR 的头部已加密，需要密码才能列出内容", "RAR headers are encrypted; a password is required to list the contents"), e)
+                    } catch (e: Exception) {
                         throw FsException(tr("无法打开 RAR: ${e.message}", "Cannot open RAR: ${e.message}"), e)
                     }
                     arc.use {
+                        // Encrypted headers still parse, so ask for the password up front instead of
+                        // failing on the first entry with an opaque IOException.
+                        val locked = runCatching { arc.isPasswordProtected() }.getOrDefault(false)
+                        if (locked && password.isNullOrEmpty()) {
+                            throw ArchivePasswordException(tr("该 RAR 已加密，请输入密码后重试", "This RAR is encrypted; enter a password and retry"))
+                        }
                         for (h in arc.fileHeaders) {
+                            if (isCancelled()) throw FsException(tr("已取消", "Cancelled"))
                             val name = h.fileName.replace('\\', '/')
                             if (h.isDirectory) { write(name, EMPTY, true, 0); continue }
-                            arc.getInputStream(h).use { ins -> write(name, ins, false, h.mTime?.time ?: 0) }
+                            try {
+                                arc.getInputStream(h).use { ins -> write(name, ins, false, h.mTime?.time ?: 0) }
+                            } catch (e: UnsupportedRarMethodException) {
+                                throw FsException(tr("RAR 使用了不支持的压缩算法: $name", "Unsupported RAR compression method: $name"), e)
+                            } catch (e: IOException) {
+                                // junrar surfaces a wrong password or a CRC mismatch as a bare IOException.
+                                throw FsException(
+                                    tr("解压 RAR 失败（密码错误或文件已损坏）: $name", "RAR extraction failed (wrong password or damaged archive): $name"),
+                                    e,
+                                )
+                            }
                         }
                     }
                 } finally { if (temp) file.delete() }
