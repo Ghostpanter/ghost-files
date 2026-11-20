@@ -1,0 +1,3 @@
+# Archive fixtures must stay byte-identical: any CRLF rewrite breaks the CRC/signature checks
+# the extraction tests rely on.
+core/src/test/resources/fmt/** binary
