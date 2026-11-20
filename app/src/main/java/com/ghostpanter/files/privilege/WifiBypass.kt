@@ -5,8 +5,11 @@ import android.net.ConnectivityManager
 import android.net.LinkAddress
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.content.pm.ApplicationInfo
+import android.util.Log
 import com.ghostpanter.files.core.net.LanSocketBinder
 import com.ghostpanter.files.core.net.LanVpnPolicy
+import com.ghostpanter.files.core.net.NetLog
 import com.ghostpanter.files.core.privilege.WirelessDebugHosts
 import io.github.muntashirakon.adb.SocketHook
 import java.net.Inet4Address
@@ -139,6 +142,9 @@ object WifiBypass {
                 wifiNetwork(app)?.let { n -> runCatching { n.bindSocket(ds) } }
             }
         }
+        // Core network diagnostics (WebDAV redirect / auth / TLS) go to Logcat in debuggable builds.
+        NetLog.sink = { tag, msg -> Log.d(tag, msg) }
+        NetLog.enabled = (app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     }
 
     /** Runs [block] with this thread's ADB sockets bound to Wi‑Fi when a VPN is active (non-loopback [host]); always clears. */
