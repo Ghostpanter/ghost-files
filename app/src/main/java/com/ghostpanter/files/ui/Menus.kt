@@ -101,7 +101,7 @@ fun MainViewModel.buildEntryMenu(pane: PaneState, targets: List<FileEntry>): Act
         }
     }
     add(t("压缩…（可设密码/分卷）", "Compress… (password/split)"), Icons.Filled.FolderZip) { dialog = DialogState.Compress(pane.index, targets) }
-    if (single != null && Archives.isArchive(single.name)) add(t("解压…", "Extract…"), Icons.Filled.Unarchive) { pendingExtract = tab to single }
+    if (single != null && Archives.isArchive(single.name)) add(t("解压…", "Extract…"), Icons.Filled.Unarchive) { extractIssue = null; pendingExtract = tab to single }
     if (targets.any { !it.isDirectory }) {
         add(t("分享", "Share"), Icons.Filled.Share) { share(tab, targets) }
         add(t("蓝牙发送", "Send via Bluetooth"), Icons.Filled.Bluetooth) { shareBluetooth(tab, targets) }

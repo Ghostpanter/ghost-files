@@ -13,7 +13,7 @@ enum class FileCategory {
         private val VIDEO_EXT = setOf("mp4", "mkv", "mov", "avi", "webm", "3gp", "ts", "m4v", "flv", "wmv", "rmvb", "m2ts", "mpg", "mpeg")
         private val AUDIO_EXT = setOf("mp3", "flac", "aac", "m4a", "ogg", "opus", "wav", "wma", "amr", "ape", "alac", "mid")
         private val DOC_EXT = setOf("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md", "epub", "csv", "json", "xml", "html", "log", "odt", "rtf")
-        private val ARCHIVE_EXT = setOf("zip", "7z", "rar", "tar", "gz", "tgz", "xz", "bz2", "zst", "lz4", "img", "iso", "bin", "obb", "gfenc")
+        private val ARCHIVE_EXT = setOf("zip", "7z", "rar", "tar", "gz", "tgz", "txz", "tbz2", "tzst", "xz", "bz2", "zst", "lz4", "cab", "dmg", "img", "iso", "bin", "obb", "gfenc")
         private val APK_EXT = setOf("apk", "apks", "xapk", "apkm", "aab", "odex", "vdex", "oat", "dex", "art")
 
         fun of(name: String): FileCategory {

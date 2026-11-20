@@ -20,6 +20,7 @@ import com.ghostpanter.files.core.ShellFs
 import com.ghostpanter.files.fs.shellOrNull
 import com.ghostpanter.files.core.VPath
 import com.ghostpanter.files.core.VirtualFs
+import com.ghostpanter.files.core.ops.ArchivePasswordException
 import com.ghostpanter.files.core.ops.Archives
 import com.ghostpanter.files.core.ops.ConfigBackup
 import com.ghostpanter.files.core.ops.RecycleBin
@@ -584,7 +585,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
 
     // ---------------------------------------------------------------- file ops
 
-    private fun runBusy(label: String, refreshTabs: List<TabState>, block: suspend () -> Unit) {
+    private fun runBusy(
+        label: String, refreshTabs: List<TabState>, onError: ((Exception) -> Unit)? = null, block: suspend () -> Unit,
+    ) {
         busyJob?.cancel()
         busy = label
         busyJob = viewModelScope.launch {
@@ -593,7 +596,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
             } catch (e: CancellationException) {
                 toast(t("已取消", "Cancelled"))
             } catch (e: Exception) {
-                toast(e.message ?: e.javaClass.simpleName)
+                if (onError != null) onError(e) else toast(e.message ?: e.javaClass.simpleName)
             } finally {
                 busy = null
                 refreshTabs.forEach { refresh(it, keepScroll = true) }
@@ -781,7 +784,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
     fun extract(tab: TabState, e: FileEntry, intoSubfolder: Boolean, password: String?) {
         val fs = fs(tab)
         val dest = if (intoSubfolder) VPath.join(tab.path, Archives.baseName(e.name)) else tab.path
-        runBusy(t("正在解压…", "Extracting…"), listOf(tab)) {
+        runBusy(t("正在解压…", "Extracting…"), listOf(tab), onError = { ex ->
+            // A missing or wrong password is not a dead end: reopen the dialog with the reason on
+            // screen so the user can type another one without hunting for the item again.
+            if (ex is ArchivePasswordException) {
+                extractIssue = ex.message
+                pendingExtract = tab to e
+            } else toast(ex.message ?: ex.javaClass.simpleName)
+        }) {
             Archives.extract(
                 fs, e.path, fs, dest, localFile = fsm.localFile(tab.fsId, e.path),
                 tmpDir = getApplication<Application>().cacheDir, password = password,
@@ -913,12 +923,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app), PaneHost {
             }
             !chooser && ext == "apk" -> withFile(tab, e) { f -> screen = Screen.Apk(f, e.name) }
             !chooser && com.ghostpanter.files.core.ops.ApksOps.isBundle(e.name) -> withFile(tab, e) { f -> bundleInstall = BundleRequest(f, e.name, tab) }
-            !chooser && Archives.isArchive(e.name) -> pendingExtract = tab to e
+            !chooser && Archives.isArchive(e.name) -> { extractIssue = null; pendingExtract = tab to e }
             else -> withFile(tab, e) { f -> _events.tryEmit(UiEvent.OpenFile(f, mimeOf(e.name), chooser)) }
         }
     }
 
     var pendingExtract by mutableStateOf<Pair<TabState, FileEntry>?>(null)
+
+    /** Why the extract dialog was reopened (wrong/missing password); cleared when it closes. */
+    var extractIssue by mutableStateOf<String?>(null)
 
     /** A tapped `<pkg>-data.tar`: offer app-data restore (or plain extract). */
     var dataTarRestore by mutableStateOf<DataTarRequest?>(null)
