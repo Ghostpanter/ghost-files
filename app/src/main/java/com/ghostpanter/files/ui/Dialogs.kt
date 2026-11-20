@@ -199,12 +199,14 @@ private fun ChmodDialog(vm: MainViewModel, tab: TabState, e: FileEntry, dismiss:
 @Composable
 fun ExtractDialog(e: FileEntry, issue: String? = null, onDismiss: () -> Unit, onExtract: (Boolean, String?) -> Unit) {
     var pw by remember { mutableStateOf("") }
+    // .gz/.xz/.bz2 hold a single file, so a sub-folder would just nest it one level deeper.
+    val single = Archives.isSingleFile(e.name)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(e.name) },
         text = {
             Column {
-                Text(t("解压到：", "Extract to:"))
+                Text(if (single) t("解出到当前目录：", "Extract into this folder:") else t("解压到：", "Extract to:"))
                 if (issue != null) Text(issue, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                 // ZIP, 7z and RAR are the containers that can carry a password. The old check only
                 // looked at 7z/RAR by file name, so an encrypted ZIP could never be opened.
@@ -216,7 +218,7 @@ fun ExtractDialog(e: FileEntry, issue: String? = null, onDismiss: () -> Unit, on
         },
         confirmButton = {
             Column(horizontalAlignment = Alignment.End) {
-                TextButton(onClick = { onExtract(true, pw.ifEmpty { null }) }) { Text(t("同名子文件夹", "Sub-folder")) }
+                if (!single) TextButton(onClick = { onExtract(true, pw.ifEmpty { null }) }) { Text(t("同名子文件夹", "Sub-folder")) }
                 TextButton(onClick = { onExtract(false, pw.ifEmpty { null }) }) { Text(t("当前目录", "Here")) }
             }
         },

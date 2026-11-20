@@ -82,6 +82,16 @@ class ArchivesFormatsTest {
     }
 
     @Test
+    fun onlyWrappedFilesCountAsSingleFile() {
+        for (n in listOf("a.gz", "a.xz", "a.bz2", "a.zst", "a.lz4", "SINGLE.TXT.GZ")) {
+            assertTrue(n, Archives.isSingleFile(n))
+        }
+        for (n in listOf("a.tar.gz", "a.tgz", "a.zip", "a.7z", "a.tar", "a.tar.zst")) {
+            assertFalse(n, Archives.isSingleFile(n))
+        }
+    }
+
+    @Test
     fun tarExtracts() {
         val out = extract("sample.tar")
         assertEquals("hello ghost\n", File(out, "hello.txt").readText())

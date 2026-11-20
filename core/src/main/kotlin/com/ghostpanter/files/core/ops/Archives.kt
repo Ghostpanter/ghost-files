@@ -70,6 +70,13 @@ object Archives {
 
     fun isArchive(name: String) = kindOf(name) != null
 
+    /**
+     * A compressor that wraps exactly one file (`.gz`, `.xz`, `.bz2`, `.zst`, `.lz4`).
+     * `tar.*` is a real container and stays multi-entry; these do not, so extracting them into a
+     * folder named after themselves only produces `single.txt/single.txt`.
+     */
+    fun isSingleFile(name: String) = kindOf(name) in setOf(Kind.GZ, Kind.XZ, Kind.BZ2, Kind.ZST, Kind.LZ4)
+
     private val GBK: Charset = runCatching { Charset.forName("GBK") }.getOrDefault(Charsets.ISO_8859_1)
 
     fun decodeName(raw: ByteArray): String {
